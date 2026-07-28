@@ -3,7 +3,10 @@
 import { useEffect, useRef, useState } from 'react'
 import { BellRing, X } from 'lucide-react'
 import { useAuth } from '@/lib/hooks/useAuth'
-import { subscribeToForegroundMessages } from '@/lib/services/messagingService'
+import {
+  subscribeToForegroundMessages,
+  syncPushDeviceRegistration,
+} from '@/lib/services/messagingService'
 
 interface ForegroundNotice {
   title: string
@@ -20,6 +23,10 @@ export function ForegroundNotificationListener() {
 
     let unsubscribe: () => void = () => undefined
     let cancelled = false
+
+    void syncPushDeviceRegistration(authUser.uid).catch((error) => {
+      console.error('Không thể đồng bộ thiết bị nhận thông báo:', error)
+    })
 
     void subscribeToForegroundMessages((payload) => {
       if (cancelled) return

@@ -1363,6 +1363,10 @@ async function sendEmployeePush(params: {
   try {
     const response = await adminMessaging.sendEachForMulticast({
       fids,
+      notification: {
+        title: params.title,
+        body: params.body,
+      },
       data: {
         title: params.title,
         body: params.body,
@@ -1371,7 +1375,13 @@ async function sendEmployeePush(params: {
         sourceId: params.sourceId,
         status: params.status,
       },
-      webpush: { fcmOptions: { link: params.link } },
+      webpush: {
+        notification: {
+          icon: '/pwa-icon-192.png',
+          badge: '/pwa-icon-192.png',
+        },
+        fcmOptions: { link: params.link },
+      },
     })
     const invalidCodes = new Set([
       'messaging/registration-token-not-registered',

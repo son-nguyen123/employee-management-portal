@@ -111,6 +111,41 @@ function observeRegistrationChanges(
   })
 }
 
+async function registerPushDevice(
+  employeeId: string,
+  permission: NotificationPermission
+): Promise<PushRegistrationResult> {
+  const vapidKey = process.env.NEXT_PUBLIC_FIREBASE_VAPID_KEY
+  if (!vapidKey) {
+    throw new Error('Ứng dụng chưa có NEXT_PUBLIC_FIREBASE_VAPID_KEY.')
+  }
+
+  const serviceWorkerRegistration = await navigator.serviceWorker.register(
+    SERVICE_WORKER_PATH,
+    { scope: '/' }
+  )
+  await navigator.serviceWorker.ready
+
+  const messaging = await getMessagingInstance()
+  // Attach the callback before register(). Calling register() again refreshes
+  // stale registrations and emits the current FID for Firestore synchronization.
+  const firstRegistration = observeRegistrationChanges(messaging, employeeId)
+  try {
+    await register(messaging, {
+      vapidKey,
+      serviceWorkerRegistration,
+    })
+    const fid = await firstRegistration
+    return { fid, permission }
+  } catch (error) {
+    registrationObserver?.()
+    unregistrationObserver?.()
+    registrationObserver = null
+    unregistrationObserver = null
+    throw error
+  }
+}
+
 export async function getPushPermissionState(): Promise<PushPermissionState> {
   if (
     typeof window === 'undefined' ||
@@ -143,11 +178,6 @@ export async function enablePushNotifications(
 ): Promise<PushRegistrationResult> {
   assertBrowser()
 
-  const vapidKey = process.env.NEXT_PUBLIC_FIREBASE_VAPID_KEY
-  if (!vapidKey) {
-    throw new Error('Ứng dụng chưa có NEXT_PUBLIC_FIREBASE_VAPID_KEY.')
-  }
-
   const permission = await Notification.requestPermission()
   if (permission !== 'granted') {
     throw new Error(
@@ -157,32 +187,16 @@ export async function enablePushNotifications(
     )
   }
 
-  const serviceWorkerRegistration = await navigator.serviceWorker.register(
-    SERVICE_WORKER_PATH,
-    { scope: '/' }
-  )
-  await navigator.serviceWorker.ready
+  return registerPushDevice(employeeId, permission)
+}
 
-  const messaging = await getMessagingInstance()
-  // Firebase's FID API requires onRegistered() to be attached before
-  // register(). Persist only from that callback so the initial document is
-  // written once and cannot race with a second create/update.
-  const firstRegistration = observeRegistrationChanges(messaging, employeeId)
-  try {
-    await register(messaging, {
-      vapidKey,
-      serviceWorkerRegistration,
-    })
-    const fid = await firstRegistration
-    return { fid, permission }
-  } catch (error) {
-    registrationObserver?.()
-    unregistrationObserver?.()
-    registrationObserver = null
-    unregistrationObserver = null
-    throw error
-  }
-
+export async function syncPushDeviceRegistration(
+  employeeId: string
+): Promise<PushRegistrationResult | null> {
+  assertBrowser()
+  const permission = await getPushPermissionState()
+  if (permission !== 'granted') return null
+  return registerPushDevice(employeeId, permission)
 }
 
 export async function disablePushNotifications(employeeId: string): Promise<void> {
