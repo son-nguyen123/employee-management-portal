@@ -3,8 +3,8 @@
 import { useEffect, useState } from 'react'
 import { CalendarDays, CheckCircle2, Clock3, Loader2, Pencil, Send, Trash2, X } from 'lucide-react'
 import { useAuth } from '@/lib/hooks/useAuth'
-import { cancelLateRequest, createLateRequest, getEmployeeLateRequests, reviseLateRequest } from '@/lib/services/lateService'
-import { getEmployeeSchedules } from '@/lib/services/scheduleService'
+import { cancelLateRequest, createLateRequest, reviseLateRequest, subscribeToEmployeeLateRequests } from '@/lib/services/lateService'
+import { subscribeToEmployeeSchedules } from '@/lib/services/scheduleService'
 import { getPreviewSchedules } from '@/lib/services/previewWorkflow'
 import { mockLateRequests } from '@/lib/services/mockData'
 import { Header } from '@/components/layout/header'
@@ -33,34 +33,31 @@ export default function LateArrivalPage() {
 
   useEffect(() => {
     if (!authUser) return
-    const load = async () => {
-      try {
-        if (isPreviewMode) {
-          setShifts(getPreviewSchedules()
-            .filter((item) => item.employeeId === 'demo-user-001' && item.status === 'Approved')
-            .map((item) => ({ id: item.id, date: new Date(item.date), shift: item.shift, status: item.status, note: item.note })))
-          setRequests(mockLateRequests)
-          return
-        }
-        const [scheduleData, requestData] = await Promise.all([
-          getEmployeeSchedules(authUser.uid),
-          getEmployeeLateRequests(authUser.uid),
-        ])
-        setShifts(scheduleData
-          .filter((item) => item.status === 'Approved')
-          .map((item) => ({
-            id: item.id!,
-            date: item.date instanceof Date ? item.date : item.date.toDate(),
-            shift: item.shift,
-            status: item.status,
-            note: item.note,
-          })))
-        setRequests(requestData)
-      } catch {
-        setMessage('Chưa tải được lịch đã xác nhận.')
-      }
+    const updateShifts = (scheduleData: any[]) => {
+      setShifts(scheduleData
+        .filter((item) => item.status === 'Approved')
+        .map((item) => ({
+          id: item.id!,
+          date: item.date instanceof Date ? item.date : typeof item.date === 'string' ? new Date(item.date) : item.date.toDate(),
+          shift: item.shift,
+          status: item.status,
+          note: item.note,
+        })))
     }
-    load()
+
+    if (isPreviewMode) {
+      updateShifts(getPreviewSchedules().filter((item) => item.employeeId === 'demo-user-001'))
+      setRequests(mockLateRequests)
+      return
+    }
+
+    const handleError = () => setMessage('Chưa tải được lịch đã xác nhận.')
+    const unsubscribeSchedules = subscribeToEmployeeSchedules(authUser.uid, updateShifts, handleError)
+    const unsubscribeRequests = subscribeToEmployeeLateRequests(authUser.uid, setRequests, handleError)
+    return () => {
+      unsubscribeSchedules()
+      unsubscribeRequests()
+    }
   }, [authUser, isPreviewMode])
 
   const openRequest = (shift: ShiftItem) => {

@@ -3,9 +3,9 @@
 import { useEffect, useState } from 'react'
 import { CalendarDays, Check, CheckCircle2, Info, Loader2, Palmtree, Pencil, Send, Trash2 } from 'lucide-react'
 import { useAuth } from '@/lib/hooks/useAuth'
-import { cancelLeaveRequest, createLeaveRequest, getEmployeeLeaves, reviseLeaveRequest } from '@/lib/services/leaveService'
+import { cancelLeaveRequest, createLeaveRequest, reviseLeaveRequest, subscribeToEmployeeLeaves } from '@/lib/services/leaveService'
 import { mockLeaveRequests } from '@/lib/services/mockData'
-import { getEmployeeSchedules } from '@/lib/services/scheduleService'
+import { subscribeToEmployeeSchedules } from '@/lib/services/scheduleService'
 import { getPreviewSchedules } from '@/lib/services/previewWorkflow'
 import { Header } from '@/components/layout/header'
 import { PageContainer } from '@/components/layout/page-container'
@@ -35,12 +35,7 @@ export default function LeaveRequestPage() {
 
   useEffect(() => {
     if (!authUser) return
-    const load = async () => {
-      try {
-        const [data, scheduleData] = isPreviewMode
-          ? [mockLeaveRequests, getPreviewSchedules().filter((item) => item.employeeId === authUser.uid)]
-          : await Promise.all([getEmployeeLeaves(authUser.uid), getEmployeeSchedules(authUser.uid)])
-        setRequests(data.slice(0, 5))
+    const updateApprovedShifts = (scheduleData: any[]) => {
         const now = new Date()
         const monday = new Date(now)
         const day = now.getDay() || 7
@@ -59,11 +54,29 @@ export default function LeaveRequestPage() {
             date: item.date instanceof Date ? item.date : typeof item.date === 'string' ? new Date(item.date) : item.date.toDate(),
             shift: item.shift,
           })))
-      } catch {
-        setRequests([])
-      }
     }
-    load()
+
+    if (isPreviewMode) {
+      setRequests(mockLeaveRequests.slice(0, 5))
+      updateApprovedShifts(getPreviewSchedules().filter((item) => item.employeeId === authUser.uid))
+      return
+    }
+
+    const handleError = () => setRequests([])
+    const unsubscribeLeaves = subscribeToEmployeeLeaves(
+      authUser.uid,
+      (data) => setRequests(data.slice(0, 5)),
+      handleError
+    )
+    const unsubscribeSchedules = subscribeToEmployeeSchedules(
+      authUser.uid,
+      updateApprovedShifts,
+      handleError
+    )
+    return () => {
+      unsubscribeLeaves()
+      unsubscribeSchedules()
+    }
   }, [authUser, isPreviewMode])
 
   const submit = async (event: React.FormEvent) => {

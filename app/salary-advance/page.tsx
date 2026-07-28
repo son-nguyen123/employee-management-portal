@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from 'react'
 import { useAuth } from '@/lib/hooks/useAuth'
-import { cancelSalaryAdvance, createSalaryAdvance, getEmployeeSalaryAdvances, reviseSalaryAdvance } from '@/lib/services/salaryService'
+import { cancelSalaryAdvance, createSalaryAdvance, reviseSalaryAdvance, subscribeToEmployeeSalaryAdvances } from '@/lib/services/salaryService'
 import { mockSalaryAdvances } from '@/lib/services/mockData'
 import { Header } from '@/components/layout/header'
 import { PageContainer } from '@/components/layout/page-container'
@@ -26,18 +26,23 @@ export default function SalaryAdvancePage() {
   useEffect(() => {
     if (!authUser) return
 
-    const load = async () => {
-      try {
-        const data = isPreviewMode ? mockSalaryAdvances : await getEmployeeSalaryAdvances(authUser.uid)
-        setPreviousAdvances(data.slice(0, 5))
-      } catch (error) {
-        console.error('Error:', error)
-      } finally {
-        setLoading(false)
-      }
+    if (isPreviewMode) {
+      setPreviousAdvances(mockSalaryAdvances.slice(0, 5))
+      setLoading(false)
+      return
     }
 
-    load()
+    return subscribeToEmployeeSalaryAdvances(
+      authUser.uid,
+      (data) => {
+        setPreviousAdvances(data.slice(0, 5))
+        setLoading(false)
+      },
+      (error) => {
+        console.error('Error:', error)
+        setLoading(false)
+      }
+    )
   }, [authUser, isPreviewMode])
 
   const handleSubmit = async (e: React.FormEvent) => {

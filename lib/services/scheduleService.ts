@@ -1,4 +1,4 @@
-import { collection, getDocs, query, where, orderBy } from 'firebase/firestore'
+import { collection, getDocs, onSnapshot, query, where, orderBy } from 'firebase/firestore'
 import { db } from '@/lib/firebase'
 import { WorkSchedule } from '@/lib/models/types'
 import { callWorkflowApi, newWorkflowRequestId } from '@/lib/services/workflowApi'
@@ -157,4 +157,58 @@ export async function getAllSchedules(): Promise<WorkSchedule[]> {
     console.error('Error fetching all schedules:', error)
     throw error
   }
+}
+
+function scheduleFromSnapshot(item: { id: string; data: () => Record<string, unknown> }): WorkSchedule {
+  return { id: item.id, ...item.data() } as WorkSchedule
+}
+
+export function subscribeToAllSchedules(
+  callback: (schedules: WorkSchedule[]) => void,
+  onError?: (error: Error) => void
+): () => void {
+  const schedulesQuery = query(collection(db, SCHEDULES_COLLECTION), orderBy('date', 'desc'))
+  return onSnapshot(
+    schedulesQuery,
+    (snapshot) => callback(snapshot.docs.map(scheduleFromSnapshot)),
+    (error) => onError?.(error)
+  )
+}
+
+export function subscribeToEmployeeSchedules(
+  employeeId: string,
+  callback: (schedules: WorkSchedule[]) => void,
+  onError?: (error: Error) => void
+): () => void {
+  const schedulesQuery = query(
+    collection(db, SCHEDULES_COLLECTION),
+    where('employeeId', '==', employeeId),
+    orderBy('date', 'desc')
+  )
+  return onSnapshot(
+    schedulesQuery,
+    (snapshot) => callback(snapshot.docs.map(scheduleFromSnapshot)),
+    (error) => onError?.(error)
+  )
+}
+
+export function subscribeToSchedulesByDateRange(
+  employeeId: string,
+  startDate: Date,
+  endDate: Date,
+  callback: (schedules: WorkSchedule[]) => void,
+  onError?: (error: Error) => void
+): () => void {
+  const schedulesQuery = query(
+    collection(db, SCHEDULES_COLLECTION),
+    where('employeeId', '==', employeeId),
+    where('date', '>=', startDate),
+    where('date', '<=', endDate),
+    orderBy('date', 'asc')
+  )
+  return onSnapshot(
+    schedulesQuery,
+    (snapshot) => callback(snapshot.docs.map(scheduleFromSnapshot)),
+    (error) => onError?.(error)
+  )
 }

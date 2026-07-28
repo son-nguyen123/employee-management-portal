@@ -3,14 +3,14 @@
 import { useEffect, useState } from 'react'
 import { AlertTriangle, Check, CircleDollarSign, Clock3, FileText, Loader2, X } from 'lucide-react'
 import { useAuth } from '@/lib/hooks/useAuth'
-import { getPendingLeaveRequests, updateLeaveStatus } from '@/lib/services/leaveService'
-import { getPendingLateRequests, updateLateStatus } from '@/lib/services/lateService'
-import { getPendingSalaryAdvances, updateSalaryAdvanceStatus } from '@/lib/services/salaryService'
+import { subscribeToPendingLeaveRequests, updateLeaveStatus } from '@/lib/services/leaveService'
+import { subscribeToPendingLateRequests, updateLateStatus } from '@/lib/services/lateService'
+import { subscribeToPendingSalaryAdvances, updateSalaryAdvanceStatus } from '@/lib/services/salaryService'
 import { mockLateRequests, mockLeaveRequests, mockSalaryAdvances } from '@/lib/services/mockData'
 import { Header } from '@/components/layout/header'
 import { PageContainer } from '@/components/layout/page-container'
 import { Badge } from '@/components/ui/badge'
-import { getActiveEmployees } from '@/lib/services/employeeService'
+import { subscribeToActiveEmployees } from '@/lib/services/employeeService'
 import { adjustPenalty, cancelPenalty, createForgottenDutyPenalty, getAllPenalties } from '@/lib/services/penaltyService'
 import type { Employee, Penalty } from '@/lib/models/types'
 
@@ -23,6 +23,46 @@ type RequestRow = {
   title: string
   detail: string
   status: string
+}
+
+function buildRequestRows(
+  leaves: any[],
+  lates: any[],
+  salaries: any[],
+  employees: Employee[],
+  preview = false
+): RequestRow[] {
+  const employeeNames = new Map(employees.map((employee) => [employee.uid, employee.fullName]))
+  const fallbackName = preview ? 'Nguyễn Minh An' : 'Nhân viên'
+  return [
+    ...leaves.map((item, index) => ({
+      id: item.id || `leave-${index}`,
+      type: 'leave' as const,
+      employeeId: item.employeeId || 'demo-user-001',
+      employeeName: employeeNames.get(item.employeeId) || fallbackName,
+      title: 'Yêu cầu xin nghỉ',
+      detail: `${item.reason || 'Nghỉ việc cá nhân'} · ${item.duration === 'long' ? 'Dài hạn' : 'Ngắn hạn'}`,
+      status: item.status || 'Pending',
+    })),
+    ...lates.map((item, index) => ({
+      id: item.id || `late-${index}`,
+      type: 'late' as const,
+      employeeId: item.employeeId || 'demo-user-001',
+      employeeName: employeeNames.get(item.employeeId) || fallbackName,
+      title: 'Yêu cầu đi trễ',
+      detail: `${item.reason || 'Có việc đột xuất'} · ${item.lateMinutes || 15} phút`,
+      status: item.status || 'Pending',
+    })),
+    ...salaries.map((item, index) => ({
+      id: item.id || `salary-${index}`,
+      type: 'salary' as const,
+      employeeId: item.employeeId || 'demo-user-001',
+      employeeName: employeeNames.get(item.employeeId) || fallbackName,
+      title: 'Yêu cầu ứng lương',
+      detail: `${Number(item.amount || 0).toLocaleString('vi-VN')} VND · ${item.reason || 'Không có ghi chú'}`,
+      status: item.status || 'Pending',
+    })),
+  ].filter((item) => item.status === 'Pending')
 }
 
 export default function AdminRequestsPage() {
@@ -46,63 +86,73 @@ export default function AdminRequestsPage() {
 
   useEffect(() => {
     if (!authUser) return
-    const load = async () => {
-      try {
-        const [leaves, lates, salaries, activeEmployees, penaltyRows] = isPreviewMode
-          ? [mockLeaveRequests, mockLateRequests, mockSalaryAdvances, [], []]
-          : await Promise.all([getPendingLeaveRequests(), getPendingLateRequests(), getPendingSalaryAdvances(), getActiveEmployees(), getAllPenalties()])
-        const employeeList = isPreviewMode ? [{
-          uid: 'demo-user-001',
-          employeeCode: 'NV-001',
-          fullName: 'Nguyễn Minh An',
-          phone: '0901234567',
-          email: 'demo@example.com',
-          role: 'employee',
-          status: 'active',
-          joinDate: new Date(),
-          createdAt: new Date(),
-          updatedAt: new Date(),
-        } as Employee] : activeEmployees as Employee[]
-        const employeeNames = new Map(employeeList.map((employee) => [employee.uid, employee.fullName]))
-        setEmployees(employeeList)
-        setPenalties(penaltyRows as Penalty[])
-        setPenaltyEmployeeId((current) => current || employeeList[0]?.uid || '')
-        setRows([
-          ...leaves.map((item: any, index: number) => ({
-            id: item.id || `leave-${index}`,
-            type: 'leave' as const,
-            employeeId: item.employeeId || 'demo-user-001',
-            employeeName: employeeNames.get(item.employeeId) || (isPreviewMode ? 'Nguyễn Minh An' : 'Nhân viên'),
-            title: 'Yêu cầu xin nghỉ',
-            detail: `${item.reason || 'Nghỉ việc cá nhân'} · ${item.duration === 'long' ? 'Dài hạn' : 'Ngắn hạn'}`,
-            status: item.status || 'Pending',
-          })),
-          ...lates.map((item: any, index: number) => ({
-            id: item.id || `late-${index}`,
-            type: 'late' as const,
-            employeeId: item.employeeId || 'demo-user-001',
-            employeeName: employeeNames.get(item.employeeId) || (isPreviewMode ? 'Nguyễn Minh An' : 'Nhân viên'),
-            title: 'Yêu cầu đi trễ',
-            detail: `${item.reason || 'Có việc đột xuất'} · ${item.lateMinutes || 15} phút`,
-            status: item.status || 'Pending',
-          })),
-          ...salaries.map((item: any, index: number) => ({
-            id: item.id || `salary-${index}`,
-            type: 'salary' as const,
-            employeeId: item.employeeId || 'demo-user-001',
-            employeeName: employeeNames.get(item.employeeId) || (isPreviewMode ? 'Nguyễn Minh An' : 'Nhân viên'),
-            title: 'Yêu cầu ứng lương',
-            detail: `${Number(item.amount || 0).toLocaleString('vi-VN')} VND · ${item.reason || 'Chi phí cá nhân'}`,
-            status: item.status || 'Pending',
-          })),
-        ].filter((item) => item.status === 'Pending'))
-      } catch {
-        setMessage('Chưa tải được danh sách yêu cầu.')
-      } finally {
+    if (isPreviewMode) {
+      const employeeList = [{
+        uid: 'demo-user-001',
+        employeeCode: 'NV-001',
+        fullName: 'Nguyễn Minh An',
+        phone: '0901234567',
+        email: 'demo@example.com',
+        role: 'employee',
+        status: 'active',
+        joinDate: new Date(),
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      } as Employee]
+      setEmployees(employeeList)
+      setRows(buildRequestRows(mockLeaveRequests, mockLateRequests, mockSalaryAdvances, employeeList, true))
+      setPenaltyEmployeeId(employeeList[0].uid)
+      setLoading(false)
+      return
+    }
+
+    let leaves: any[] = []
+    let lates: any[] = []
+    let salaries: any[] = []
+    let employeeList: Employee[] = []
+    const ready = new Set<string>()
+    const publish = () => {
+      setEmployees(employeeList)
+      setPenaltyEmployeeId((current) => current || employeeList[0]?.uid || '')
+      setRows(buildRequestRows(leaves, lates, salaries, employeeList))
+      if (ready.size === 4) {
         setLoading(false)
+        setMessage('')
       }
     }
-    load()
+    const handleError = () => {
+      setMessage('Chưa tải được danh sách yêu cầu.')
+      setLoading(false)
+    }
+
+    const unsubscribers = [
+      subscribeToPendingLeaveRequests((items) => {
+        leaves = items
+        ready.add('leave')
+        publish()
+      }, handleError),
+      subscribeToPendingLateRequests((items) => {
+        lates = items
+        ready.add('late')
+        publish()
+      }, handleError),
+      subscribeToPendingSalaryAdvances((items) => {
+        salaries = items
+        ready.add('salary')
+        publish()
+      }, handleError),
+      subscribeToActiveEmployees((items) => {
+        employeeList = items
+        ready.add('employees')
+        publish()
+      }, handleError),
+    ]
+
+    getAllPenalties()
+      .then(setPenalties)
+      .catch(() => setMessage('Chưa tải được danh sách khoản phạt.'))
+
+    return () => unsubscribers.forEach((unsubscribe) => unsubscribe())
   }, [authUser, isPreviewMode])
 
   const process = async (row: RequestRow, status: 'Approved' | 'Rejected', suppliedNote = '') => {

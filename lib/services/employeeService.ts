@@ -7,6 +7,7 @@ import {
   query,
   where,
   getDocs,
+  onSnapshot,
   Timestamp,
 } from 'firebase/firestore'
 import { db } from '@/lib/firebase'
@@ -92,4 +93,30 @@ export async function getActiveEmployees(): Promise<Employee[]> {
     console.error('Error fetching active employees:', error)
     throw error
   }
+}
+
+export function subscribeToAllEmployees(
+  callback: (employees: Employee[]) => void,
+  onError?: (error: Error) => void
+): () => void {
+  return onSnapshot(
+    collection(db, EMPLOYEES_COLLECTION),
+    (snapshot) => callback(snapshot.docs.map((item) => item.data() as Employee)),
+    (error) => onError?.(error)
+  )
+}
+
+export function subscribeToActiveEmployees(
+  callback: (employees: Employee[]) => void,
+  onError?: (error: Error) => void
+): () => void {
+  const activeQuery = query(
+    collection(db, EMPLOYEES_COLLECTION),
+    where('status', '==', 'active')
+  )
+  return onSnapshot(
+    activeQuery,
+    (snapshot) => callback(snapshot.docs.map((item) => item.data() as Employee)),
+    (error) => onError?.(error)
+  )
 }

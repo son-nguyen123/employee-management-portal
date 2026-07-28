@@ -1,4 +1,4 @@
-import { collection, getDocs, query, where, orderBy } from 'firebase/firestore'
+import { collection, getDocs, onSnapshot, query, where, orderBy } from 'firebase/firestore'
 import { db } from '@/lib/firebase'
 import { LateRequest } from '@/lib/models/types'
 import { callWorkflowApi, newWorkflowRequestId } from '@/lib/services/workflowApi'
@@ -111,4 +111,41 @@ export async function getAllLateRequests(): Promise<LateRequest[]> {
     console.error('Error fetching all late requests:', error)
     throw error
   }
+}
+
+function lateFromSnapshot(item: { id: string; data: () => Record<string, unknown> }): LateRequest {
+  return { id: item.id, ...item.data() } as LateRequest
+}
+
+export function subscribeToEmployeeLateRequests(
+  employeeId: string,
+  callback: (requests: LateRequest[]) => void,
+  onError?: (error: Error) => void
+): () => void {
+  const lateQuery = query(
+    collection(db, LATE_REQUESTS_COLLECTION),
+    where('employeeId', '==', employeeId),
+    orderBy('date', 'desc')
+  )
+  return onSnapshot(
+    lateQuery,
+    (snapshot) => callback(snapshot.docs.map(lateFromSnapshot)),
+    (error) => onError?.(error)
+  )
+}
+
+export function subscribeToPendingLateRequests(
+  callback: (requests: LateRequest[]) => void,
+  onError?: (error: Error) => void
+): () => void {
+  const lateQuery = query(
+    collection(db, LATE_REQUESTS_COLLECTION),
+    where('status', '==', 'Pending'),
+    orderBy('createdAt', 'desc')
+  )
+  return onSnapshot(
+    lateQuery,
+    (snapshot) => callback(snapshot.docs.map(lateFromSnapshot)),
+    (error) => onError?.(error)
+  )
 }

@@ -4,8 +4,8 @@ import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { AlertTriangle, CalendarCheck, Check, ChevronRight, ClipboardCheck, Loader2, MessageSquareText, UsersRound, X } from 'lucide-react'
 import { useAuth, useUserRole } from '@/lib/hooks/useAuth'
-import { getAllEmployees } from '@/lib/services/employeeService'
-import { getAllSchedules, reviewWorkScheduleBatch } from '@/lib/services/scheduleService'
+import { subscribeToAllEmployees } from '@/lib/services/employeeService'
+import { reviewWorkScheduleBatch, subscribeToAllSchedules } from '@/lib/services/scheduleService'
 import { getPreviewSchedules, updatePreviewSchedule } from '@/lib/services/previewWorkflow'
 import type { Employee, WorkSchedule } from '@/lib/models/types'
 import { Header } from '@/components/layout/header'
@@ -98,19 +98,44 @@ export default function AdminDashboardPage() {
           })))
           return
         }
-        const [employeeData, scheduleData] = await Promise.all([getAllEmployees(), getAllSchedules()])
-        setEmployees(employeeData)
-        setSchedules(scheduleData.map((schedule) => {
-          const employee = employeeData.find((item) => item.uid === schedule.employeeId)
-          return { ...schedule, id: schedule.id!, employeeName: employee?.fullName, employeeCode: employee?.employeeCode }
-        }))
+        let employeeData: Employee[] = []
+        let scheduleData: WorkSchedule[] = []
+        let employeesReady = false
+        let schedulesReady = false
+        const publish = () => {
+          const employeeById = new Map(employeeData.map((item) => [item.uid, item]))
+          setEmployees(employeeData)
+          setSchedules(scheduleData.map((schedule) => {
+            const employee = employeeById.get(schedule.employeeId)
+            return { ...schedule, id: schedule.id!, employeeName: employee?.fullName, employeeCode: employee?.employeeCode }
+          }))
+          if (employeesReady && schedulesReady) setLoading(false)
+        }
+        const unsubscribeEmployees = subscribeToAllEmployees((nextEmployees) => {
+          employeeData = nextEmployees
+          employeesReady = true
+          publish()
+        })
+        const unsubscribeSchedules = subscribeToAllSchedules((nextSchedules) => {
+          scheduleData = nextSchedules
+          schedulesReady = true
+          publish()
+        })
+        return () => {
+          unsubscribeEmployees()
+          unsubscribeSchedules()
+        }
       } catch {
         setMessage('Chưa tải được dữ liệu quản lý. Hãy kiểm tra quyền admin trong Firestore.')
       } finally {
         setLoading(false)
       }
     }
-    load()
+    let cleanup: void | (() => void)
+    load().then((unsubscribe) => {
+      cleanup = unsubscribe
+    })
+    return () => cleanup?.()
   }, [authUser, isPreviewMode])
 
   const activeEmployees = useMemo(() => employees.filter((item) => item.status === 'active'), [employees])

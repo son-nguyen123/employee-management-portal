@@ -19,9 +19,9 @@ import {
 import { useAuth } from '@/lib/hooks/useAuth'
 import {
   cancelWorkScheduleBatch,
-  getSchedulesByDateRange,
   replaceWorkSchedules,
   setWorkScheduleBatchEditing,
+  subscribeToSchedulesByDateRange,
   submitWorkSchedules,
 } from '@/lib/services/scheduleService'
 import { addPreviewSchedules, getPreviewSchedules, updatePreviewSchedule } from '@/lib/services/previewWorkflow'
@@ -83,19 +83,7 @@ export default function SchedulePage() {
 
   useEffect(() => {
     if (!authUser) return
-    const load = async () => {
-      try {
-        const start = days[0].date
-        const end = new Date(days[6].date)
-        end.setHours(23, 59, 59, 999)
-        const schedules = isPreviewMode
-          ? getPreviewSchedules()
-              .filter((item) => {
-                const date = new Date(item.date)
-                return item.employeeId === authUser.uid && date >= start && date <= end
-              })
-              .map((item) => ({ ...item, date: new Date(item.date), createdAt: new Date(), updatedAt: new Date() } as WorkSchedule))
-          : await getSchedulesByDateRange(authUser.uid, start, end)
+    const hydrateSchedules = (schedules: WorkSchedule[]) => {
         const current = schedules.filter((item) =>
           ['Pending', 'Registered', 'ChangesRequested', 'Rejected', 'Approved', 'Editing'].includes(item.status)
         )
@@ -125,8 +113,20 @@ export default function SchedulePage() {
           if (current[0].status === 'Editing') {
             setEditingOriginStatus(current[0].editPreviousStatus || 'Pending')
             setEditing(true)
+          } else {
+            setEditingOriginStatus(null)
+            setEditing(false)
           }
         } else {
+          setSelected({})
+          setOriginal({})
+          setCustomData({})
+          setDutyDay(null)
+          setSubmittedIds([])
+          setSubmittedStatus(null)
+          setRequiresReapproval(false)
+          setEditingOriginStatus(null)
+          setEditing(false)
           const savedDraft = window.sessionStorage.getItem('schedule-draft')
           if (savedDraft) {
             const parsed = JSON.parse(savedDraft) as Record<string, Shift[] | Shift>
@@ -135,13 +135,32 @@ export default function SchedulePage() {
             ))
           }
         }
-      } catch {
+        setLoading(false)
+    }
+
+    const start = days[0].date
+    const end = new Date(days[6].date)
+    end.setHours(23, 59, 59, 999)
+    if (isPreviewMode) {
+      hydrateSchedules(getPreviewSchedules()
+        .filter((item) => {
+          const date = new Date(item.date)
+          return item.employeeId === authUser.uid && date >= start && date <= end
+        })
+        .map((item) => ({ ...item, date: new Date(item.date), createdAt: new Date(), updatedAt: new Date() } as WorkSchedule)))
+      return
+    }
+
+    return subscribeToSchedulesByDateRange(
+      authUser.uid,
+      start,
+      end,
+      hydrateSchedules,
+      () => {
         setMessage('Chưa tải được lịch đã đăng ký. Bạn vẫn có thể tạo lịch mới.')
-      } finally {
         setLoading(false)
       }
-    }
-    load()
+    )
   }, [authUser, days, isPreviewMode])
 
   const chooseShift = (dayKey: string, shift: Shift) => {

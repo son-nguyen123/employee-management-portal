@@ -1,4 +1,4 @@
-import { collection, getDocs, query, where, orderBy } from 'firebase/firestore'
+import { collection, getDocs, onSnapshot, query, where, orderBy } from 'firebase/firestore'
 import { db } from '@/lib/firebase'
 import { LeaveRequest } from '@/lib/models/types'
 import { callWorkflowApi, newWorkflowRequestId } from '@/lib/services/workflowApi'
@@ -118,4 +118,41 @@ export async function getAllLeaveRequests(): Promise<LeaveRequest[]> {
     console.error('Error fetching all leave requests:', error)
     throw error
   }
+}
+
+function leaveFromSnapshot(item: { id: string; data: () => Record<string, unknown> }): LeaveRequest {
+  return { id: item.id, ...item.data() } as LeaveRequest
+}
+
+export function subscribeToEmployeeLeaves(
+  employeeId: string,
+  callback: (requests: LeaveRequest[]) => void,
+  onError?: (error: Error) => void
+): () => void {
+  const leavesQuery = query(
+    collection(db, LEAVES_COLLECTION),
+    where('employeeId', '==', employeeId),
+    orderBy('leaveDate', 'desc')
+  )
+  return onSnapshot(
+    leavesQuery,
+    (snapshot) => callback(snapshot.docs.map(leaveFromSnapshot)),
+    (error) => onError?.(error)
+  )
+}
+
+export function subscribeToPendingLeaveRequests(
+  callback: (requests: LeaveRequest[]) => void,
+  onError?: (error: Error) => void
+): () => void {
+  const leavesQuery = query(
+    collection(db, LEAVES_COLLECTION),
+    where('status', '==', 'Pending'),
+    orderBy('createdAt', 'desc')
+  )
+  return onSnapshot(
+    leavesQuery,
+    (snapshot) => callback(snapshot.docs.map(leaveFromSnapshot)),
+    (error) => onError?.(error)
+  )
 }

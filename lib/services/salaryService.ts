@@ -1,4 +1,4 @@
-import { collection, getDocs, query, where, orderBy } from 'firebase/firestore'
+import { collection, getDocs, onSnapshot, query, where, orderBy } from 'firebase/firestore'
 import { db } from '@/lib/firebase'
 import { SalaryAdvance } from '@/lib/models/types'
 import { callWorkflowApi, newWorkflowRequestId } from '@/lib/services/workflowApi'
@@ -102,4 +102,41 @@ export async function getAllSalaryAdvances(): Promise<SalaryAdvance[]> {
     console.error('Error fetching all salary advances:', error)
     throw error
   }
+}
+
+function salaryFromSnapshot(item: { id: string; data: () => Record<string, unknown> }): SalaryAdvance {
+  return { id: item.id, ...item.data() } as SalaryAdvance
+}
+
+export function subscribeToEmployeeSalaryAdvances(
+  employeeId: string,
+  callback: (requests: SalaryAdvance[]) => void,
+  onError?: (error: Error) => void
+): () => void {
+  const salaryQuery = query(
+    collection(db, SALARY_ADVANCES_COLLECTION),
+    where('employeeId', '==', employeeId),
+    orderBy('createdAt', 'desc')
+  )
+  return onSnapshot(
+    salaryQuery,
+    (snapshot) => callback(snapshot.docs.map(salaryFromSnapshot)),
+    (error) => onError?.(error)
+  )
+}
+
+export function subscribeToPendingSalaryAdvances(
+  callback: (requests: SalaryAdvance[]) => void,
+  onError?: (error: Error) => void
+): () => void {
+  const salaryQuery = query(
+    collection(db, SALARY_ADVANCES_COLLECTION),
+    where('status', '==', 'Pending'),
+    orderBy('createdAt', 'desc')
+  )
+  return onSnapshot(
+    salaryQuery,
+    (snapshot) => callback(snapshot.docs.map(salaryFromSnapshot)),
+    (error) => onError?.(error)
+  )
 }
