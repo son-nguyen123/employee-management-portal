@@ -148,8 +148,10 @@ export async function enablePushNotifications(
   await navigator.serviceWorker.ready
 
   const messaging = await getMessagingInstance()
-  observeRegistrationChanges(messaging, employeeId)
-
+  // Register and persist the first device before attaching the lifecycle
+  // observer. Attaching it earlier makes onRegistered and this initial save
+  // race: both see a missing document, then the second write is evaluated as
+  // an update with a different createdAt and is correctly rejected by Rules.
   await register(messaging, {
     vapidKey,
     serviceWorkerRegistration,
@@ -157,6 +159,7 @@ export async function enablePushNotifications(
 
   const fid = await getId(getInstallations(app))
   await saveDeviceRegistration(employeeId, fid)
+  observeRegistrationChanges(messaging, employeeId)
 
   return { fid, permission }
 }

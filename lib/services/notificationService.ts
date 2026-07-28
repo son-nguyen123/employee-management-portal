@@ -8,12 +8,50 @@ import {
   where,
   orderBy,
   onSnapshot,
-  QueryConstraint,
+  Timestamp,
+  type DocumentData,
+  type Query,
 } from 'firebase/firestore'
 import { db } from '@/lib/firebase'
 import { Notification } from '@/lib/models/types'
 
 const NOTIFICATIONS_COLLECTION = 'notifications'
+
+export type ManagementPendingType = 'schedule' | 'leave' | 'late' | 'salary'
+
+export interface ManagementPendingItem {
+  id: string
+  type: ManagementPendingType
+  employeeId: string
+  employeeName: string
+  employeeCode: string
+  title: string
+  detail: string
+  reason?: string
+  createdAt: Date
+  href: string
+}
+
+function asDate(value: unknown, fallback = new Date(0)): Date {
+  if (value instanceof Date) return value
+  if (value instanceof Timestamp) return value.toDate()
+  if (value && typeof value === 'object' && 'toDate' in value) {
+    const converted = (value as { toDate: () => Date }).toDate()
+    if (converted instanceof Date) return converted
+  }
+  return fallback
+}
+
+function shortDate(value: unknown): string {
+  const date = asDate(value)
+  return date.getTime() ? date.toLocaleDateString('vi-VN') : 'Chưa rõ ngày'
+}
+
+function weekRange(start: Date): string {
+  const end = new Date(start)
+  end.setDate(start.getDate() + 6)
+  return `${start.toLocaleDateString('vi-VN')} – ${end.toLocaleDateString('vi-VN')}`
+}
 
 /**
  * Get all notifications for an employee
@@ -136,13 +174,25 @@ export function subscribeToEmployeeNotifications(
 export function subscribeToManagementPendingCount(
   callback: (count: number) => void
 ): () => void {
-  const counts = {
-    schedules: 0,
-    leaveRequests: 0,
-    lateRequests: 0,
-    salaryAdvances: 0,
+  return subscribeToManagementPendingItems((items) => callback(items.length))
+}
+
+/**
+ * Build the manager inbox directly from workflow records. This is intentionally
+ * the same source used by the badge so the number and the visible cards cannot
+ * drift apart when older records do not have a notification document.
+ */
+export function subscribeToManagementPendingItems(
+  callback: (items: ManagementPendingItem[]) => void,
+  onError?: (error: Error) => void
+): () => void {
+  const state: Record<string, Array<{ id: string; data: Record<string, unknown> }>> = {
+    employees: [],
+    schedules: [],
+    leaveRequests: [],
+    lateRequests: [],
+    salaryAdvances: [],
   }
-  const publish = () => callback(Object.values(counts).reduce((total, value) => total + value, 0))
 
   const now = new Date()
   const daysUntilNextMonday = ((8 - now.getDay()) % 7) || 7
@@ -153,39 +203,136 @@ export function subscribeToManagementPendingCount(
   nextSunday.setDate(nextMonday.getDate() + 6)
   nextSunday.setHours(23, 59, 59, 999)
 
-  const scheduleQuery = query(
-    collection(db, 'workSchedules'),
-    where('status', 'in', ['Pending', 'Registered'])
-  )
+  const publish = () => {
+    const employees = new Map(
+      state.employees.map(({ id, data }) => [
+        id,
+        {
+          name: typeof data.fullName === 'string' ? data.fullName : 'Nhân viên',
+          code: typeof data.employeeCode === 'string' ? data.employeeCode : '',
+        },
+      ])
+    )
+    const identity = (employeeId: string) => employees.get(employeeId) || {
+      name: 'Nhân viên',
+      code: employeeId.slice(0, 8),
+    }
+    const items: ManagementPendingItem[] = []
+
+    const scheduleBatches = new Map<string, Array<{ id: string; data: Record<string, unknown> }>>()
+    state.schedules.forEach((row) => {
+      const date = asDate(row.data.date)
+      if (!date.getTime() || date < nextMonday || date > nextSunday) return
+      const employeeId = String(row.data.employeeId || '')
+      const key = String(row.data.batchKey || `${employeeId}-${nextMonday.toISOString().slice(0, 10)}`)
+      scheduleBatches.set(key, [...(scheduleBatches.get(key) || []), row])
+    })
+    scheduleBatches.forEach((rows, batchKey) => {
+      const employeeId = String(rows[0].data.employeeId || '')
+      const employee = identity(employeeId)
+      const createdAt = rows.reduce(
+        (latest, row) => {
+          const value = asDate(row.data.updatedAt || row.data.createdAt)
+          return value > latest ? value : latest
+        },
+        new Date(0)
+      )
+      items.push({
+        id: `schedule-${batchKey}`,
+        type: 'schedule',
+        employeeId,
+        employeeName: employee.name,
+        employeeCode: employee.code,
+        title: 'Lịch làm chờ xác nhận',
+        detail: `${rows.length} ca · tuần ${weekRange(nextMonday)}`,
+        createdAt,
+        href: '/admin/dashboard#schedules',
+      })
+    })
+
+    state.leaveRequests.forEach(({ id, data }) => {
+      const employeeId = String(data.employeeId || '')
+      const employee = identity(employeeId)
+      const endDate = data.endDate ? ` – ${shortDate(data.endDate)}` : ''
+      items.push({
+        id: `leave-${id}`,
+        type: 'leave',
+        employeeId,
+        employeeName: employee.name,
+        employeeCode: employee.code,
+        title: 'Yêu cầu xin nghỉ',
+        detail: `${shortDate(data.leaveDate)}${endDate}`,
+        reason: typeof data.reason === 'string' && data.reason.trim() ? data.reason : 'Không ghi lý do',
+        createdAt: asDate(data.updatedAt || data.createdAt),
+        href: '/admin/requests',
+      })
+    })
+
+    state.lateRequests.forEach(({ id, data }) => {
+      const employeeId = String(data.employeeId || '')
+      const employee = identity(employeeId)
+      const minutes = typeof data.lateMinutes === 'number' ? `${data.lateMinutes} phút` : 'Chưa rõ số phút'
+      items.push({
+        id: `late-${id}`,
+        type: 'late',
+        employeeId,
+        employeeName: employee.name,
+        employeeCode: employee.code,
+        title: 'Yêu cầu đi trễ',
+        detail: `${shortDate(data.date)} · ${minutes}`,
+        reason: typeof data.reason === 'string' && data.reason.trim() ? data.reason : 'Không ghi lý do',
+        createdAt: asDate(data.updatedAt || data.createdAt),
+        href: '/admin/requests',
+      })
+    })
+
+    state.salaryAdvances.forEach(({ id, data }) => {
+      const employeeId = String(data.employeeId || '')
+      const employee = identity(employeeId)
+      const amount = typeof data.amount === 'number' ? data.amount : Number(data.amount || 0)
+      items.push({
+        id: `salary-${id}`,
+        type: 'salary',
+        employeeId,
+        employeeName: employee.name,
+        employeeCode: employee.code,
+        title: 'Yêu cầu ứng lương',
+        detail: `${amount.toLocaleString('vi-VN')}đ`,
+        reason: typeof data.reason === 'string' && data.reason.trim() ? data.reason : 'Không ghi lý do',
+        createdAt: asDate(data.updatedAt || data.createdAt),
+        href: '/admin/requests',
+      })
+    })
+
+    callback(items.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime()))
+  }
+
+  const watch = (key: keyof typeof state, source: Query<DocumentData>) =>
+    onSnapshot(
+      source,
+      (snapshot) => {
+        state[key] = snapshot.docs.map((item) => ({
+          id: item.id,
+          data: item.data() as Record<string, unknown>,
+        }))
+        publish()
+      },
+      (error) => onError?.(error)
+    )
+
   const pendingQuery = (collectionName: string) => query(
     collection(db, collectionName),
     where('status', '==', 'Pending')
   )
-
   const unsubscribes = [
-    onSnapshot(scheduleQuery, (snapshot) => {
-      const batches = new Set<string>()
-      snapshot.docs.forEach((item) => {
-        const data = item.data()
-        const date = data.date?.toDate?.()
-        if (!(date instanceof Date) || date < nextMonday || date > nextSunday) return
-        batches.add(data.batchKey || `${data.employeeId}-${nextMonday.toISOString().slice(0, 10)}`)
-      })
-      counts.schedules = batches.size
-      publish()
-    }),
-    onSnapshot(pendingQuery('leaveRequests'), (snapshot) => {
-      counts.leaveRequests = snapshot.size
-      publish()
-    }),
-    onSnapshot(pendingQuery('lateRequests'), (snapshot) => {
-      counts.lateRequests = snapshot.size
-      publish()
-    }),
-    onSnapshot(pendingQuery('salaryAdvances'), (snapshot) => {
-      counts.salaryAdvances = snapshot.size
-      publish()
-    }),
+    watch('employees', query(collection(db, 'employees'))),
+    watch('schedules', query(
+      collection(db, 'workSchedules'),
+      where('status', 'in', ['Pending', 'Registered'])
+    )),
+    watch('leaveRequests', pendingQuery('leaveRequests')),
+    watch('lateRequests', pendingQuery('lateRequests')),
+    watch('salaryAdvances', pendingQuery('salaryAdvances')),
   ]
 
   return () => unsubscribes.forEach((unsubscribe) => unsubscribe())
