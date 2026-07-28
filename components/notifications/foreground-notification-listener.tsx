@@ -28,7 +28,7 @@ export function ForegroundNotificationListener() {
         title:
           payload.notification?.title ||
           payload.data?.title ||
-          'Cổng nhân viên',
+          'Trí Candy',
         body:
           payload.notification?.body ||
           payload.data?.body ||

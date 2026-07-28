@@ -149,6 +149,39 @@ function managerNotification(
   }
 }
 
+async function sendManagerPushes(params: {
+  managerIds: string[]
+  sourceKey: string
+  title: string
+  body: string
+  link: string
+  source: string
+  sourceId: string
+}) {
+  return Promise.all(params.managerIds.map(async (managerId) => {
+    const dispatchId = `manager-${managerId}-${params.sourceKey}`
+    await adminDb.collection('pushDispatches').doc(dispatchId).set({
+      source: params.source,
+      sourceId: params.sourceId,
+      employeeId: managerId,
+      status: 'pending',
+      state: 'queued',
+      createdAt: FieldValue.serverTimestamp(),
+      updatedAt: FieldValue.serverTimestamp(),
+    }, { merge: true })
+    return sendEmployeePush({
+      employeeId: managerId,
+      dispatchId,
+      title: params.title,
+      body: params.body,
+      link: params.link,
+      source: params.source,
+      sourceId: params.sourceId,
+      status: 'pending',
+    })
+  }))
+}
+
 const managerRequestCopy = {
   leave: { title: 'Yêu cầu nghỉ chờ xử lý', message: 'Một nhân viên vừa gửi yêu cầu xin nghỉ.' },
   late: { title: 'Thông báo đi trễ chờ xử lý', message: 'Một nhân viên vừa gửi thông báo đi trễ.' },
@@ -292,6 +325,16 @@ export async function submitSchedules(actor: RequestActor, raw: unknown) {
       penaltyId: shouldPenalize ? penaltyRef.id : null,
       createdAt: now,
     })
+  })
+
+  await sendManagerPushes({
+    managerIds,
+    sourceKey: `schedule-${batchKey}`,
+    title: 'Bảng lịch mới chờ xác nhận',
+    body: 'Một nhân viên vừa gửi bảng lịch tuần. Mở Trí Candy để xử lý.',
+    link: '/admin/dashboard',
+    source: 'workSchedules',
+    sourceId: scheduleRefs[0].id,
   })
 
   if (shouldPenalize && workflowPolicy.scheduleLatePenalty > 0) {
@@ -575,6 +618,16 @@ export async function submitLeave(actor: RequestActor, raw: unknown) {
     })
   })
 
+  await sendManagerPushes({
+    managerIds,
+    sourceKey: `leave-${leaveRef.id}`,
+    title: managerRequestCopy.leave.title,
+    body: managerRequestCopy.leave.message,
+    link: '/admin/requests',
+    source: 'leaveRequests',
+    sourceId: leaveRef.id,
+  })
+
   if (isLate && workflowPolicy.leaveLatePenalty > 0) {
     await sendPenaltyPush({
       employeeId: actor.uid,
@@ -676,6 +729,16 @@ export async function submitLate(actor: RequestActor, raw: unknown) {
     })
   })
 
+  await sendManagerPushes({
+    managerIds,
+    sourceKey: `late-${lateRef.id}`,
+    title: managerRequestCopy.late.title,
+    body: managerRequestCopy.late.message,
+    link: '/admin/requests',
+    source: 'lateRequests',
+    sourceId: lateRef.id,
+  })
+
   if (computedPenalty > 0) {
     await sendPenaltyPush({
       employeeId: actor.uid,
@@ -723,6 +786,16 @@ export async function submitSalaryAdvance(actor: RequestActor, raw: unknown) {
         managerNotification(managerId, managerRequestCopy.salary.title, managerRequestCopy.salary.message)
       )
     })
+  })
+
+  await sendManagerPushes({
+    managerIds,
+    sourceKey: `salary-${advanceRef.id}`,
+    title: managerRequestCopy.salary.title,
+    body: managerRequestCopy.salary.message,
+    link: '/admin/requests',
+    source: 'salaryAdvances',
+    sourceId: advanceRef.id,
   })
 
   return { id: advanceRef.id }

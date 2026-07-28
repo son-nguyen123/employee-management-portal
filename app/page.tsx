@@ -156,7 +156,7 @@ export default function Page() {
                 {isAdmin ? <ShieldCheck className="h-5 w-5" /> : <UserRound className="h-5 w-5" />}
               </div>
               <div>
-                <p className="text-xs font-semibold text-indigo-300">{isAdmin ? 'Tài khoản quản lý' : 'Cổng nhân viên'}</p>
+                <p className="text-xs font-semibold text-indigo-300">{isAdmin ? 'Tài khoản quản lý · Trí Candy' : 'Trí Candy'}</p>
                 <h1 className="max-w-[190px] truncate text-lg font-bold">{displayName}</h1>
               </div>
             </div>

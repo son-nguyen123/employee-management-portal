@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import Link from 'next/link'
+import Image from 'next/image'
 import { useRouter } from 'next/navigation'
 import { AlertCircle, Loader2, Lock, Mail } from 'lucide-react'
 import { signInWithGoogle, signUp } from '@/lib/services/authService'
@@ -71,9 +72,10 @@ export function SignupForm() {
     <AuthShell eyebrow="Tạo tài khoản mới">
       <Card className="w-full rounded-[2rem] border-0 bg-white shadow-xl shadow-slate-900/10 sm:border sm:border-slate-200 dark:bg-slate-900">
         <CardHeader className="text-center">
-          <div className="mx-auto mb-3 grid h-12 w-12 place-items-center rounded-2xl bg-indigo-600 text-xl font-black text-white">NS</div>
+          <Image src="/tricandy-logo.png" alt="Logo Trí Candy" width={56} height={56} className="mx-auto mb-3 h-14 w-14 rounded-2xl object-cover shadow-md" priority />
+          <p className="text-xs font-black uppercase tracking-[.18em] text-pink-500">Trí Candy</p>
           <CardTitle className="text-2xl">Tạo tài khoản</CardTitle>
-          <CardDescription>Bắt đầu sử dụng cổng nhân viên</CardDescription>
+          <CardDescription>Bắt đầu sử dụng cổng nhân viên Trí Candy</CardDescription>
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-4">

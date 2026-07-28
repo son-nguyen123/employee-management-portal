@@ -23,7 +23,7 @@ messaging.onBackgroundMessage((payload) => {
   if (payload.notification) return;
 
   const data = payload.data || {};
-  const title = data.title || 'Cổng nhân viên';
+  const title = data.title || 'Trí Candy';
   const options = {
     body: data.body || data.message || 'Bạn có một thông báo mới.',
     icon: '/icon.svg',

@@ -3,6 +3,7 @@
 import React, { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
+import Image from 'next/image'
 import { Mail, Lock, AlertCircle, Loader2 } from 'lucide-react'
 import { signIn, signInWithGoogle } from '@/lib/services/authService'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui/card'
@@ -59,10 +60,9 @@ export function LoginForm() {
       <Card className="w-full rounded-[2rem] border-0 bg-white shadow-xl shadow-slate-900/10 sm:border sm:border-slate-200 dark:bg-slate-900">
         <CardHeader className="space-y-2 text-center">
           <div className="flex justify-center mb-4">
-            <div className="w-12 h-12 rounded-full bg-gradient-to-br from-primary to-primary/60 flex items-center justify-center">
-              <span className="text-xl font-bold text-primary-foreground">NS</span>
-            </div>
+            <Image src="/tricandy-logo.png" alt="Logo Trí Candy" width={56} height={56} className="h-14 w-14 rounded-2xl object-cover shadow-md" priority />
           </div>
+          <p className="text-xs font-black uppercase tracking-[.18em] text-pink-500">Trí Candy</p>
           <CardTitle className="text-2xl">Chào mừng trở lại</CardTitle>
           <CardDescription>
             Đăng nhập để tiếp tục quản lý công việc

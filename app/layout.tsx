@@ -9,10 +9,10 @@ import { PersistentBottomNav } from '@/components/layout/persistent-bottom-nav'
 import './globals.css'
 
 export const metadata: Metadata = {
-  title: 'Cổng nhân viên',
-  description: 'Đăng ký lịch làm, gửi yêu cầu và theo dõi công việc dành cho nhân viên.',
-  applicationName: 'Cổng nhân viên',
-  keywords: ['nhân viên', 'lịch làm', 'quản lý', 'xin nghỉ', 'ứng lương'],
+  title: 'Trí Candy',
+  description: 'Trí Candy — đăng ký lịch làm, gửi yêu cầu và theo dõi công việc dành cho nhân viên.',
+  applicationName: 'Trí Candy',
+  keywords: ['Trí Candy', 'nhân viên', 'lịch làm', 'quản lý', 'xin nghỉ', 'ứng lương'],
   icons: {
     icon: [
       {
@@ -23,10 +23,7 @@ export const metadata: Metadata = {
         url: '/icon-dark-32x32.png',
         media: '(prefers-color-scheme: dark)',
       },
-      {
-        url: '/icon.svg',
-        type: 'image/svg+xml',
-      },
+      { url: '/tricandy-logo.png', type: 'image/png', sizes: '512x512' },
     ],
     apple: '/apple-icon.png',
   },
