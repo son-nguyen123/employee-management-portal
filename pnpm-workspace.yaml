@@ -8,3 +8,4 @@ allowBuilds:
   sharp: true
 overrides:
   hono: 4.12.25
+  jwks-rsa: 3.2.2

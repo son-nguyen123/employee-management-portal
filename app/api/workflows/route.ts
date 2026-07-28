@@ -31,17 +31,47 @@ function safeServerError(error: unknown): { status: number; message: string } {
     }
   }
 
-  const credentialError =
-    details.includes('Firebase Admin private key không hợp lệ') ||
-    details.includes('Failed to parse private key') ||
-    details.includes('Invalid PEM formatted message') ||
-    details.includes('app/invalid-credential') ||
-    details.includes('Could not load the default credentials')
+  const normalizedDetails = details.toLowerCase()
+  const credentialError = [
+    'firebase admin private key không hợp lệ',
+    'failed to parse private key',
+    'invalid pem formatted message',
+    'app/invalid-credential',
+    'could not load the default credentials',
+    'invalid_grant',
+    'invalid jwt signature',
+    'failed to fetch a valid google oauth2 access token',
+    'credential implementation provided to initializeapp',
+  ].some((fragment) => normalizedDetails.includes(fragment))
 
   if (credentialError) {
     return {
       status: 503,
-      message: 'Thông tin Firebase Admin trên máy chủ không hợp lệ. Hãy kiểm tra lại service account rồi redeploy Vercel.',
+      message: 'Firebase Admin không xác thực được. Project ID, client email và private key phải lấy cùng một file service account; sau đó redeploy Vercel.',
+    }
+  }
+
+  const firestorePermissionError =
+    normalizedDetails.includes('permission_denied') ||
+    normalizedDetails.includes('permission denied') ||
+    normalizedDetails.includes('missing or insufficient permissions')
+
+  if (firestorePermissionError) {
+    return {
+      status: 503,
+      message: 'Service account của backend chưa có quyền truy cập Firestore trong project này.',
+    }
+  }
+
+  const firestoreTargetError =
+    normalizedDetails.includes('database (default) does not exist') ||
+    normalizedDetails.includes('the database (default) does not exist') ||
+    normalizedDetails.includes('project was not found')
+
+  if (firestoreTargetError) {
+    return {
+      status: 503,
+      message: 'Firebase Admin đang trỏ sai project hoặc không tìm thấy Firestore database (default).',
     }
   }
 
