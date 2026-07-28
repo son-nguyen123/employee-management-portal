@@ -1,17 +1,7 @@
-import {
-  collection,
-  doc,
-  addDoc,
-  updateDoc,
-  deleteDoc,
-  getDocs,
-  query,
-  where,
-  orderBy,
-  Timestamp,
-} from 'firebase/firestore'
+import { collection, getDocs, query, where, orderBy } from 'firebase/firestore'
 import { db } from '@/lib/firebase'
 import { WorkSchedule } from '@/lib/models/types'
+import { callWorkflowApi, newWorkflowRequestId } from '@/lib/services/workflowApi'
 
 const SCHEDULES_COLLECTION = 'workSchedules'
 
@@ -19,19 +9,23 @@ const SCHEDULES_COLLECTION = 'workSchedules'
  * Create a new work schedule
  */
 export async function createWorkSchedule(scheduleData: Omit<WorkSchedule, 'id' | 'createdAt' | 'updatedAt'>): Promise<string> {
-  try {
-    const schedule = {
-      ...scheduleData,
-      createdAt: Timestamp.now(),
-      updatedAt: Timestamp.now(),
-    }
+  const result = await submitWorkSchedules([scheduleData])
+  return result.ids[0]
+}
 
-    const docRef = await addDoc(collection(db, SCHEDULES_COLLECTION), schedule)
-    return docRef.id
-  } catch (error) {
-    console.error('Error creating schedule:', error)
-    throw error
-  }
+export async function submitWorkSchedules(
+  schedules: Array<Omit<WorkSchedule, 'id' | 'createdAt' | 'updatedAt'>>
+): Promise<{ ids: string[]; penalty: number }> {
+  return callWorkflowApi('submitSchedules', {
+    requestId: newWorkflowRequestId(),
+    schedules: schedules.map((schedule) => ({
+      date: schedule.date instanceof Date
+        ? schedule.date.toISOString()
+        : schedule.date.toDate().toISOString(),
+      shift: schedule.shift,
+      note: schedule.note,
+    })),
+  })
 }
 
 /**
@@ -88,28 +82,27 @@ export async function getSchedulesByDateRange(
  * Update work schedule
  */
 export async function updateWorkSchedule(scheduleId: string, updates: Partial<Omit<WorkSchedule, 'id' | 'createdAt'>>): Promise<void> {
-  try {
-    const docRef = doc(db, SCHEDULES_COLLECTION, scheduleId)
-    await updateDoc(docRef, {
-      ...updates,
-      updatedAt: Timestamp.now(),
-    })
-  } catch (error) {
-    console.error('Error updating schedule:', error)
-    throw error
+  if (!updates.status || !['Approved', 'Rejected', 'ChangesRequested'].includes(updates.status)) {
+    throw new Error('Cập nhật lịch phải đi qua backend nghiệp vụ.')
   }
+  await reviewWorkSchedule(
+    scheduleId,
+    updates.status as 'Approved' | 'Rejected' | 'ChangesRequested',
+    updates.reviewNote || ''
+  )
 }
 
-/**
- * Delete work schedule
- */
-export async function deleteWorkSchedule(scheduleId: string): Promise<void> {
-  try {
-    await deleteDoc(doc(db, SCHEDULES_COLLECTION, scheduleId))
-  } catch (error) {
-    console.error('Error deleting schedule:', error)
-    throw error
-  }
+export async function reviewWorkSchedule(
+  scheduleId: string,
+  status: 'Approved' | 'Rejected' | 'ChangesRequested',
+  reviewNote = ''
+): Promise<void> {
+  await callWorkflowApi('reviewRequest', {
+    resource: 'schedule',
+    id: scheduleId,
+    status,
+    note: reviewNote,
+  })
 }
 
 /**

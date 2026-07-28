@@ -1,0 +1,37 @@
+import { auth } from '@/lib/firebase'
+
+type WorkflowAction =
+  | 'submitSchedules'
+  | 'submitLeave'
+  | 'submitLate'
+  | 'submitSalaryAdvance'
+  | 'reviewRequest'
+
+export async function callWorkflowApi<T>(
+  action: WorkflowAction,
+  payload: Record<string, unknown>
+): Promise<T> {
+  const user = auth.currentUser
+  if (!user) throw new Error('Bạn cần đăng nhập để thực hiện thao tác này.')
+  const idToken = await user.getIdToken()
+  const response = await fetch('/api/workflows', {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      authorization: `Bearer ${idToken}`,
+    },
+    body: JSON.stringify({ action, ...payload }),
+  })
+  const data = await response.json().catch(() => null) as
+    | { ok: true; result: T }
+    | { ok: false; error: string }
+    | null
+  if (!response.ok || !data?.ok) {
+    throw new Error(data && 'error' in data ? data.error : 'Không thể xử lý yêu cầu.')
+  }
+  return data.result
+}
+
+export function newWorkflowRequestId(): string {
+  return crypto.randomUUID()
+}

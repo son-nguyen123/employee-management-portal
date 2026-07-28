@@ -15,7 +15,14 @@ export interface Employee {
 }
 
 // Work Schedule Document
-export type ScheduleStatus = 'Registered' | 'Approved' | 'Rejected'
+export type ScheduleStatus =
+  | 'Registered'
+  | 'Draft'
+  | 'Pending'
+  | 'ChangesRequested'
+  | 'Approved'
+  | 'Rejected'
+  | 'Cancelled'
 
 export interface WorkSchedule {
   id?: string
@@ -24,6 +31,10 @@ export interface WorkSchedule {
   shift: 'Morning' | 'Afternoon' | 'Evening'
   status: ScheduleStatus
   note: string
+  reviewNote?: string
+  reviewedBy?: string
+  reviewedAt?: Timestamp | Date
+  lockedAt?: Timestamp | Date | null
   createdAt: Timestamp | Date
   updatedAt: Timestamp | Date
 }
@@ -37,10 +48,15 @@ export interface LeaveRequest {
   employeeId: string
   workScheduleId?: string
   leaveDate: Timestamp | Date
+  endDate?: Timestamp | Date
+  duration?: 'short' | 'long'
   leaveType: LeaveType
   reason: string
   status: LeaveStatus
   approvedBy?: string
+  reviewNote?: string
+  reviewedBy?: string
+  reviewedAt?: Timestamp | Date
   createdAt: Timestamp | Date
   updatedAt: Timestamp | Date
 }
@@ -56,8 +72,12 @@ export interface LateRequest {
   shift: 'Morning' | 'Afternoon' | 'Evening'
   lateMinutes: number
   reason: string
+  expectedArrival?: string
   status: LateStatus
   approvedBy?: string
+  reviewNote?: string
+  reviewedBy?: string
+  reviewedAt?: Timestamp | Date
   createdAt: Timestamp | Date
   updatedAt: Timestamp | Date
 }
@@ -72,6 +92,9 @@ export interface SalaryAdvance {
   reason: string
   status: AdvanceStatus
   approvedBy?: string
+  reviewNote?: string
+  reviewedBy?: string
+  reviewedAt?: Timestamp | Date
   createdAt: Timestamp | Date
   updatedAt: Timestamp | Date
 }
@@ -88,6 +111,8 @@ export interface Penalty {
   amount: number
   penaltyDate: Timestamp | Date
   createdBy: string
+  sourceType?: string
+  sourceId?: string
   createdAt: Timestamp | Date
 }
 

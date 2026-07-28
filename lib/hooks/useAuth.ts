@@ -10,6 +10,7 @@ import {
   DEMO_USER,
   DEMO_EMPLOYEE,
   disablePreviewMode,
+  getPreviewRole,
   isPreviewModeEnabled,
 } from '@/lib/config/demo'
 
@@ -42,13 +43,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     // Demo mode - use mock data
     if (demoMode) {
+      const previewRole = getPreviewRole()
       const mockAuthUser: AuthUser = {
-        uid: DEMO_USER.uid,
-        email: DEMO_USER.email,
-        displayName: DEMO_USER.displayName,
+        uid: previewRole === 'admin' ? 'demo-admin-001' : DEMO_USER.uid,
+        email: previewRole === 'admin' ? 'admin@example.com' : DEMO_USER.email,
+        displayName: previewRole === 'admin' ? 'Quản lý Minh Sơn' : DEMO_USER.displayName,
       }
       setAuthUser(mockAuthUser)
-      setEmployee(DEMO_EMPLOYEE as Employee)
+      setEmployee({
+        ...DEMO_EMPLOYEE,
+        uid: mockAuthUser.uid,
+        email: mockAuthUser.email,
+        fullName: mockAuthUser.displayName,
+        employeeCode: previewRole === 'admin' ? 'QL-001' : DEMO_EMPLOYEE.employeeCode,
+        role: previewRole,
+      } as Employee)
       setIsLoading(false)
       return
     }

@@ -2,51 +2,53 @@
 
 import { useEffect, useState } from 'react'
 import { usePathname } from 'next/navigation'
+import { ShieldCheck, UserRound } from 'lucide-react'
 import { enablePreviewMode } from '@/lib/config/demo'
-import { ChevronRight } from 'lucide-react'
 
 export function SkipLoginFAB() {
   const pathname = usePathname()
-  const [showButton, setShowButton] = useState(false)
+  const [isVisible, setIsVisible] = useState(false)
 
   useEffect(() => {
-    setShowButton(
+    setIsVisible(
       process.env.NODE_ENV === 'development' &&
         (pathname === '/auth/login' || pathname === '/auth/signup')
     )
   }, [pathname])
 
-  if (!showButton) return null
+  if (!isVisible) return null
 
-  const handleSkipLogin = () => {
-    enablePreviewMode()
+  const enterPreview = (role: 'admin' | 'employee') => {
+    enablePreviewMode(role)
     window.location.assign('/')
   }
 
   return (
-    <button
-      onClick={handleSkipLogin}
-      className="fixed bottom-5 right-5 z-50 group"
-      aria-label="Bỏ qua đăng nhập để xem bản mẫu"
-      title="Bỏ qua đăng nhập để xem bản mẫu"
-    >
-      <div className="relative">
-        {/* Animated ring background */}
-        <div className="absolute inset-0 rounded-full bg-primary/10 group-hover:bg-primary/20 transition-colors" />
-        
-        {/* Main button */}
-        <div className="relative flex items-center justify-center w-14 h-14 rounded-full bg-primary text-primary-foreground shadow-lg hover:shadow-xl transition-shadow group-hover:scale-110">
-          <ChevronRight className="w-6 h-6" />
-        </div>
-
-        {/* Tooltip */}
-        <div className="absolute right-full mr-3 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
-          <div className="bg-slate-900 dark:bg-slate-100 text-white dark:text-slate-900 text-sm font-medium px-3 py-2 rounded-lg whitespace-nowrap">
-            Bỏ qua đăng nhập
-            <div className="absolute left-full w-2 h-2 bg-slate-900 dark:bg-slate-100 transform rotate-45 top-1/2 -translate-y-1/2" />
-          </div>
-        </div>
+    <aside className="fixed inset-x-3 bottom-3 z-50 mx-auto max-w-sm rounded-3xl border border-white/80 bg-white/95 p-3 shadow-2xl shadow-indigo-950/15 backdrop-blur-xl dark:border-white/10 dark:bg-slate-900/95">
+      <div className="mb-2 px-1">
+        <p className="text-[11px] font-bold uppercase tracking-[0.16em] text-indigo-600">
+          Chế độ phát triển
+        </p>
+        <p className="text-xs text-muted-foreground">Truy cập nhanh để kiểm tra giao diện</p>
       </div>
-    </button>
+      <div className="grid grid-cols-2 gap-2">
+        <button
+          type="button"
+          onClick={() => enterPreview('admin')}
+          className="flex min-h-12 items-center justify-center gap-2 rounded-2xl bg-slate-900 px-2 text-sm font-semibold text-white transition active:scale-[0.98] dark:bg-white dark:text-slate-900"
+        >
+          <ShieldCheck className="h-4 w-4" />
+          Vai quản lý
+        </button>
+        <button
+          type="button"
+          onClick={() => enterPreview('employee')}
+          className="flex min-h-12 items-center justify-center gap-2 rounded-2xl bg-indigo-600 px-2 text-sm font-semibold text-white transition active:scale-[0.98]"
+        >
+          <UserRound className="h-4 w-4" />
+          Vai nhân viên
+        </button>
+      </div>
+    </aside>
   )
 }

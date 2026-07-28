@@ -1,6 +1,5 @@
 import {
   collection,
-  addDoc,
   updateDoc,
   deleteDoc,
   doc,
@@ -8,7 +7,6 @@ import {
   query,
   where,
   orderBy,
-  Timestamp,
   onSnapshot,
   QueryConstraint,
 } from 'firebase/firestore'
@@ -16,24 +14,6 @@ import { db } from '@/lib/firebase'
 import { Notification } from '@/lib/models/types'
 
 const NOTIFICATIONS_COLLECTION = 'notifications'
-
-/**
- * Create a new notification
- */
-export async function createNotification(notificationData: Omit<Notification, 'id' | 'createdAt'>): Promise<string> {
-  try {
-    const notification = {
-      ...notificationData,
-      createdAt: Timestamp.now(),
-    }
-
-    const docRef = await addDoc(collection(db, NOTIFICATIONS_COLLECTION), notification)
-    return docRef.id
-  } catch (error) {
-    console.error('Error creating notification:', error)
-    throw error
-  }
-}
 
 /**
  * Get all notifications for an employee

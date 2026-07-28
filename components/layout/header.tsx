@@ -28,21 +28,21 @@ const Header = React.forwardRef<HTMLDivElement, HeaderProps>(
     return (
       <div
         ref={ref}
-        className={`sticky top-0 z-40 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 border-b border-border/40 ${className}`}
+        className={`sticky top-0 z-40 border-b border-slate-200/70 bg-white/90 backdrop-blur-xl dark:border-white/10 dark:bg-slate-950/90 ${className}`}
       >
-        <div className="flex items-center justify-between p-4">
+        <div className="mx-auto flex max-w-2xl items-center justify-between px-3 py-3 sm:px-5">
           <div className="flex items-center gap-3 flex-1">
             {showBackButton && (
               <button
                 onClick={() => router.back()}
-                className="p-2 hover:bg-muted rounded-lg transition-colors duration-200"
-                aria-label="Go back"
+                className="grid h-11 w-11 place-items-center rounded-2xl bg-slate-100 transition-colors active:bg-slate-200 dark:bg-slate-800"
+                aria-label="Quay lại"
               >
                 <ChevronLeft className="w-5 h-5" />
               </button>
             )}
             <div>
-              <h1 className="text-lg font-semibold leading-none">{title}</h1>
+              <h1 className="text-lg font-bold leading-tight tracking-tight">{title}</h1>
               {subtitle && (
                 <p className="text-sm text-muted-foreground mt-1">{subtitle}</p>
               )}

@@ -1,259 +1,275 @@
 'use client'
 
-import React, { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
+import { CalendarDays, Check, Clock3, Loader2, Save, Send, SlidersHorizontal, X } from 'lucide-react'
 import { useAuth } from '@/lib/hooks/useAuth'
-import { createWorkSchedule, getEmployeeSchedules } from '@/lib/services/scheduleService'
-import { mockSchedules } from '@/lib/services/mockData'
+import { submitWorkSchedules } from '@/lib/services/scheduleService'
+import { addPreviewSchedules } from '@/lib/services/previewWorkflow'
 import { Header } from '@/components/layout/header'
-import { PageContainer } from '@/components/layout/page-container'
-import { Card } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
-import { SkeletonLoader } from '@/components/ui/skeleton-loader'
-import { EmptyState } from '@/components/ui/empty-state'
-import { Calendar, Check, X, Clock } from 'lucide-react'
 
-interface ScheduleDay {
-  day: string
-  date: Date
-  shift: 'Morning' | 'Afternoon' | 'Evening' | ''
-  isSelected: boolean
-  status?: 'Approved' | 'Rejected' | 'Pending'
-}
+type Shift = 'Morning' | 'Afternoon' | 'Evening' | 'Custom'
+type DayItem = { key: string; name: string; shortName: string; date: Date }
+type CustomShift = { start: string; end: string; note: string; request: string }
+
+const shiftOptions: { value: Shift; label: string; time: string }[] = [
+  { value: 'Morning', label: 'Ca sáng', time: '06:00–14:00' },
+  { value: 'Afternoon', label: 'Ca chiều', time: '14:00–22:00' },
+  { value: 'Evening', label: 'Ca tối', time: '22:00–06:00' },
+  { value: 'Custom', label: 'Tùy chỉnh', time: 'Tự chọn giờ' },
+]
 
 export default function SchedulePage() {
   const router = useRouter()
-  const { authUser, isLoading, isPreviewMode } = useAuth()
-  const [loading, setLoading] = useState(true)
-  const [schedules, setSchedules] = useState<ScheduleDay[]>([])
-  const [selectedDays, setSelectedDays] = useState<{ [key: string]: string }>({})
+  const { authUser, isPreviewMode } = useAuth()
+  const [selected, setSelected] = useState<Record<string, Shift[]>>({})
+  const [customFor, setCustomFor] = useState<string | null>(null)
+  const [customData, setCustomData] = useState<Record<string, CustomShift>>({})
   const [submitting, setSubmitting] = useState(false)
-  const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
+  const [message, setMessage] = useState<string | null>(null)
 
-  // Initialize week starting Monday
-  useEffect(() => {
-    const today = new Date()
-    const monday = new Date(today)
-    monday.setDate(today.getDate() - today.getDay() + 1)
-
-    const weekDays: ScheduleDay[] = []
-    for (let i = 0; i < 7; i++) {
+  const days = useMemo<DayItem[]>(() => {
+    const now = new Date()
+    const currentDay = now.getDay()
+    const daysUntilNextMonday = ((8 - currentDay) % 7) || 7
+    const monday = new Date(now)
+    monday.setHours(0, 0, 0, 0)
+    monday.setDate(now.getDate() + daysUntilNextMonday)
+    const names = ['Thứ Hai', 'Thứ Ba', 'Thứ Tư', 'Thứ Năm', 'Thứ Sáu', 'Thứ Bảy', 'Chủ Nhật']
+    const shortNames = ['T2', 'T3', 'T4', 'T5', 'T6', 'T7', 'CN']
+    return names.map((name, index) => {
       const date = new Date(monday)
-      date.setDate(monday.getDate() + i)
-      weekDays.push({
-        day: ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'][i],
-        date,
-        shift: '',
-        isSelected: false,
-      })
-    }
-    setSchedules(weekDays)
+      date.setDate(monday.getDate() + index)
+      return { key: date.toISOString().slice(0, 10), name, shortName: shortNames[index], date }
+    })
   }, [])
 
-  // Load existing schedules from Firebase or mock data
   useEffect(() => {
-    if (!authUser) return
-
-    const loadSchedules = async () => {
-      try {
-        setLoading(true)
-        let employeeSchedules = isPreviewMode ? mockSchedules : await getEmployeeSchedules(authUser.uid)
-
-        // Map Firebase data to UI
-        const scheduleMap: { [key: string]: ScheduleDay } = {}
-        schedules.forEach((day) => {
-          scheduleMap[day.day] = day
-        })
-
-        employeeSchedules.forEach((schedule: any) => {
-          const scheduleDate = schedule.date instanceof Date ? schedule.date : schedule.date.toDate()
-          const dayName = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'][
-            scheduleDate.getDay()
-          ]
-
-          if (scheduleMap[dayName]) {
-            scheduleMap[dayName].shift = schedule.shift
-            scheduleMap[dayName].status = schedule.status
-            scheduleMap[dayName].isSelected = true
-            setSelectedDays((prev) => ({ ...prev, [dayName]: schedule.shift }))
-          }
-        })
-
-        setSchedules(Object.values(scheduleMap))
-      } catch (error) {
-        console.error('Error loading schedules:', error)
-        setMessage({ type: 'error', text: 'Failed to load schedules' })
-      } finally {
-        setLoading(false)
-      }
+    const savedDraft = window.sessionStorage.getItem('schedule-draft')
+    if (savedDraft) {
+      const parsed = JSON.parse(savedDraft) as Record<string, Shift[] | Shift>
+      setSelected(Object.fromEntries(
+        Object.entries(parsed).map(([key, value]) => [key, Array.isArray(value) ? value : [value]])
+      ))
     }
+  }, [])
 
-    loadSchedules()
-  }, [authUser, isPreviewMode])
-
-  const shifts = ['Morning', 'Afternoon', 'Evening'] as const
-
-  const toggleShift = (day: string, shift: string) => {
-    setSelectedDays((prev) => ({
-      ...prev,
-      [day]: prev[day] === shift ? '' : shift,
-    }))
+  const chooseShift = (dayKey: string, shift: Shift) => {
+    if (shift === 'Custom') {
+      setCustomFor(dayKey)
+      setCustomData((prev) => ({
+        ...prev,
+        [dayKey]: prev[dayKey] || { start: '08:00', end: '17:00', note: '', request: '' },
+      }))
+      return
+    }
+    setSelected((prev) => {
+      const current = prev[dayKey] || []
+      const nextShifts = current.includes(shift)
+        ? current.filter((item) => item !== shift)
+        : [...current, shift]
+      const next = { ...prev }
+      if (nextShifts.length) next[dayKey] = nextShifts
+      else delete next[dayKey]
+      return next
+    })
   }
 
-  const handleSubmit = async () => {
-    if (!authUser) return
+  const saveCustom = () => {
+    if (!customFor) return
+    const item = customData[customFor]
+    if (!item?.start || !item?.end) return
+    setSelected((prev) => ({
+      ...prev,
+      [customFor]: Array.from(new Set([...(prev[customFor] || []), 'Custom' as Shift])),
+    }))
+    setCustomFor(null)
+  }
 
+  const saveDraft = () => {
+    window.sessionStorage.setItem('schedule-draft', JSON.stringify(selected))
+    setMessage('Đã lưu bản nháp trên thiết bị này.')
+  }
+
+  const submitSchedule = async () => {
+    if (!authUser || !Object.keys(selected).length) return
+    if (!window.confirm('Bạn có chắc muốn gửi lịch này cho quản lý không?')) return
     setSubmitting(true)
     setMessage(null)
-
     try {
       if (isPreviewMode) {
-        setMessage({ type: 'success', text: 'Preview only: schedule simulated successfully.' })
-        setTimeout(() => router.push('/'), 800)
-        return
-      }
-
-      // Submit all selected shifts
-      const promises = Object.entries(selectedDays).map(async ([dayName, shift]) => {
-        if (shift) {
-          const schedule = schedules.find((s) => s.day === dayName)
-          if (schedule) {
-            await createWorkSchedule({
+        addPreviewSchedules(Object.entries(selected).flatMap(([dayKey, shifts]) =>
+          shifts.map((shift, index) => {
+            const custom = customData[dayKey]
+            return {
+              id: `preview-${Date.now()}-${dayKey}-${index}`,
               employeeId: authUser.uid,
-              date: schedule.date,
-              shift: shift as 'Morning' | 'Afternoon' | 'Evening',
-              status: 'Registered',
-              note: '',
-            })
-          }
-        }
-      })
-
-      await Promise.all(promises)
-      setMessage({ type: 'success', text: 'Schedule submitted successfully!' })
-
-      setTimeout(() => router.push('/'), 1500)
-    } catch (error) {
-      console.error('Error submitting schedule:', error)
-      setMessage({ type: 'error', text: 'Failed to submit schedule' })
+              employeeName: authUser.displayName || 'Nguyễn Minh An',
+              employeeCode: 'NV-001',
+              phone: '0901 234 567',
+              facebookUrl: 'https://facebook.com/',
+              date: new Date(`${dayKey}T12:00:00`).toISOString(),
+              shift: (shift === 'Custom' ? 'Morning' : shift) as 'Morning' | 'Afternoon' | 'Evening',
+              status: 'Pending' as const,
+              note: shift === 'Custom'
+                ? `Tùy chỉnh ${custom?.start}–${custom?.end}. ${custom?.note || ''} ${custom?.request || ''}`.trim()
+                : '',
+            }
+          })
+        ))
+      } else {
+        await submitWorkSchedules(Object.entries(selected).flatMap(([dayKey, shifts]) =>
+          shifts.map((shift) => {
+            const custom = customData[dayKey]
+            return {
+              employeeId: authUser.uid,
+              date: new Date(`${dayKey}T12:00:00`),
+              shift: shift === 'Custom' ? 'Morning' : shift,
+              status: 'Pending',
+              note: shift === 'Custom'
+                ? `Tùy chỉnh ${custom?.start}–${custom?.end}. ${custom?.note || ''} ${custom?.request || ''}`.trim()
+                : '',
+            }
+          })
+        ))
+      }
+      window.sessionStorage.removeItem('schedule-draft')
+      setMessage('Đã gửi lịch. Lịch đang chờ quản lý xác nhận.')
+      setTimeout(() => router.push('/'), 1200)
+    } catch {
+      setMessage('Chưa thể gửi lịch. Vui lòng thử lại.')
     } finally {
       setSubmitting(false)
     }
   }
 
-  if (isLoading || loading) {
-    return (
-      <div className="min-h-screen bg-background">
-        <Header title="Work Schedule" subtitle="Select your preferred shifts" />
-        <PageContainer>
-          <SkeletonLoader variant="card" count={7} />
-        </PageContainer>
-      </div>
-    )
-  }
-
-  const hasSelected = Object.values(selectedDays).some((shift) => shift)
+  const customDay = days.find((day) => day.key === customFor)
+  const selectedCount = Object.values(selected).reduce((total, shifts) => total + shifts.length, 0)
 
   return (
-    <div className="min-h-screen bg-background pb-24 md:pb-0">
-      <Header title="Work Schedule" subtitle="Select your preferred shifts" />
+    <main className="min-h-screen pb-32">
+      <Header title="Đăng ký lịch làm" subtitle="Tuần kế tiếp · Thứ Hai đến Chủ Nhật" />
+      <div className="mx-auto max-w-2xl px-3 py-4 sm:px-6">
+        <section className="mb-4 rounded-3xl bg-slate-950 p-5 text-white">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <p className="text-xs font-semibold text-indigo-300">Lịch tuần sau</p>
+              <h2 className="mt-1 text-xl font-extrabold">
+                {days[0].date.toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit' })}
+                {' – '}
+                {days[6].date.toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit' })}
+              </h2>
+              <p className="mt-1 text-xs text-slate-300">Bạn có thể chọn một hoặc nhiều ca trong cùng ngày.</p>
+            </div>
+            <div className="rounded-2xl bg-white/10 px-3 py-2 text-center">
+              <span className="block text-xl font-black">{selectedCount}</span>
+              <span className="text-[10px] uppercase tracking-wider text-slate-300">ca đã chọn</span>
+            </div>
+          </div>
+        </section>
 
-      <PageContainer>
-        {/* Message */}
         {message && (
-          <div
-            className={`mb-6 p-4 rounded-lg border ${
-              message.type === 'success'
-                ? 'bg-emerald-50 border-emerald-200 text-emerald-700 dark:bg-emerald-900/20 dark:border-emerald-800 dark:text-emerald-300'
-                : 'bg-red-50 border-red-200 text-red-700 dark:bg-red-900/20 dark:border-red-800 dark:text-red-300'
-            }`}
-          >
-            {message.text}
+          <div className="mb-4 rounded-2xl border border-indigo-200 bg-indigo-50 p-3 text-sm font-medium text-indigo-800">
+            {message}
           </div>
         )}
 
-        {/* Schedule Grid */}
-        <div className="space-y-4">
-          {schedules.map((schedule) => (
-            <Card key={schedule.day} variant="elevated" className="p-6">
-              <div className="flex items-center justify-between mb-4">
-                <div>
-                  <h3 className="font-semibold text-lg">{schedule.day}</h3>
-                  <p className="text-sm text-muted-foreground">
-                    {schedule.date.toLocaleDateString('en-US', {
-                      month: 'short',
-                      day: 'numeric',
-                    })}
-                  </p>
+        <div className="space-y-3">
+          {days.map((day) => (
+            <article key={day.key} className="mobile-card overflow-hidden p-4">
+              <div className="mb-3 flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="grid h-11 w-11 place-items-center rounded-2xl bg-indigo-50 font-black text-indigo-600 dark:bg-indigo-500/15">
+                    {day.shortName}
+                  </div>
+                  <div>
+                    <h3 className="font-extrabold">{day.name}</h3>
+                    <p className="text-xs text-muted-foreground">
+                      {day.date.toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' })}
+                    </p>
+                  </div>
                 </div>
-                {schedule.status && (
-                  <Badge
-                    variant={
-                      schedule.status === 'Approved'
-                        ? 'success'
-                        : schedule.status === 'Rejected'
-                          ? 'destructive'
-                          : 'warning'
-                    }
-                    size="sm"
-                  >
-                    {schedule.status}
-                  </Badge>
-                )}
+                {!!selected[day.key]?.length && <Badge variant="success">{selected[day.key].length} ca</Badge>}
               </div>
-
-              {/* Shift Buttons */}
-              <div className="flex gap-2 flex-wrap">
-                {shifts.map((shift) => (
-                  <button
-                    key={shift}
-                    onClick={() => toggleShift(schedule.day, shift)}
-                    disabled={schedule.status === 'Approved'}
-                    className={`px-4 py-2 rounded-lg font-medium transition-all duration-200 ${
-                      selectedDays[schedule.day] === shift
-                        ? 'bg-primary text-primary-foreground scale-105'
-                        : 'bg-muted text-muted-foreground hover:bg-muted/80'
-                    } disabled:opacity-50 disabled:cursor-not-allowed`}
-                  >
-                    <Clock className="w-4 h-4 inline mr-2" />
-                    {shift}
-                  </button>
-                ))}
+              <div className="grid grid-cols-2 gap-2">
+                {shiftOptions.map((shift) => {
+                  const active = selected[day.key]?.includes(shift.value)
+                  return (
+                    <button
+                      key={shift.value}
+                      type="button"
+                      onClick={() => chooseShift(day.key, shift.value)}
+                      className={`min-h-[58px] rounded-2xl border px-3 text-left transition active:scale-[0.98] ${
+                        active
+                          ? 'border-indigo-600 bg-indigo-600 text-white shadow-lg shadow-indigo-600/20'
+                          : 'border-slate-200 bg-slate-50 dark:border-slate-700 dark:bg-slate-800'
+                      }`}
+                    >
+                      <span className="flex items-center justify-between text-sm font-bold">
+                        {shift.label}
+                        {active && <Check className="h-4 w-4" />}
+                      </span>
+                      <span className={`mt-0.5 block text-[11px] ${active ? 'text-indigo-100' : 'text-muted-foreground'}`}>
+                        {shift.value === 'Custom' && customData[day.key]
+                          ? `${customData[day.key].start}–${customData[day.key].end}`
+                          : shift.time}
+                      </span>
+                    </button>
+                  )
+                })}
               </div>
-            </Card>
+            </article>
           ))}
         </div>
+      </div>
 
-        {/* Summary */}
-        {hasSelected && (
-          <Card variant="elevated" className="mt-8 p-6 bg-primary/5">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="font-semibold">
-                  {Object.values(selectedDays).filter((s) => s).length} shifts selected
-                </p>
-                <p className="text-sm text-muted-foreground">Ready to submit your schedule</p>
+      <div className="fixed inset-x-0 bottom-0 z-40 border-t border-slate-200/70 bg-white/95 p-3 pb-[max(.75rem,env(safe-area-inset-bottom))] backdrop-blur-xl dark:border-white/10 dark:bg-slate-950/95">
+        <div className="mx-auto grid max-w-2xl grid-cols-[.8fr_1.2fr] gap-2">
+          <button type="button" onClick={saveDraft} className="flex min-h-12 items-center justify-center gap-2 rounded-2xl border border-slate-200 font-bold dark:border-slate-700">
+            <Save className="h-4 w-4" /> Lưu nháp
+          </button>
+          <button type="button" onClick={submitSchedule} disabled={!selectedCount || submitting} className="mobile-primary-button">
+            {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+            {submitting ? 'Đang gửi...' : 'Gửi lịch'}
+          </button>
+        </div>
+      </div>
+
+      {customFor && (
+        <div className="fixed inset-0 z-50 flex items-end bg-slate-950/45 backdrop-blur-sm" onClick={() => setCustomFor(null)}>
+          <section className="w-full rounded-t-[2rem] bg-white p-4 pb-[max(1rem,env(safe-area-inset-bottom))] shadow-2xl dark:bg-slate-900" onClick={(event) => event.stopPropagation()}>
+            <div className="mx-auto max-w-lg">
+              <div className="mb-4 flex items-center justify-between">
+                <div>
+                  <p className="text-xs font-bold uppercase tracking-wider text-indigo-600">Ca tùy chỉnh</p>
+                  <h2 className="text-xl font-extrabold">{customDay?.name}</h2>
+                </div>
+                <button onClick={() => setCustomFor(null)} className="grid h-11 w-11 place-items-center rounded-2xl bg-slate-100 dark:bg-slate-800" aria-label="Đóng">
+                  <X className="h-5 w-5" />
+                </button>
               </div>
-              <button
-                onClick={handleSubmit}
-                disabled={submitting || !hasSelected}
-                className="px-6 py-2 rounded-lg bg-primary text-primary-foreground font-medium hover:shadow-lg hover:scale-105 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100"
-              >
-                {submitting ? 'Submitting...' : 'Submit Schedule'}
+              <div className="grid grid-cols-2 gap-3">
+                <label className="text-sm font-bold">Giờ bắt đầu
+                  <input type="time" className="mobile-field mt-2" value={customData[customFor]?.start || ''} onChange={(e) => setCustomData((prev) => ({ ...prev, [customFor]: { ...prev[customFor], start: e.target.value } }))} />
+                </label>
+                <label className="text-sm font-bold">Giờ kết thúc
+                  <input type="time" className="mobile-field mt-2" value={customData[customFor]?.end || ''} onChange={(e) => setCustomData((prev) => ({ ...prev, [customFor]: { ...prev[customFor], end: e.target.value } }))} />
+                </label>
+              </div>
+              <label className="mt-3 block text-sm font-bold">Ghi chú
+                <textarea className="mobile-field mt-2 min-h-20 py-3" placeholder="Ví dụ: cần nghỉ giữa ca 30 phút" value={customData[customFor]?.note || ''} onChange={(e) => setCustomData((prev) => ({ ...prev, [customFor]: { ...prev[customFor], note: e.target.value } }))} />
+              </label>
+              <label className="mt-3 block text-sm font-bold">Yêu cầu đặc biệt
+                <textarea className="mobile-field mt-2 min-h-20 py-3" placeholder="Nhập nếu có" value={customData[customFor]?.request || ''} onChange={(e) => setCustomData((prev) => ({ ...prev, [customFor]: { ...prev[customFor], request: e.target.value } }))} />
+              </label>
+              <button type="button" onClick={saveCustom} className="mobile-primary-button mt-4">
+                <SlidersHorizontal className="h-4 w-4" /> Áp dụng ca tùy chỉnh
               </button>
             </div>
-          </Card>
-        )}
-
-        {!hasSelected && (
-          <EmptyState
-            icon="📅"
-            title="No shifts selected"
-            description="Select shifts for the days you want to work"
-            className="mt-8"
-          />
-        )}
-      </PageContainer>
-    </div>
+          </section>
+        </div>
+      )}
+    </main>
   )
 }

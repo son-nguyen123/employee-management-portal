@@ -2,17 +2,15 @@ import { Analytics } from '@vercel/analytics/next'
 import type { Metadata, Viewport } from 'next'
 import { ThemeProvider } from '@/components/providers/theme-provider'
 import { SkipLoginFAB } from '@/components/demo/skip-login-fab'
+import { ForegroundNotificationListener } from '@/components/notifications/foreground-notification-listener'
 import { AuthProvider } from '@/lib/hooks/useAuth'
 import './globals.css'
 
 export const metadata: Metadata = {
-  title: 'Employee Portal - Premium Management System',
-  description: 'Modern, premium employee management system with real-time scheduling, requests, and analytics',
-  generator: 'v0.app',
-  applicationName: 'Employee Portal',
-  keywords: ['employee', 'management', 'scheduling', 'requests', 'hr'],
-  authors: [{ name: 'Your Company' }],
-  creator: 'Your Company',
+  title: 'Cổng nhân viên',
+  description: 'Đăng ký lịch làm, gửi yêu cầu và theo dõi công việc dành cho nhân viên.',
+  applicationName: 'Cổng nhân viên',
+  keywords: ['nhân viên', 'lịch làm', 'quản lý', 'xin nghỉ', 'ứng lương'],
   icons: {
     icon: [
       {
@@ -35,8 +33,8 @@ export const metadata: Metadata = {
 export const viewport: Viewport = {
   colorScheme: 'light dark',
   themeColor: [
-    { media: '(prefers-color-scheme: light)', color: 'white' },
-    { media: '(prefers-color-scheme: dark)', color: 'black' },
+    { media: '(prefers-color-scheme: light)', color: '#4f46e5' },
+    { media: '(prefers-color-scheme: dark)', color: '#020617' },
   ],
 }
 
@@ -46,11 +44,12 @@ export default function RootLayout({
   children: React.ReactNode
 }>) {
   return (
-    <html lang="en" suppressHydrationWarning>
+    <html lang="vi" data-scroll-behavior="smooth" suppressHydrationWarning>
       <body className="antialiased">
         <ThemeProvider>
           <AuthProvider>
             <SkipLoginFAB />
+            <ForegroundNotificationListener />
             {children}
             {process.env.NODE_ENV === 'production' && <Analytics />}
           </AuthProvider>

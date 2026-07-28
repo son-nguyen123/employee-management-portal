@@ -1,36 +1,23 @@
-import {
-  collection,
-  addDoc,
-  updateDoc,
-  doc,
-  getDocs,
-  query,
-  where,
-  orderBy,
-  Timestamp,
-} from 'firebase/firestore'
+import { collection, getDocs, query, where, orderBy } from 'firebase/firestore'
 import { db } from '@/lib/firebase'
 import { LateRequest } from '@/lib/models/types'
+import { callWorkflowApi, newWorkflowRequestId } from '@/lib/services/workflowApi'
 
 const LATE_REQUESTS_COLLECTION = 'lateRequests'
 
 /**
  * Create a new late arrival request
  */
-export async function createLateRequest(lateData: Omit<LateRequest, 'id' | 'createdAt' | 'updatedAt'>): Promise<string> {
-  try {
-    const late = {
-      ...lateData,
-      createdAt: Timestamp.now(),
-      updatedAt: Timestamp.now(),
-    }
-
-    const docRef = await addDoc(collection(db, LATE_REQUESTS_COLLECTION), late)
-    return docRef.id
-  } catch (error) {
-    console.error('Error creating late request:', error)
-    throw error
-  }
+export async function createLateRequest(
+  lateData: Omit<LateRequest, 'id' | 'createdAt' | 'updatedAt'> & { expectedArrival: string }
+): Promise<string> {
+  const result = await callWorkflowApi<{ id: string; penalty: number }>('submitLate', {
+    requestId: newWorkflowRequestId(),
+    workScheduleId: lateData.workScheduleId,
+    expectedArrival: lateData.expectedArrival,
+    reason: lateData.reason,
+  })
+  return result.id
 }
 
 /**
@@ -83,19 +70,16 @@ export async function getPendingLateRequests(): Promise<LateRequest[]> {
 export async function updateLateStatus(
   lateId: string,
   status: 'Approved' | 'Rejected',
-  approvedBy: string
+  approvedBy: string,
+  reviewNote = ''
 ): Promise<void> {
-  try {
-    const docRef = doc(db, LATE_REQUESTS_COLLECTION, lateId)
-    await updateDoc(docRef, {
-      status,
-      approvedBy,
-      updatedAt: Timestamp.now(),
-    })
-  } catch (error) {
-    console.error('Error updating late request status:', error)
-    throw error
-  }
+  void approvedBy
+  await callWorkflowApi('reviewRequest', {
+    resource: 'late',
+    id: lateId,
+    status,
+    note: reviewNote,
+  })
 }
 
 /**

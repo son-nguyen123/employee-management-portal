@@ -1,16 +1,7 @@
-import {
-  collection,
-  addDoc,
-  updateDoc,
-  doc,
-  getDocs,
-  query,
-  where,
-  orderBy,
-  Timestamp,
-} from 'firebase/firestore'
+import { collection, getDocs, query, where, orderBy } from 'firebase/firestore'
 import { db } from '@/lib/firebase'
 import { LeaveRequest } from '@/lib/models/types'
+import { callWorkflowApi, newWorkflowRequestId } from '@/lib/services/workflowApi'
 
 const LEAVES_COLLECTION = 'leaveRequests'
 
@@ -18,19 +9,19 @@ const LEAVES_COLLECTION = 'leaveRequests'
  * Create a new leave request
  */
 export async function createLeaveRequest(leaveData: Omit<LeaveRequest, 'id' | 'createdAt' | 'updatedAt'>): Promise<string> {
-  try {
-    const leave = {
-      ...leaveData,
-      createdAt: Timestamp.now(),
-      updatedAt: Timestamp.now(),
-    }
-
-    const docRef = await addDoc(collection(db, LEAVES_COLLECTION), leave)
-    return docRef.id
-  } catch (error) {
-    console.error('Error creating leave request:', error)
-    throw error
-  }
+  const result = await callWorkflowApi<{ id: string; penalty: number }>('submitLeave', {
+    requestId: newWorkflowRequestId(),
+    leaveDate: leaveData.leaveDate instanceof Date
+      ? leaveData.leaveDate.toISOString()
+      : leaveData.leaveDate.toDate().toISOString(),
+    endDate: leaveData.endDate instanceof Date
+      ? leaveData.endDate.toISOString()
+      : leaveData.endDate?.toDate().toISOString(),
+    duration: leaveData.duration,
+    leaveType: leaveData.leaveType,
+    reason: leaveData.reason,
+  })
+  return result.id
 }
 
 /**
@@ -83,19 +74,16 @@ export async function getPendingLeaveRequests(): Promise<LeaveRequest[]> {
 export async function updateLeaveStatus(
   leaveId: string,
   status: 'Approved' | 'Rejected',
-  approvedBy: string
+  approvedBy: string,
+  reviewNote = ''
 ): Promise<void> {
-  try {
-    const docRef = doc(db, LEAVES_COLLECTION, leaveId)
-    await updateDoc(docRef, {
-      status,
-      approvedBy,
-      updatedAt: Timestamp.now(),
-    })
-  } catch (error) {
-    console.error('Error updating leave status:', error)
-    throw error
-  }
+  void approvedBy
+  await callWorkflowApi('reviewRequest', {
+    resource: 'leave',
+    id: leaveId,
+    status,
+    note: reviewNote,
+  })
 }
 
 /**

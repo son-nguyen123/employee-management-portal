@@ -46,13 +46,13 @@ export default function SalaryAdvancePage() {
     if (!authUser) return
 
     if (!formData.amount || !formData.reason) {
-      setMessage({ type: 'error', text: 'Please fill in all fields' })
+      setMessage({ type: 'error', text: 'Vui lòng điền đầy đủ thông tin' })
       return
     }
 
     const amount = parseFloat(formData.amount)
     if (isNaN(amount) || amount <= 0) {
-      setMessage({ type: 'error', text: 'Please enter a valid amount' })
+      setMessage({ type: 'error', text: 'Số tiền chưa hợp lệ' })
       return
     }
 
@@ -61,7 +61,7 @@ export default function SalaryAdvancePage() {
 
     try {
       if (isPreviewMode) {
-        setMessage({ type: 'success', text: 'Preview only: salary advance simulated successfully.' })
+        setMessage({ type: 'success', text: 'Đã gửi yêu cầu ứng lương trong chế độ xem thử.' })
         setFormData({ amount: '', reason: '' })
         return
       }
@@ -73,11 +73,11 @@ export default function SalaryAdvancePage() {
         status: 'Pending',
       })
 
-      setMessage({ type: 'success', text: 'Salary advance request submitted!' })
+      setMessage({ type: 'success', text: 'Đã gửi yêu cầu ứng lương!' })
       setFormData({ amount: '', reason: '' })
       setTimeout(() => router.push('/'), 1500)
     } catch (error) {
-      setMessage({ type: 'error', text: 'Failed to submit request' })
+      setMessage({ type: 'error', text: 'Không thể gửi yêu cầu' })
     } finally {
       setSubmitting(false)
     }
@@ -86,7 +86,7 @@ export default function SalaryAdvancePage() {
   if (isLoading || loading) {
     return (
       <div className="min-h-screen bg-background">
-        <Header title="Salary Advance" subtitle="Request a salary advance" />
+        <Header title="Ứng lương" subtitle="Gửi yêu cầu trong tháng hiện tại" />
         <PageContainer>
           <SkeletonLoader variant="card" count={5} />
         </PageContainer>
@@ -96,7 +96,7 @@ export default function SalaryAdvancePage() {
 
   return (
     <div className="min-h-screen bg-background pb-24 md:pb-0">
-      <Header title="Salary Advance" subtitle="Request a salary advance" />
+      <Header title="Ứng lương" subtitle="Gửi yêu cầu trong tháng hiện tại" />
 
       <PageContainer>
         {message && (
@@ -112,11 +112,11 @@ export default function SalaryAdvancePage() {
           </div>
         )}
 
-        <Card variant="elevated" className="p-6 mb-8">
-          <h2 className="text-xl font-bold mb-6">Request Salary Advance</h2>
+        <Card variant="elevated" className="mb-8 rounded-3xl p-4 sm:p-6">
+          <h2 className="text-xl font-bold mb-6">Tạo yêu cầu ứng lương</h2>
           <form onSubmit={handleSubmit} className="space-y-6">
             <div>
-              <label className="text-sm font-medium mb-2 block">Amount</label>
+              <label className="text-sm font-medium mb-2 block">Số tiền muốn ứng</label>
               <div className="relative">
                 <DollarSign className="absolute left-3 top-2.5 w-5 h-5 text-muted-foreground" />
                 <input
@@ -125,7 +125,7 @@ export default function SalaryAdvancePage() {
                   step="0.01"
                   value={formData.amount}
                   onChange={(e) => setFormData({ ...formData, amount: e.target.value })}
-                  placeholder="0.00"
+                  placeholder="Ví dụ: 2.000.000"
                   className="w-full pl-10 pr-4 py-2 rounded-lg border border-border bg-background focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-colors"
                   disabled={submitting}
                 />
@@ -133,11 +133,11 @@ export default function SalaryAdvancePage() {
             </div>
 
             <div>
-              <label className="text-sm font-medium mb-2 block">Reason</label>
+              <label className="text-sm font-medium mb-2 block">Lý do</label>
               <textarea
                 value={formData.reason}
                 onChange={(e) => setFormData({ ...formData, reason: e.target.value })}
-                placeholder="Explain why you need this salary advance..."
+                placeholder="Nhập lý do cần ứng lương..."
                 rows={4}
                 className="w-full px-4 py-2 rounded-lg border border-border bg-background focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-colors resize-none"
                 disabled={submitting}
@@ -150,20 +150,20 @@ export default function SalaryAdvancePage() {
               className="w-full py-2 px-4 rounded-lg bg-primary text-primary-foreground font-medium transition-all duration-200 hover:shadow-lg hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 flex items-center justify-center gap-2"
             >
               {submitting && <Loader2 className="w-4 h-4 animate-spin" />}
-              {submitting ? 'Submitting...' : 'Request Advance'}
+              {submitting ? 'Đang gửi...' : 'Gửi yêu cầu'}
             </button>
           </form>
         </Card>
 
         {previousAdvances.length > 0 && (
           <div>
-            <h2 className="text-xl font-bold mb-4">Previous Requests</h2>
+            <h2 className="text-xl font-bold mb-4">Yêu cầu trước đây</h2>
             <div className="space-y-3">
               {previousAdvances.map((advance: any, idx: number) => (
                 <Card key={idx} variant="default" className="p-4">
                   <div className="flex items-center justify-between">
                     <div>
-                      <p className="font-medium">${advance.amount?.toFixed(2)}</p>
+                      <p className="font-medium">{Number(advance.amount || 0).toLocaleString('vi-VN')} VND</p>
                       <p className="text-xs text-muted-foreground">{advance.reason}</p>
                     </div>
                     <Badge
@@ -176,7 +176,7 @@ export default function SalaryAdvancePage() {
                       }
                       size="sm"
                     >
-                      {advance.status || 'Pending'}
+                      {advance.status === 'Approved' ? 'Đã duyệt' : advance.status === 'Rejected' ? 'Từ chối' : 'Chờ duyệt'}
                     </Badge>
                   </div>
                 </Card>

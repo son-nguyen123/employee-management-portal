@@ -6,18 +6,23 @@ service cloud.firestore {
     // ===============================================================
     // employees/{uid}: uid, employeeCode, fullName, phone, email,
     //   role, status, joinDate, createdAt, updatedAt
-    // workSchedules/{id}: employeeId, date, shift, status, note,
-    //   createdAt, updatedAt
+    // workSchedules/{id}: employeeId, date, shift, status, note, optional reviewNote,
+    //   optional reviewedBy/reviewedAt/lockedAt, createdAt, updatedAt
     // leaveRequests/{id}: employeeId, optional workScheduleId, leaveDate,
-    //   leaveType, reason, status, optional approvedBy, createdAt, updatedAt
+    //   optional endDate/duration, leaveType, reason, status,
+    //   optional approvedBy/reviewNote/reviewedBy/reviewedAt, createdAt, updatedAt
     // lateRequests/{id}: employeeId, workScheduleId, date, shift,
-    //   lateMinutes, reason, status, optional approvedBy, createdAt, updatedAt
+    //   lateMinutes, optional expectedArrival, reason, status,
+    //   optional approvedBy/reviewNote/reviewedBy/reviewedAt, createdAt, updatedAt
     // salaryAdvances/{id}: employeeId, amount, reason, status,
-    //   optional approvedBy, createdAt, updatedAt
+    //   optional approvedBy/reviewNote/reviewedBy/reviewedAt, createdAt, updatedAt
     // penalties/{id}: employeeId, title, description, category, amount,
-    //   penaltyDate, createdBy, createdAt
+    //   penaltyDate, createdBy, optional sourceType/sourceId, createdAt
     // companyRules/{id}: title, content, order, isActive, createdAt, updatedAt
     // notifications/{id}: employeeId, title, message, type, isRead, createdAt
+    // employees/{uid}/notificationDevices/{fid}: employeeId, fid, platform,
+    //   permission, createdAt, updatedAt, lastSeenAt
+    // workflowRequests/{id}, pushDispatches/{id}: server-only idempotency/outbox docs
 
     // ===============================================================
     // Authentication and authorization helpers
@@ -55,11 +60,6 @@ service cloud.firestore {
         resource.data[fieldName] == request.auth.uid;
     }
 
-    function createsOwnedResource(fieldName) {
-      return isAuthenticated() &&
-        request.resource.data[fieldName] == request.auth.uid;
-    }
-
     // ===============================================================
     // Shared validation helpers
     // ===============================================================
@@ -72,11 +72,6 @@ service cloud.firestore {
     function validEmail(value) {
       return validString(value, 3, 254) &&
         value.matches('^.+@.+\\..+$');
-    }
-
-    function validOptionalString(data, fieldName, maxLength) {
-      return !(fieldName in data) ||
-        validString(data[fieldName], 0, maxLength);
     }
 
     function recentTimestamp(value) {
@@ -119,109 +114,6 @@ service cloud.firestore {
         data.updatedAt is timestamp;
     }
 
-    function validWorkSchedule(data) {
-      return data.keys().hasAll([
-          'employeeId', 'date', 'shift', 'status', 'note',
-          'createdAt', 'updatedAt'
-        ]) &&
-        data.keys().hasOnly([
-          'employeeId', 'date', 'shift', 'status', 'note',
-          'createdAt', 'updatedAt'
-        ]) &&
-        validString(data.employeeId, 1, 128) &&
-        data.date is timestamp &&
-        data.shift in ['Morning', 'Afternoon', 'Evening'] &&
-        data.status in ['Registered', 'Approved', 'Rejected'] &&
-        validString(data.note, 0, 500) &&
-        data.createdAt is timestamp &&
-        data.updatedAt is timestamp;
-    }
-
-    function validLeaveRequest(data) {
-      return data.keys().hasAll([
-          'employeeId', 'leaveDate', 'leaveType', 'reason',
-          'status', 'createdAt', 'updatedAt'
-        ]) &&
-        data.keys().hasOnly([
-          'employeeId', 'workScheduleId', 'leaveDate', 'leaveType',
-          'reason', 'status', 'approvedBy', 'createdAt', 'updatedAt'
-        ]) &&
-        validString(data.employeeId, 1, 128) &&
-        validOptionalString(data, 'workScheduleId', 128) &&
-        data.leaveDate is timestamp &&
-        data.leaveType in ['sick', 'casual', 'earned', 'personal'] &&
-        validString(data.reason, 1, 1000) &&
-        data.status in ['Pending', 'Approved', 'Rejected'] &&
-        validOptionalString(data, 'approvedBy', 128) &&
-        data.createdAt is timestamp &&
-        data.updatedAt is timestamp;
-    }
-
-    function validLateRequest(data) {
-      return data.keys().hasAll([
-          'employeeId', 'workScheduleId', 'date', 'shift',
-          'lateMinutes', 'reason', 'status', 'createdAt', 'updatedAt'
-        ]) &&
-        data.keys().hasOnly([
-          'employeeId', 'workScheduleId', 'date', 'shift',
-          'lateMinutes', 'reason', 'status', 'approvedBy',
-          'createdAt', 'updatedAt'
-        ]) &&
-        validString(data.employeeId, 1, 128) &&
-        validString(data.workScheduleId, 1, 128) &&
-        data.date is timestamp &&
-        data.shift in ['Morning', 'Afternoon', 'Evening'] &&
-        data.lateMinutes is int &&
-        data.lateMinutes >= 1 &&
-        data.lateMinutes <= 720 &&
-        validString(data.reason, 1, 1000) &&
-        data.status in ['Pending', 'Approved', 'Rejected'] &&
-        validOptionalString(data, 'approvedBy', 128) &&
-        data.createdAt is timestamp &&
-        data.updatedAt is timestamp;
-    }
-
-    function validSalaryAdvance(data) {
-      return data.keys().hasAll([
-          'employeeId', 'amount', 'reason', 'status',
-          'createdAt', 'updatedAt'
-        ]) &&
-        data.keys().hasOnly([
-          'employeeId', 'amount', 'reason', 'status',
-          'approvedBy', 'createdAt', 'updatedAt'
-        ]) &&
-        validString(data.employeeId, 1, 128) &&
-        data.amount is number &&
-        data.amount > 0 &&
-        data.amount <= 1000000000 &&
-        validString(data.reason, 1, 1000) &&
-        data.status in ['Pending', 'Approved', 'Rejected'] &&
-        validOptionalString(data, 'approvedBy', 128) &&
-        data.createdAt is timestamp &&
-        data.updatedAt is timestamp;
-    }
-
-    function validPenalty(data) {
-      return data.keys().hasAll([
-          'employeeId', 'title', 'description', 'category',
-          'amount', 'penaltyDate', 'createdBy', 'createdAt'
-        ]) &&
-        data.keys().hasOnly([
-          'employeeId', 'title', 'description', 'category',
-          'amount', 'penaltyDate', 'createdBy', 'createdAt'
-        ]) &&
-        validString(data.employeeId, 1, 128) &&
-        validString(data.title, 1, 150) &&
-        validString(data.description, 1, 2000) &&
-        data.category in ['Late', 'Probation', 'Performance', 'Other'] &&
-        data.amount is number &&
-        data.amount >= 0 &&
-        data.amount <= 1000000000 &&
-        data.penaltyDate is timestamp &&
-        validString(data.createdBy, 1, 128) &&
-        data.createdAt is timestamp;
-    }
-
     function validCompanyRule(data) {
       return data.keys().hasAll([
           'title', 'content', 'order', 'isActive',
@@ -256,6 +148,24 @@ service cloud.firestore {
         data.type in ['info', 'success', 'warning', 'error'] &&
         data.isRead is bool &&
         data.createdAt is timestamp;
+    }
+
+    function validNotificationDevice(data) {
+      return data.keys().hasAll([
+          'employeeId', 'fid', 'platform', 'permission',
+          'createdAt', 'updatedAt', 'lastSeenAt'
+        ]) &&
+        data.keys().hasOnly([
+          'employeeId', 'fid', 'platform', 'permission',
+          'createdAt', 'updatedAt', 'lastSeenAt'
+        ]) &&
+        validString(data.employeeId, 1, 128) &&
+        validString(data.fid, 1, 256) &&
+        validString(data.platform, 1, 300) &&
+        data.permission == 'granted' &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp &&
+        recentTimestamp(data.lastSeenAt);
     }
 
     // ===============================================================
@@ -296,94 +206,28 @@ service cloud.firestore {
 
     match /workSchedules/{scheduleId} {
       allow read: if ownsResource('employeeId') || isManagerOrAdmin();
-
-      allow create: if createsOwnedResource('employeeId') &&
-        validWorkSchedule(request.resource.data) &&
-        timestampsValidOnCreate(request.resource.data) &&
-        request.resource.data.status == 'Registered';
-
-      allow update: if isManagerOrAdmin() &&
-        validWorkSchedule(request.resource.data) &&
-        timestampsValidOnUpdate(request.resource.data) &&
-        request.resource.data.employeeId == resource.data.employeeId &&
-        (
-          request.resource.data.status == resource.data.status ||
-          (
-            resource.data.status == 'Registered' &&
-            request.resource.data.status in ['Approved', 'Rejected']
-          )
-        );
-
-      allow delete: if isManagerOrAdmin();
+      // Firebase Admin SDK bypasses Rules only inside the trusted Next.js backend.
+      allow create, update, delete: if false;
     }
 
     match /leaveRequests/{leaveId} {
       allow read: if ownsResource('employeeId') || isManagerOrAdmin();
-
-      allow create: if createsOwnedResource('employeeId') &&
-        validLeaveRequest(request.resource.data) &&
-        timestampsValidOnCreate(request.resource.data) &&
-        request.resource.data.status == 'Pending' &&
-        !('approvedBy' in request.resource.data);
-
-      allow update: if isManagerOrAdmin() &&
-        validLeaveRequest(request.resource.data) &&
-        timestampsValidOnUpdate(request.resource.data) &&
-        request.resource.data.employeeId == resource.data.employeeId &&
-        resource.data.status == 'Pending' &&
-        request.resource.data.status in ['Approved', 'Rejected'] &&
-        request.resource.data.approvedBy == request.auth.uid &&
-        request.resource.data.diff(resource.data).affectedKeys()
-          .hasOnly(['status', 'approvedBy', 'updatedAt']);
+      allow create, update, delete: if false;
     }
 
     match /lateRequests/{lateId} {
       allow read: if ownsResource('employeeId') || isManagerOrAdmin();
-
-      allow create: if createsOwnedResource('employeeId') &&
-        validLateRequest(request.resource.data) &&
-        timestampsValidOnCreate(request.resource.data) &&
-        request.resource.data.status == 'Pending' &&
-        !('approvedBy' in request.resource.data);
-
-      allow update: if isManagerOrAdmin() &&
-        validLateRequest(request.resource.data) &&
-        timestampsValidOnUpdate(request.resource.data) &&
-        request.resource.data.employeeId == resource.data.employeeId &&
-        resource.data.status == 'Pending' &&
-        request.resource.data.status in ['Approved', 'Rejected'] &&
-        request.resource.data.approvedBy == request.auth.uid &&
-        request.resource.data.diff(resource.data).affectedKeys()
-          .hasOnly(['status', 'approvedBy', 'updatedAt']);
+      allow create, update, delete: if false;
     }
 
     match /salaryAdvances/{advanceId} {
       allow read: if ownsResource('employeeId') || isManagerOrAdmin();
-
-      allow create: if createsOwnedResource('employeeId') &&
-        validSalaryAdvance(request.resource.data) &&
-        timestampsValidOnCreate(request.resource.data) &&
-        request.resource.data.status == 'Pending' &&
-        !('approvedBy' in request.resource.data);
-
-      allow update: if isManagerOrAdmin() &&
-        validSalaryAdvance(request.resource.data) &&
-        timestampsValidOnUpdate(request.resource.data) &&
-        request.resource.data.employeeId == resource.data.employeeId &&
-        resource.data.status == 'Pending' &&
-        request.resource.data.status in ['Approved', 'Rejected'] &&
-        request.resource.data.approvedBy == request.auth.uid &&
-        request.resource.data.diff(resource.data).affectedKeys()
-          .hasOnly(['status', 'approvedBy', 'updatedAt']);
+      allow create, update, delete: if false;
     }
 
     match /penalties/{penaltyId} {
       allow read: if ownsResource('employeeId') || isManagerOrAdmin();
-
-      allow create: if isManagerOrAdmin() &&
-        validPenalty(request.resource.data) &&
-        recentTimestamp(request.resource.data.createdAt) &&
-        request.resource.data.createdBy == request.auth.uid;
+      allow create, update, delete: if false;
     }
 
     match /companyRules/{ruleId} {
@@ -403,10 +247,7 @@ service cloud.firestore {
 
     match /notifications/{notificationId} {
       allow read: if ownsResource('employeeId');
-
-      allow create: if isManagerOrAdmin() &&
-        validNotification(request.resource.data) &&
-        recentTimestamp(request.resource.data.createdAt);
+      allow create: if false;
 
       allow update: if ownsResource('employeeId') &&
         validNotification(request.resource.data) &&
@@ -414,6 +255,35 @@ service cloud.firestore {
           .hasOnly(['isRead']);
 
       allow delete: if ownsResource('employeeId') || isAdmin();
+    }
+
+    match /workflowRequests/{requestId} {
+      allow read, write: if false;
+    }
+
+    match /pushDispatches/{dispatchId} {
+      allow read, write: if false;
+    }
+
+    match /employees/{uid}/notificationDevices/{fid} {
+      allow read: if isOwner(uid);
+
+      allow create: if isOwner(uid) &&
+        validNotificationDevice(request.resource.data) &&
+        timestampsValidOnCreate(request.resource.data) &&
+        request.resource.data.employeeId == uid &&
+        request.resource.data.fid == fid;
+
+      allow update: if isOwner(uid) &&
+        validNotificationDevice(request.resource.data) &&
+        timestampsValidOnUpdate(request.resource.data) &&
+        request.resource.data.fid == resource.data.fid &&
+        request.resource.data.employeeId == uid &&
+        resource.data.employeeId == uid &&
+        request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['platform', 'permission', 'updatedAt', 'lastSeenAt']);
+
+      allow delete: if isOwner(uid);
     }
 
     match /{document=**} {

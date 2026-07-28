@@ -1,34 +1,8 @@
-import {
-  collection,
-  addDoc,
-  getDocs,
-  query,
-  where,
-  orderBy,
-  Timestamp,
-} from 'firebase/firestore'
+import { collection, getDocs, query, where, orderBy } from 'firebase/firestore'
 import { db } from '@/lib/firebase'
 import { Penalty } from '@/lib/models/types'
 
 const PENALTIES_COLLECTION = 'penalties'
-
-/**
- * Create a new penalty (admin/manager only)
- */
-export async function createPenalty(penaltyData: Omit<Penalty, 'id' | 'createdAt'>): Promise<string> {
-  try {
-    const penalty = {
-      ...penaltyData,
-      createdAt: Timestamp.now(),
-    }
-
-    const docRef = await addDoc(collection(db, PENALTIES_COLLECTION), penalty)
-    return docRef.id
-  } catch (error) {
-    console.error('Error creating penalty:', error)
-    throw error
-  }
-}
 
 /**
  * Get all penalties for an employee

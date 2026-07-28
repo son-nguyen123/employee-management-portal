@@ -1,24 +1,24 @@
 {
-  "score": 4,
-  "summary": "Prototype rules apply default deny, strict schemas, ownership checks, immutable authority fields, bounded strings, and workflow validation. The remaining operational risk is that role authority lives in Firestore and the first admin must be bootstrapped through trusted console access.",
+  "score": 5,
+  "summary": "Sensitive workflow collections are read-only to authorized clients and all mutations are forced through the token-verified Next.js backend. Remaining client writes use strict ownership, schema and type validation.",
   "findings": [
     {
       "check": "Update bypass",
       "severity": "minor",
-      "issue": "All allowed updates call domain validators and restrict immutable fields; emulator test coverage is not yet committed.",
-      "recommendation": "Add Security Rules unit tests with the Firebase Emulator Suite."
+      "issue": "No client update path exists for schedules, requests, penalties or server-created notifications. Automated emulator regression tests are not yet committed.",
+      "recommendation": "Add Firebase Emulator allow/deny tests before broad production use."
     },
     {
       "check": "Authority source",
       "severity": "minor",
-      "issue": "Manager/admin authority is read from employees/{uid}.role rather than custom claims.",
-      "recommendation": "For a larger deployment, move privileged roles to Firebase Auth custom claims managed by a trusted server."
+      "issue": "Admin and manager authority is read from employees/{uid}.role in both Rules and the backend.",
+      "recommendation": "Keep role writes restricted and consider custom claims if the administrator population grows."
     },
     {
       "check": "Business logic vs rules",
       "severity": "minor",
-      "issue": "The first admin cannot be created from the client by design.",
-      "recommendation": "Bootstrap the first admin from Firebase Console and document the process."
+      "issue": "Managers/admins can read employee workflow records required by the management UI; this intentionally exposes staff workflow data to trusted management accounts.",
+      "recommendation": "Audit privileged accounts and split public/private employee profile fields if manager access becomes more granular."
     }
   ]
 }

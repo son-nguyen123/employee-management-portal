@@ -27,7 +27,7 @@ const PageContainer = React.forwardRef<HTMLDivElement, PageContainerProps>(
       full: 'w-full',
     }
 
-    const paddingStyles = padded ? 'px-4 py-6 sm:px-6 sm:py-8' : ''
+    const paddingStyles = padded ? 'px-3 py-4 sm:px-6 sm:py-8' : ''
 
     return (
       <div

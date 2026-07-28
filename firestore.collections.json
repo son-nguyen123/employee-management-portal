@@ -24,11 +24,12 @@
         "employeeId": "string",
         "date": "timestamp",
         "shift": "Morning | Afternoon | Evening",
-        "status": "Registered | Approved | Rejected",
+        "status": "Registered (legacy) | Pending | ChangesRequested | Approved | Rejected | Cancelled",
         "note": "string",
         "createdAt": "timestamp",
         "updatedAt": "timestamp"
-      }
+      },
+      "optionalFields": ["reviewNote", "reviewedBy", "reviewedAt", "lockedAt"]
     },
     "leaveRequests": {
       "documentId": "auto",
@@ -41,7 +42,7 @@
         "createdAt": "timestamp",
         "updatedAt": "timestamp"
       },
-      "optionalFields": ["workScheduleId", "approvedBy"]
+      "optionalFields": ["workScheduleId", "endDate", "duration (short | long)", "approvedBy", "reviewNote", "reviewedBy", "reviewedAt"]
     },
     "lateRequests": {
       "documentId": "auto",
@@ -56,7 +57,7 @@
         "createdAt": "timestamp",
         "updatedAt": "timestamp"
       },
-      "optionalFields": ["approvedBy"]
+      "optionalFields": ["expectedArrival", "approvedBy", "reviewNote", "reviewedBy", "reviewedAt"]
     },
     "salaryAdvances": {
       "documentId": "auto",
@@ -68,7 +69,7 @@
         "createdAt": "timestamp",
         "updatedAt": "timestamp"
       },
-      "optionalFields": ["approvedBy"]
+      "optionalFields": ["approvedBy", "reviewNote", "reviewedBy", "reviewedAt"]
     },
     "penalties": {
       "documentId": "auto",
@@ -81,7 +82,8 @@
         "penaltyDate": "timestamp",
         "createdBy": "string",
         "createdAt": "timestamp"
-      }
+      },
+      "optionalFields": ["sourceType", "sourceId"]
     },
     "companyRules": {
       "documentId": "auto or stable seed ID",
@@ -102,6 +104,43 @@
         "message": "string",
         "type": "info | success | warning | error",
         "isRead": "boolean",
+        "createdAt": "timestamp"
+      }
+    },
+    "notificationDevices": {
+      "path": "employees/{uid}/notificationDevices/{fid}",
+      "documentId": "Firebase Installation ID (FID)",
+      "requiredFields": {
+        "employeeId": "Firebase Authentication UID",
+        "fid": "Firebase Installation ID",
+        "platform": "browser user-agent string (max 300 characters)",
+        "permission": "granted",
+        "createdAt": "timestamp",
+        "updatedAt": "timestamp",
+        "lastSeenAt": "timestamp"
+      }
+    },
+    "pushDispatches": {
+      "documentId": "deterministic workflow review ID",
+      "access": "Firebase Admin SDK only; client rules deny all access",
+      "requiredFields": {
+        "source": "workSchedules | leaveRequests | lateRequests | salaryAdvances",
+        "sourceId": "string",
+        "employeeId": "Firebase Authentication UID",
+        "status": "string",
+        "state": "queued | sent | partial | no-devices | failed",
+        "createdAt": "timestamp",
+        "updatedAt": "timestamp"
+      }
+    },
+    "workflowRequests": {
+      "documentId": "employee UID + client request ID",
+      "access": "Firebase Admin SDK only; client rules deny all access",
+      "requiredFields": {
+        "employeeId": "Firebase Authentication UID",
+        "action": "submitSchedules | submitLeave | submitLate | submitSalaryAdvance",
+        "targetIds": "array of created document IDs",
+        "penaltyId": "string or null",
         "createdAt": "timestamp"
       }
     }

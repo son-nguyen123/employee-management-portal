@@ -1,275 +1,165 @@
 'use client'
 
-import React, { useEffect, useState } from 'react'
-import { useRouter } from 'next/navigation'
+import { useEffect, useState } from 'react'
+import { CalendarDays, CheckCircle2, Loader2, Palmtree, Send } from 'lucide-react'
 import { useAuth } from '@/lib/hooks/useAuth'
 import { createLeaveRequest, getEmployeeLeaves } from '@/lib/services/leaveService'
 import { mockLeaveRequests } from '@/lib/services/mockData'
 import { Header } from '@/components/layout/header'
 import { PageContainer } from '@/components/layout/page-container'
-import { Card } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
-import { SkeletonLoader } from '@/components/ui/skeleton-loader'
-import { EmptyState } from '@/components/ui/empty-state'
-import { Calendar, AlertCircle, Loader2 } from 'lucide-react'
 
-type LeaveType = 'sick' | 'casual' | 'earned' | 'personal'
-
-interface LeaveRequestData {
-  type: LeaveType
-  startDate: string
-  endDate: string
-  reason: string
-}
-
-const LEAVE_TYPES: { value: LeaveType; label: string; color: string }[] = [
-  { value: 'sick', label: 'Sick Leave', color: 'from-red-500 to-red-600' },
-  { value: 'casual', label: 'Casual Leave', color: 'from-blue-500 to-blue-600' },
-  { value: 'earned', label: 'Earned Leave', color: 'from-green-500 to-green-600' },
-  { value: 'personal', label: 'Personal Leave', color: 'from-purple-500 to-purple-600' },
-]
+type Duration = 'short' | 'long'
 
 export default function LeaveRequestPage() {
-  const router = useRouter()
-  const { authUser, isLoading, isPreviewMode } = useAuth()
-  const [loading, setLoading] = useState(true)
-  const [previousRequests, setPreviousRequests] = useState<any[]>([])
-  const [formData, setFormData] = useState<LeaveRequestData>({
-    type: 'casual',
-    startDate: '',
-    endDate: '',
-    reason: '',
-  })
+  const { authUser, isPreviewMode } = useAuth()
+  const [duration, setDuration] = useState<Duration>('short')
+  const [startDate, setStartDate] = useState('')
+  const [endDate, setEndDate] = useState('')
+  const [reason, setReason] = useState('')
+  const [requests, setRequests] = useState<any[]>([])
   const [submitting, setSubmitting] = useState(false)
-  const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
+  const [message, setMessage] = useState('')
 
-  // Load previous leave requests
   useEffect(() => {
     if (!authUser) return
-
-    const loadRequests = async () => {
+    const load = async () => {
       try {
-        const requests = isPreviewMode ? mockLeaveRequests : await getEmployeeLeaves(authUser.uid)
-        setPreviousRequests(requests.slice(0, 5)) // Show last 5
-      } catch (error) {
-        console.error('Error loading requests:', error)
-      } finally {
-        setLoading(false)
+        const data = isPreviewMode ? mockLeaveRequests : await getEmployeeLeaves(authUser.uid)
+        setRequests(data.slice(0, 5))
+      } catch {
+        setRequests([])
       }
     }
-
-    loadRequests()
+    load()
   }, [authUser, isPreviewMode])
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!authUser) return
-
-    // Validation
-    if (!formData.type || !formData.startDate || !formData.endDate || !formData.reason) {
-      setMessage({ type: 'error', text: 'Please fill in all fields' })
+  const submit = async (event: React.FormEvent) => {
+    event.preventDefault()
+    if (!authUser || !startDate || !reason.trim() || (duration === 'long' && !endDate)) {
+      setMessage('Vui lòng điền đầy đủ thông tin.')
       return
     }
-
-    if (new Date(formData.startDate) > new Date(formData.endDate)) {
-      setMessage({ type: 'error', text: 'End date must be after start date' })
+    if (duration === 'long' && new Date(endDate) < new Date(startDate)) {
+      setMessage('Ngày kết thúc phải từ ngày bắt đầu trở đi.')
       return
     }
-
     setSubmitting(true)
-    setMessage(null)
-
+    setMessage('')
+    const request = {
+      employeeId: authUser.uid,
+      leaveDate: new Date(`${startDate}T12:00:00`),
+      endDate: new Date(`${duration === 'short' ? startDate : endDate}T12:00:00`),
+      duration,
+      leaveType: 'personal' as const,
+      reason: reason.trim(),
+      status: 'Pending' as const,
+    }
     try {
-      if (isPreviewMode) {
-        setMessage({ type: 'success', text: 'Preview only: leave request simulated successfully.' })
-        setFormData({ type: 'casual', startDate: '', endDate: '', reason: '' })
-        return
-      }
-
-      await createLeaveRequest({
-        employeeId: authUser.uid,
-        leaveDate: new Date(formData.startDate),
-        leaveType: formData.type,
-        reason: formData.reason,
-        status: 'Pending',
-      })
-
-      setMessage({ type: 'success', text: 'Leave request submitted successfully!' })
-      setFormData({ type: 'casual', startDate: '', endDate: '', reason: '' })
-
-      setTimeout(() => router.push('/'), 1500)
-    } catch (error) {
-      console.error('Error submitting request:', error)
-      setMessage({ type: 'error', text: 'Failed to submit request' })
+      if (!isPreviewMode) await createLeaveRequest(request)
+      setRequests((prev) => [{ ...request, id: `local-${Date.now()}` }, ...prev])
+      setMessage('Đã gửi yêu cầu nghỉ. Quản lý sẽ xem xét và phản hồi.')
+      setStartDate('')
+      setEndDate('')
+      setReason('')
+    } catch {
+      setMessage('Chưa thể gửi yêu cầu. Vui lòng thử lại.')
     } finally {
       setSubmitting(false)
     }
   }
 
-  if (isLoading || loading) {
-    return (
-      <div className="min-h-screen bg-background">
-        <Header title="Leave Request" subtitle="Submit a leave application" />
-        <PageContainer>
-          <SkeletonLoader variant="card" count={5} />
-        </PageContainer>
-      </div>
-    )
-  }
-
   return (
-    <div className="min-h-screen bg-background pb-24 md:pb-0">
-      <Header title="Leave Request" subtitle="Submit a leave application" />
-
+    <main className="min-h-screen pb-8">
+      <Header title="Xin nghỉ" subtitle="Chọn hình thức nghỉ phù hợp" />
       <PageContainer>
-        {/* Message */}
-        {message && (
-          <div
-            className={`mb-6 p-4 rounded-lg border flex items-gap-2 ${
-              message.type === 'success'
-                ? 'bg-emerald-50 border-emerald-200 text-emerald-700 dark:bg-emerald-900/20 dark:border-emerald-800 dark:text-emerald-300'
-                : 'bg-red-50 border-red-200 text-red-700 dark:bg-red-900/20 dark:border-red-800 dark:text-red-300'
-            }`}
-          >
-            <AlertCircle className="w-4 h-4 mt-0.5 flex-shrink-0" />
-            <p className="text-sm">{message.text}</p>
+        <section className="mb-4 rounded-3xl bg-gradient-to-br from-emerald-600 to-teal-700 p-5 text-white">
+          <Palmtree className="h-7 w-7 text-emerald-100" />
+          <h2 className="mt-4 text-2xl font-black">Bạn cần nghỉ khi nào?</h2>
+          <p className="mt-1 text-sm leading-6 text-emerald-50">
+            Nghỉ ngắn hạn áp dụng cho một ngày. Nghỉ dài hạn cần chọn khoảng ngày cụ thể.
+          </p>
+        </section>
+
+        <form onSubmit={submit} className="mobile-card p-4 sm:p-6">
+          <div className="grid grid-cols-2 gap-2 rounded-2xl bg-slate-100 p-1 dark:bg-slate-800">
+            {[
+              { value: 'short' as const, label: 'Nghỉ ngắn hạn', note: 'Một ngày' },
+              { value: 'long' as const, label: 'Nghỉ dài hạn', note: 'Nhiều ngày' },
+            ].map((item) => (
+              <button
+                key={item.value}
+                type="button"
+                onClick={() => setDuration(item.value)}
+                className={`min-h-14 rounded-xl px-2 text-sm transition ${duration === item.value ? 'bg-white font-extrabold text-indigo-600 shadow-sm dark:bg-slate-950' : 'text-muted-foreground'}`}
+              >
+                <span className="block">{item.label}</span>
+                <span className="text-[11px] font-medium">{item.note}</span>
+              </button>
+            ))}
           </div>
-        )}
 
-        {/* Form */}
-        <Card variant="elevated" className="p-6 mb-8">
-          <h2 className="text-xl font-bold mb-6">Submit New Leave Request</h2>
-          <form onSubmit={handleSubmit} className="space-y-6">
-            {/* Leave Type */}
-            <div>
-              <label className="text-sm font-medium mb-3 block">Type of Leave</label>
-              <div className="grid grid-cols-2 gap-2">
-                {LEAVE_TYPES.map((type) => (
-                  <button
-                    key={type.value}
-                    type="button"
-                    onClick={() => setFormData({ ...formData, type: type.value })}
-                    className={`p-3 rounded-lg border-2 transition-all duration-200 text-sm font-medium ${
-                      formData.type === type.value
-                        ? 'border-primary bg-primary/10 text-primary'
-                        : 'border-border hover:border-primary/50 text-muted-foreground'
-                    }`}
-                  >
-                    {type.label}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* Date Range */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div>
-                <label htmlFor="startDate" className="text-sm font-medium mb-2 block">
-                  Start Date
-                </label>
-                <input
-                  id="startDate"
-                  type="date"
-                  value={formData.startDate}
-                  onChange={(e) => setFormData({ ...formData, startDate: e.target.value })}
-                  className="w-full px-4 py-2 rounded-lg border border-border bg-background hover:border-border/80 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-colors"
-                  required
-                  disabled={submitting}
-                />
-              </div>
-              <div>
-                <label htmlFor="endDate" className="text-sm font-medium mb-2 block">
-                  End Date
-                </label>
-                <input
-                  id="endDate"
-                  type="date"
-                  value={formData.endDate}
-                  onChange={(e) => setFormData({ ...formData, endDate: e.target.value })}
-                  className="w-full px-4 py-2 rounded-lg border border-border bg-background hover:border-border/80 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-colors"
-                  required
-                  disabled={submitting}
-                />
-              </div>
-            </div>
-
-            {/* Reason */}
-            <div>
-              <label htmlFor="reason" className="text-sm font-medium mb-2 block">
-                Reason for Leave
+          <div className={`mt-5 grid gap-3 ${duration === 'long' ? 'grid-cols-2' : 'grid-cols-1'}`}>
+            <label className="text-sm font-bold">
+              {duration === 'short' ? 'Ngày nghỉ' : 'Từ ngày'}
+              <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} className="mobile-field mt-2" required />
+            </label>
+            {duration === 'long' && (
+              <label className="text-sm font-bold">
+                Đến ngày
+                <input type="date" value={endDate} min={startDate} onChange={(e) => setEndDate(e.target.value)} className="mobile-field mt-2" required />
               </label>
-              <textarea
-                id="reason"
-                value={formData.reason}
-                onChange={(e) => setFormData({ ...formData, reason: e.target.value })}
-                placeholder="Please provide a reason for your leave request..."
-                rows={4}
-                className="w-full px-4 py-2 rounded-lg border border-border bg-background hover:border-border/80 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-colors resize-none"
-                required
-                disabled={submitting}
-              />
-            </div>
-
-            {/* Submit Button */}
-            <button
-              type="submit"
-              disabled={submitting}
-              className="w-full py-2 px-4 rounded-lg bg-primary text-primary-foreground font-medium transition-all duration-200 hover:shadow-lg hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 flex items-center justify-center gap-2"
-            >
-              {submitting && <Loader2 className="w-4 h-4 animate-spin" />}
-              {submitting ? 'Submitting...' : 'Submit Request'}
-            </button>
-          </form>
-        </Card>
-
-        {/* Previous Requests */}
-        {previousRequests.length > 0 && (
-          <div>
-            <h2 className="text-xl font-bold mb-4">Recent Requests</h2>
-            <div className="space-y-3">
-              {previousRequests.map((request: any, idx: number) => (
-                <Card key={idx} variant="default" className="p-4">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="font-medium">{request.type?.toUpperCase() || 'Leave'}</p>
-                      <p className="text-xs text-muted-foreground">
-                        {request.startDate instanceof Date
-                          ? request.startDate.toLocaleDateString()
-                          : new Date(request.startDate).toLocaleDateString()}{' '}
-                        -{' '}
-                        {request.endDate instanceof Date
-                          ? request.endDate.toLocaleDateString()
-                          : new Date(request.endDate).toLocaleDateString()}
-                      </p>
-                    </div>
-                    <Badge
-                      variant={
-                        request.status === 'Approved'
-                          ? 'success'
-                          : request.status === 'Rejected'
-                            ? 'destructive'
-                            : 'warning'
-                      }
-                      size="sm"
-                    >
-                      {request.status || 'Pending'}
-                    </Badge>
-                  </div>
-                </Card>
-              ))}
-            </div>
+            )}
           </div>
-        )}
 
-        {previousRequests.length === 0 && !message && (
-          <EmptyState
-            icon="📋"
-            title="No previous requests"
-            description="Your leave request history will appear here"
-            className="mt-8"
-          />
-        )}
+          <label className="mt-5 block text-sm font-bold">
+            Lý do xin nghỉ
+            <textarea value={reason} onChange={(e) => setReason(e.target.value)} className="mobile-field mt-2 min-h-28 py-3" placeholder="Nhập lý do để quản lý xem xét..." required />
+          </label>
+
+          {startDate && (
+            <div className="mt-4 flex gap-2 rounded-2xl bg-indigo-50 p-3 text-xs leading-5 text-indigo-800 dark:bg-indigo-500/10 dark:text-indigo-200">
+              <CalendarDays className="mt-0.5 h-4 w-4 shrink-0" />
+              {duration === 'short'
+                ? `Bạn đang xin nghỉ ngày ${new Date(`${startDate}T12:00:00`).toLocaleDateString('vi-VN')}.`
+                : `Khoảng nghỉ từ ${new Date(`${startDate}T12:00:00`).toLocaleDateString('vi-VN')}${endDate ? ` đến ${new Date(`${endDate}T12:00:00`).toLocaleDateString('vi-VN')}` : ''}.`}
+            </div>
+          )}
+
+          {message && <p className="mt-4 rounded-2xl bg-slate-100 p-3 text-sm font-semibold dark:bg-slate-800">{message}</p>}
+          <button type="submit" disabled={submitting} className="mobile-primary-button mt-5">
+            {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+            {submitting ? 'Đang gửi...' : 'Gửi yêu cầu nghỉ'}
+          </button>
+        </form>
+
+        <section className="mt-6">
+          <h2 className="mb-3 text-lg font-extrabold">Yêu cầu gần đây</h2>
+          <div className="space-y-3">
+            {requests.map((request, index) => {
+              const start = request.leaveDate?.toDate?.() || request.leaveDate || request.startDate
+              const end = request.endDate?.toDate?.() || request.endDate
+              return (
+                <article key={request.id || index} className="mobile-card flex items-center gap-3 p-4">
+                  <div className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-emerald-50 text-emerald-600 dark:bg-emerald-500/10">
+                    <CheckCircle2 className="h-5 w-5" />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <h3 className="font-extrabold">{request.duration === 'long' ? 'Nghỉ dài hạn' : 'Nghỉ ngắn hạn'}</h3>
+                    <p className="text-xs text-muted-foreground">
+                      {start ? new Date(start).toLocaleDateString('vi-VN') : 'Chưa rõ ngày'}
+                      {request.duration === 'long' && end ? ` – ${new Date(end).toLocaleDateString('vi-VN')}` : ''}
+                    </p>
+                  </div>
+                  <Badge variant={request.status === 'Approved' ? 'success' : request.status === 'Rejected' ? 'destructive' : 'warning'}>
+                    {request.status === 'Approved' ? 'Đã duyệt' : request.status === 'Rejected' ? 'Từ chối' : 'Chờ duyệt'}
+                  </Badge>
+                </article>
+              )
+            })}
+          </div>
+        </section>
       </PageContainer>
-    </div>
+    </main>
   )
 }

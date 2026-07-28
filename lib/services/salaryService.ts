@@ -1,16 +1,7 @@
-import {
-  collection,
-  addDoc,
-  updateDoc,
-  doc,
-  getDocs,
-  query,
-  where,
-  orderBy,
-  Timestamp,
-} from 'firebase/firestore'
+import { collection, getDocs, query, where, orderBy } from 'firebase/firestore'
 import { db } from '@/lib/firebase'
 import { SalaryAdvance } from '@/lib/models/types'
+import { callWorkflowApi, newWorkflowRequestId } from '@/lib/services/workflowApi'
 
 const SALARY_ADVANCES_COLLECTION = 'salaryAdvances'
 
@@ -18,19 +9,12 @@ const SALARY_ADVANCES_COLLECTION = 'salaryAdvances'
  * Create a new salary advance request
  */
 export async function createSalaryAdvance(advanceData: Omit<SalaryAdvance, 'id' | 'createdAt' | 'updatedAt'>): Promise<string> {
-  try {
-    const advance = {
-      ...advanceData,
-      createdAt: Timestamp.now(),
-      updatedAt: Timestamp.now(),
-    }
-
-    const docRef = await addDoc(collection(db, SALARY_ADVANCES_COLLECTION), advance)
-    return docRef.id
-  } catch (error) {
-    console.error('Error creating salary advance request:', error)
-    throw error
-  }
+  const result = await callWorkflowApi<{ id: string }>('submitSalaryAdvance', {
+    requestId: newWorkflowRequestId(),
+    amount: advanceData.amount,
+    reason: advanceData.reason,
+  })
+  return result.id
 }
 
 /**
@@ -83,19 +67,16 @@ export async function getPendingSalaryAdvances(): Promise<SalaryAdvance[]> {
 export async function updateSalaryAdvanceStatus(
   advanceId: string,
   status: 'Approved' | 'Rejected',
-  approvedBy: string
+  approvedBy: string,
+  reviewNote = ''
 ): Promise<void> {
-  try {
-    const docRef = doc(db, SALARY_ADVANCES_COLLECTION, advanceId)
-    await updateDoc(docRef, {
-      status,
-      approvedBy,
-      updatedAt: Timestamp.now(),
-    })
-  } catch (error) {
-    console.error('Error updating salary advance status:', error)
-    throw error
-  }
+  void approvedBy
+  await callWorkflowApi('reviewRequest', {
+    resource: 'salary',
+    id: advanceId,
+    status,
+    note: reviewNote,
+  })
 }
 
 /**
