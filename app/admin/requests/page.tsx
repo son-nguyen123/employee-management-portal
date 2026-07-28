@@ -11,8 +11,8 @@ import { Header } from '@/components/layout/header'
 import { PageContainer } from '@/components/layout/page-container'
 import { Badge } from '@/components/ui/badge'
 import { getActiveEmployees } from '@/lib/services/employeeService'
-import { createForgottenDutyPenalty } from '@/lib/services/penaltyService'
-import type { Employee } from '@/lib/models/types'
+import { adjustPenalty, cancelPenalty, createForgottenDutyPenalty, getAllPenalties } from '@/lib/services/penaltyService'
+import type { Employee, Penalty } from '@/lib/models/types'
 
 type RequestType = 'leave' | 'late' | 'salary'
 type RequestRow = {
@@ -36,6 +36,11 @@ export default function AdminRequestsPage() {
   const [penaltyDate, setPenaltyDate] = useState(new Date().toISOString().slice(0, 10))
   const [penaltyNote, setPenaltyNote] = useState('')
   const [penaltySubmitting, setPenaltySubmitting] = useState(false)
+  const [penalties, setPenalties] = useState<Penalty[]>([])
+  const [editingPenalty, setEditingPenalty] = useState<{ penalty: Penalty; mode: 'adjust' | 'cancel' } | null>(null)
+  const [managedAmount, setManagedAmount] = useState('')
+  const [manageReason, setManageReason] = useState('')
+  const [managingPenalty, setManagingPenalty] = useState(false)
   const [rejectingRow, setRejectingRow] = useState<RequestRow | null>(null)
   const [rejectReason, setRejectReason] = useState('')
 
@@ -43,9 +48,9 @@ export default function AdminRequestsPage() {
     if (!authUser) return
     const load = async () => {
       try {
-        const [leaves, lates, salaries, activeEmployees] = isPreviewMode
-          ? [mockLeaveRequests, mockLateRequests, mockSalaryAdvances, []]
-          : await Promise.all([getPendingLeaveRequests(), getPendingLateRequests(), getPendingSalaryAdvances(), getActiveEmployees()])
+        const [leaves, lates, salaries, activeEmployees, penaltyRows] = isPreviewMode
+          ? [mockLeaveRequests, mockLateRequests, mockSalaryAdvances, [], []]
+          : await Promise.all([getPendingLeaveRequests(), getPendingLateRequests(), getPendingSalaryAdvances(), getActiveEmployees(), getAllPenalties()])
         const employeeList = isPreviewMode ? [{
           uid: 'demo-user-001',
           employeeCode: 'NV-001',
@@ -60,6 +65,7 @@ export default function AdminRequestsPage() {
         } as Employee] : activeEmployees as Employee[]
         const employeeNames = new Map(employeeList.map((employee) => [employee.uid, employee.fullName]))
         setEmployees(employeeList)
+        setPenalties(penaltyRows as Penalty[])
         setPenaltyEmployeeId((current) => current || employeeList[0]?.uid || '')
         setRows([
           ...leaves.map((item: any, index: number) => ({
@@ -123,13 +129,55 @@ export default function AdminRequestsPage() {
     if (!penaltyEmployeeId || !penaltyDate) return
     setPenaltySubmitting(true)
     try {
-      if (!isPreviewMode) await createForgottenDutyPenalty(penaltyEmployeeId, `${penaltyDate}T12:00:00`, penaltyNote)
+      if (!isPreviewMode) {
+        await createForgottenDutyPenalty(penaltyEmployeeId, `${penaltyDate}T12:00:00`, penaltyNote)
+        setPenalties(await getAllPenalties())
+      }
       setPenaltyNote('')
       setMessage('Đã ghi nhận phạt quên trực: khấu trừ 1.000đ vào tiền công của 1 giờ làm.')
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'Chưa thể ghi nhận khoản phạt.')
     } finally {
       setPenaltySubmitting(false)
+    }
+  }
+
+  const openPenaltyManager = (penalty: Penalty, mode: 'adjust' | 'cancel') => {
+    setEditingPenalty({ penalty, mode })
+    setManagedAmount(mode === 'adjust' ? String(penalty.amount) : '')
+    setManageReason('')
+  }
+
+  const submitPenaltyChange = async (event: React.FormEvent) => {
+    event.preventDefault()
+    if (!editingPenalty || !manageReason.trim()) return
+    const penaltyId = editingPenalty.penalty.id
+    if (!penaltyId) return
+    const amount = Number(managedAmount)
+    if (editingPenalty.mode === 'adjust' && (!Number.isFinite(amount) || amount < 1)) return
+    setManagingPenalty(true)
+    try {
+      if (!isPreviewMode) {
+        if (editingPenalty.mode === 'adjust') {
+          await adjustPenalty(penaltyId, amount, manageReason.trim())
+        } else {
+          await cancelPenalty(penaltyId, manageReason.trim())
+        }
+      }
+      setPenalties((current) => current.map((item) => item.id === penaltyId
+        ? editingPenalty.mode === 'adjust'
+          ? { ...item, amount, status: 'Active', adjustmentReason: manageReason.trim() }
+          : { ...item, amount: 0, status: 'Cancelled', cancellationReason: manageReason.trim() }
+        : item))
+      setMessage(editingPenalty.mode === 'adjust'
+        ? 'Đã điều chỉnh khoản phạt và gửi thông báo cho nhân viên.'
+        : 'Đã hủy khoản phạt và gửi thông báo cho nhân viên.')
+      setEditingPenalty(null)
+      setManageReason('')
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'Chưa thể cập nhật khoản phạt.')
+    } finally {
+      setManagingPenalty(false)
     }
   }
 
@@ -167,6 +215,49 @@ export default function AdminRequestsPage() {
             </button>
           </div>
         </form>
+        <section className="mb-5">
+          <div className="mb-3 flex items-end justify-between gap-3">
+            <div>
+              <p className="text-xs font-bold uppercase tracking-wider text-rose-600">Khoản phạt đang áp dụng</p>
+              <h2 className="text-xl font-black">Điều chỉnh hoặc hủy</h2>
+            </div>
+            <span className="rounded-full bg-rose-50 px-3 py-1 text-xs font-bold text-rose-700">
+              {penalties.filter((item) => item.status !== 'Cancelled').length} khoản
+            </span>
+          </div>
+          <div className="space-y-3">
+            {penalties.filter((item) => item.status !== 'Cancelled').slice(0, 20).map((penalty) => {
+              const employee = employees.find((item) => item.uid === penalty.employeeId)
+              return (
+                <article key={penalty.id} className="mobile-card p-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <h3 className="font-extrabold">{penalty.title}</h3>
+                      <p className="mt-1 text-sm text-muted-foreground">
+                        {employee?.fullName || 'Nhân viên'} · {employee?.employeeCode || penalty.employeeId}
+                      </p>
+                      <p className="mt-2 line-clamp-2 text-xs text-muted-foreground">{penalty.description}</p>
+                    </div>
+                    <span className="shrink-0 rounded-full bg-rose-50 px-3 py-1 text-xs font-black text-rose-600">
+                      {Number(penalty.amount || 0).toLocaleString('vi-VN')}đ
+                    </span>
+                  </div>
+                  <div className="mt-4 grid grid-cols-2 gap-2">
+                    <button type="button" onClick={() => openPenaltyManager(penalty, 'cancel')} className="min-h-11 rounded-xl border border-rose-200 text-sm font-bold text-rose-600">
+                      Hủy khoản phạt
+                    </button>
+                    <button type="button" onClick={() => openPenaltyManager(penalty, 'adjust')} className="min-h-11 rounded-xl bg-slate-900 text-sm font-bold text-white dark:bg-white dark:text-slate-900">
+                      Điều chỉnh
+                    </button>
+                  </div>
+                </article>
+              )
+            })}
+            {!loading && !penalties.some((item) => item.status !== 'Cancelled') && (
+              <div className="mobile-card p-5 text-center text-sm font-semibold text-muted-foreground">Chưa có khoản phạt đang áp dụng.</div>
+            )}
+          </div>
+        </section>
         <div className="flex gap-2 overflow-x-auto pb-2">
           {[
             { value: 'all' as const, label: 'Tất cả' },
@@ -220,6 +311,32 @@ export default function AdminRequestsPage() {
               <button type="button" disabled={!rejectReason.trim()} onClick={() => process(rejectingRow, 'Rejected', rejectReason)} className="min-h-12 rounded-2xl bg-rose-600 font-bold text-white disabled:opacity-50">Xác nhận từ chối</button>
             </div>
           </div>
+        </div>
+      )}
+      {editingPenalty && (
+        <div className="fixed inset-0 z-50 flex items-end bg-slate-950/50 p-3 backdrop-blur-sm sm:items-center sm:justify-center" onClick={() => setEditingPenalty(null)}>
+          <form onSubmit={submitPenaltyChange} className="w-full max-w-md rounded-[2rem] bg-white p-5 shadow-2xl dark:bg-slate-900" onClick={(event) => event.stopPropagation()}>
+            <p className="text-xs font-bold uppercase tracking-wider text-rose-600">
+              {editingPenalty.mode === 'adjust' ? 'Điều chỉnh khoản phạt' : 'Hủy khoản phạt'}
+            </p>
+            <h2 className="mt-1 text-xl font-black">{editingPenalty.penalty.title}</h2>
+            <p className="mt-1 text-sm text-muted-foreground">Nhân viên sẽ nhận thông báo ngay sau khi bạn xác nhận.</p>
+            {editingPenalty.mode === 'adjust' && (
+              <label className="mt-4 block text-sm font-bold">Số tiền mới
+                <input type="number" min="1" step="500" value={managedAmount} onChange={(event) => setManagedAmount(event.target.value)} className="mobile-field mt-2" required />
+              </label>
+            )}
+            <label className="mt-4 block text-sm font-bold">Lý do
+              <textarea value={manageReason} onChange={(event) => setManageReason(event.target.value)} className="mobile-field mt-2 min-h-28 py-3" placeholder="Nhập lý do để nhân viên biết..." required autoFocus={editingPenalty.mode === 'cancel'} />
+            </label>
+            <div className="mt-4 grid grid-cols-2 gap-2">
+              <button type="button" onClick={() => setEditingPenalty(null)} className="min-h-12 rounded-2xl border font-bold">Quay lại</button>
+              <button type="submit" disabled={managingPenalty || !manageReason.trim()} className={`flex min-h-12 items-center justify-center gap-2 rounded-2xl font-bold text-white disabled:opacity-50 ${editingPenalty.mode === 'cancel' ? 'bg-rose-600' : 'bg-indigo-600'}`}>
+                {managingPenalty && <Loader2 className="h-4 w-4 animate-spin" />}
+                {editingPenalty.mode === 'cancel' ? 'Xác nhận hủy' : 'Lưu điều chỉnh'}
+              </button>
+            </div>
+          </form>
         </div>
       )}
     </main>

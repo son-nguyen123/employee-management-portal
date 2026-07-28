@@ -14,10 +14,10 @@ import { Badge } from '@/components/ui/badge'
 type ShiftName = 'Morning' | 'Afternoon' | 'Evening'
 type ShiftItem = { id: string; date: Date; shift: ShiftName; status: string; note?: string }
 
-const shiftMeta: Record<ShiftName, { label: string; time: string; startHour: number; color: string }> = {
-  Morning: { label: 'Ca sáng', time: '06:00 – 14:00', startHour: 6, color: 'bg-amber-500' },
-  Afternoon: { label: 'Ca chiều', time: '14:00 – 22:00', startHour: 14, color: 'bg-sky-600' },
-  Evening: { label: 'Ca tối', time: '22:00 – 06:00', startHour: 22, color: 'bg-indigo-700' },
+const shiftMeta: Record<ShiftName, { label: string; time: string; startMinutes: number; color: string }> = {
+  Morning: { label: 'Ca sáng', time: '07:30 – 11:30', startMinutes: 7 * 60 + 30, color: 'bg-amber-500' },
+  Afternoon: { label: 'Ca chiều', time: '13:00 – 17:00', startMinutes: 13 * 60, color: 'bg-sky-600' },
+  Evening: { label: 'Ca tối', time: '18:00 – 22:00', startMinutes: 18 * 60, color: 'bg-indigo-700' },
 }
 
 export default function LateArrivalPage() {
@@ -65,9 +65,9 @@ export default function LateArrivalPage() {
 
   const openRequest = (shift: ShiftItem) => {
     setEditingId(null)
-    const defaultHour = (shiftMeta[shift.shift].startHour + 1) % 24
+    const defaultMinutes = shiftMeta[shift.shift].startMinutes + 60
     setSelectedShift(shift)
-    setArrivalTime(`${String(defaultHour).padStart(2, '0')}:00`)
+    setArrivalTime(`${String(Math.floor(defaultMinutes / 60) % 24).padStart(2, '0')}:${String(defaultMinutes % 60).padStart(2, '0')}`)
     setReason('')
     setMessage('')
   }
@@ -76,9 +76,8 @@ export default function LateArrivalPage() {
     event.preventDefault()
     if (!authUser || !selectedShift || !arrivalTime || !reason.trim()) return
     const [hour, minute] = arrivalTime.split(':').map(Number)
-    const startMinutes = shiftMeta[selectedShift.shift].startHour * 60
+    const startMinutes = shiftMeta[selectedShift.shift].startMinutes
     let arrivalMinutes = hour * 60 + minute
-    if (selectedShift.shift === 'Evening' && hour < 12) arrivalMinutes += 24 * 60
     const lateMinutes = Math.max(1, arrivalMinutes - startMinutes)
     setSubmitting(true)
     try {

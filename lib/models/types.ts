@@ -122,6 +122,16 @@ export interface Penalty {
   sourceType?: string
   sourceId?: string
   createdAt: Timestamp | Date
+  status?: 'Active' | 'Cancelled'
+  originalAmount?: number
+  adjustedBy?: string
+  adjustedAt?: Timestamp | Date
+  adjustmentReason?: string
+  cancelledAmount?: number
+  cancelledBy?: string
+  cancelledAt?: Timestamp | Date
+  cancellationReason?: string
+  updatedAt?: Timestamp | Date
 }
 
 // Company Rule Document

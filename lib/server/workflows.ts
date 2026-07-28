@@ -10,10 +10,10 @@ type ReviewStatus = 'Approved' | 'Rejected' | 'ChangesRequested'
 type RequestReviewStatus = Exclude<ReviewStatus, 'ChangesRequested'>
 
 const shifts: Shift[] = ['Morning', 'Afternoon', 'Evening']
-const shiftStartHour: Record<Shift, number> = {
-  Morning: 6,
-  Afternoon: 14,
-  Evening: 22,
+const shiftStartTime: Record<Shift, string> = {
+  Morning: '07:30',
+  Afternoon: '13:00',
+  Evening: '18:00',
 }
 
 function objectBody(value: unknown): Record<string, unknown> {
@@ -82,6 +82,39 @@ function warningNotification(employeeId: string, title: string, message: string)
     isRead: false,
     createdAt: FieldValue.serverTimestamp(),
   }
+}
+
+async function sendPenaltyPush(params: {
+  employeeId: string
+  penaltyId: string
+  event: 'created' | 'adjusted' | 'cancelled'
+  title: string
+  body: string
+}) {
+  const dispatchId = `penalty-${params.penaltyId}-${params.event}`
+  const dispatchRef = adminDb.collection('pushDispatches').doc(dispatchId)
+  const existing = await dispatchRef.get()
+  if (!existing.exists) {
+    await dispatchRef.set({
+      source: 'penalties',
+      sourceId: params.penaltyId,
+      employeeId: params.employeeId,
+      status: params.event,
+      state: 'queued',
+      createdAt: FieldValue.serverTimestamp(),
+      updatedAt: FieldValue.serverTimestamp(),
+    })
+  }
+  return sendEmployeePush({
+    employeeId: params.employeeId,
+    dispatchId,
+    title: params.title,
+    body: params.body,
+    link: '/penalties',
+    source: 'penalties',
+    sourceId: params.penaltyId,
+    status: params.event,
+  })
 }
 
 async function activeManagerIds(): Promise<string[]> {
@@ -260,6 +293,16 @@ export async function submitSchedules(actor: RequestActor, raw: unknown) {
       createdAt: now,
     })
   })
+
+  if (shouldPenalize && workflowPolicy.scheduleLatePenalty > 0) {
+    await sendPenaltyPush({
+      employeeId: actor.uid,
+      penaltyId: penaltyRef.id,
+      event: 'created',
+      title: 'Phát sinh khoản phạt đăng ký lịch trễ',
+      body: `Khoản phạt ${workflowPolicy.scheduleLatePenalty.toLocaleString('vi-VN')}đ đã được ghi nhận.`,
+    })
+  }
 
   return {
     ids: scheduleRefs.map((ref) => ref.id),
@@ -532,12 +575,22 @@ export async function submitLeave(actor: RequestActor, raw: unknown) {
     })
   })
 
+  if (isLate && workflowPolicy.leaveLatePenalty > 0) {
+    await sendPenaltyPush({
+      employeeId: actor.uid,
+      penaltyId: penaltyRef.id,
+      event: 'created',
+      title: 'Phát sinh khoản phạt báo nghỉ trễ',
+      body: `Khoản phạt ${workflowPolicy.leaveLatePenalty.toLocaleString('vi-VN')}đ đã được ghi nhận.`,
+    })
+  }
+
   return { id: leaveRef.id, penalty: isLate && workflowPolicy.leaveLatePenalty > 0 ? workflowPolicy.leaveLatePenalty : 0 }
 }
 
 function shiftStart(date: Date, shift: Shift): Date {
   const day = date.toISOString().slice(0, 10)
-  return new Date(`${day}T${String(shiftStartHour[shift]).padStart(2, '0')}:00:00+07:00`)
+  return new Date(`${day}T${shiftStartTime[shift]}:00+07:00`)
 }
 
 export async function submitLate(actor: RequestActor, raw: unknown) {
@@ -573,9 +626,7 @@ export async function submitLate(actor: RequestActor, raw: unknown) {
     if (!shifts.includes(shift)) throw new ApiError(400, 'Ca làm không hợp lệ.')
     const date = (schedule.date as Timestamp).toDate()
     const start = shiftStart(date, shift)
-    const [hour, minute] = arrivalTime.split(':').map(Number)
-    let arrival = new Date(`${date.toISOString().slice(0, 10)}T${arrivalTime}:00+07:00`)
-    if (shift === 'Evening' && hour < 12) arrival = new Date(arrival.getTime() + 24 * 60 * 60 * 1000)
+    const arrival = new Date(`${date.toISOString().slice(0, 10)}T${arrivalTime}:00+07:00`)
     const lateMinutes = Math.ceil((arrival.getTime() - start.getTime()) / 60_000)
     if (lateMinutes < 1 || lateMinutes > 720) throw new ApiError(400, 'Giờ dự kiến phải sau giờ bắt đầu ca.')
     const noticeMinutes = (start.getTime() - Date.now()) / 60_000
@@ -624,6 +675,16 @@ export async function submitLate(actor: RequestActor, raw: unknown) {
       )
     })
   })
+
+  if (computedPenalty > 0) {
+    await sendPenaltyPush({
+      employeeId: actor.uid,
+      penaltyId: penaltyRef.id,
+      event: 'created',
+      title: 'Phát sinh khoản phạt báo đi trễ',
+      body: `Khoản phạt ${computedPenalty.toLocaleString('vi-VN')}đ đã được ghi nhận.`,
+    })
+  }
 
   return { id: lateRef.id, penalty: computedPenalty }
 }
@@ -795,9 +856,7 @@ export async function reviseRequest(actor: RequestActor, raw: unknown) {
       const shift = schedule.get('shift') as Shift
       const date = (schedule.get('date') as Timestamp).toDate()
       const start = shiftStart(date, shift)
-      const hour = Number(expectedArrival.split(':')[0])
-      let arrival = new Date(`${date.toISOString().slice(0, 10)}T${expectedArrival}:00+07:00`)
-      if (shift === 'Evening' && hour < 12) arrival = new Date(arrival.getTime() + 86_400_000)
+      const arrival = new Date(`${date.toISOString().slice(0, 10)}T${expectedArrival}:00+07:00`)
       const lateMinutes = Math.ceil((arrival.getTime() - start.getTime()) / 60_000)
       if (lateMinutes < 1 || lateMinutes > 720) throw new ApiError(400, 'Giờ dự kiến phải sau giờ bắt đầu ca.')
       updates.workScheduleId = scheduleId
@@ -861,7 +920,123 @@ export async function createForgottenDutyPenalty(actor: RequestActor, raw: unkno
     ))
   })
 
-  return { id: penaltyRef.id, amount: 1000 }
+  const push = await sendPenaltyPush({
+    employeeId,
+    penaltyId: penaltyRef.id,
+    event: 'created',
+    title: 'Ghi nhận phạt quên trực',
+    body: 'Khoản phạt 1.000đ đã được quản lý ghi nhận. Mở Khoản phạt để xem chi tiết.',
+  })
+
+  return { id: penaltyRef.id, amount: 1000, push }
+}
+
+export async function managePenalty(actor: RequestActor, raw: unknown) {
+  requireManager(actor)
+  const body = objectBody(raw)
+  const operationId = requestId(body)
+  const id = text(body.id, 'Mã khoản phạt', 128)
+  const mode = text(body.mode, 'Thao tác', 20)
+  if (!['adjust', 'cancel'].includes(mode)) {
+    throw new ApiError(400, 'Thao tác khoản phạt không hợp lệ.')
+  }
+  const reason = text(body.reason, 'Lý do', 1000)
+  const adjustedAmount = mode === 'adjust'
+    ? numberValue(body.amount, 'Số tiền', 1, 1_000_000_000)
+    : 0
+
+  const penaltyRef = adminDb.collection('penalties').doc(id)
+  const workflow = workflowRef(actor, operationId)
+  const notificationRef = adminDb.collection('notifications').doc(`penalty-${id}-${operationId}`)
+  const dispatchRef = adminDb.collection('pushDispatches').doc(`penalty-${id}-${operationId}`)
+  let employeeId = ''
+  let previousAmount = 0
+
+  await adminDb.runTransaction(async (transaction) => {
+    const [workflowSnapshot, penaltySnapshot] = await Promise.all([
+      transaction.get(workflow),
+      transaction.get(penaltyRef),
+    ])
+    if (workflowSnapshot.exists) throw new ApiError(409, 'Thao tác khoản phạt này đã được gửi.')
+    if (!penaltySnapshot.exists) throw new ApiError(404, 'Không tìm thấy khoản phạt.')
+    const penalty = penaltySnapshot.data()!
+    if (penalty.status === 'Cancelled') {
+      throw new ApiError(409, 'Khoản phạt này đã được hủy.')
+    }
+
+    employeeId = String(penalty.employeeId || '')
+    previousAmount = Number(penalty.amount || 0)
+    if (!employeeId || previousAmount < 0) throw new ApiError(409, 'Dữ liệu khoản phạt không hợp lệ.')
+    if (mode === 'adjust' && adjustedAmount === previousAmount) {
+      throw new ApiError(409, 'Số tiền mới phải khác số tiền hiện tại.')
+    }
+
+    const now = FieldValue.serverTimestamp()
+    const title = mode === 'adjust' ? 'Khoản phạt đã được điều chỉnh' : 'Khoản phạt đã được hủy'
+    const message = mode === 'adjust'
+      ? `Quản lý đã điều chỉnh khoản phạt từ ${previousAmount.toLocaleString('vi-VN')}đ thành ${adjustedAmount.toLocaleString('vi-VN')}đ. Lý do: ${reason}`
+      : `Quản lý đã hủy khoản phạt ${previousAmount.toLocaleString('vi-VN')}đ. Lý do: ${reason}`
+
+    transaction.set(penaltyRef, mode === 'adjust' ? {
+      amount: adjustedAmount,
+      status: 'Active',
+      originalAmount: penalty.originalAmount ?? previousAmount,
+      adjustmentReason: reason,
+      adjustedBy: actor.uid,
+      adjustedAt: now,
+      updatedAt: now,
+    } : {
+      amount: 0,
+      status: 'Cancelled',
+      originalAmount: penalty.originalAmount ?? previousAmount,
+      cancelledAmount: previousAmount,
+      cancellationReason: reason,
+      cancelledBy: actor.uid,
+      cancelledAt: now,
+      updatedAt: now,
+    }, { merge: true })
+    transaction.create(notificationRef, warningNotification(employeeId, title, message))
+    transaction.create(dispatchRef, {
+      source: 'penalties',
+      sourceId: id,
+      employeeId,
+      status: mode === 'adjust' ? 'adjusted' : 'cancelled',
+      state: 'queued',
+      createdAt: now,
+      updatedAt: now,
+    })
+    transaction.create(workflow, {
+      employeeId,
+      action: mode === 'adjust' ? 'adjustPenalty' : 'cancelPenalty',
+      targetIds: [id],
+      previousAmount,
+      amount: adjustedAmount,
+      createdAt: now,
+    })
+  })
+
+  const title = mode === 'adjust' ? 'Khoản phạt đã được điều chỉnh' : 'Khoản phạt đã được hủy'
+  const bodyText = mode === 'adjust'
+    ? `Số tiền đã đổi từ ${previousAmount.toLocaleString('vi-VN')}đ thành ${adjustedAmount.toLocaleString('vi-VN')}đ.`
+    : `Khoản phạt ${previousAmount.toLocaleString('vi-VN')}đ đã được hủy.`
+  const push = await sendEmployeePush({
+    employeeId,
+    dispatchId: dispatchRef.id,
+    title,
+    body: bodyText,
+    link: '/penalties',
+    source: 'penalties',
+    sourceId: id,
+    status: mode === 'adjust' ? 'adjusted' : 'cancelled',
+  })
+
+  return {
+    id,
+    status: mode === 'adjust' ? 'Active' : 'Cancelled',
+    amount: adjustedAmount,
+    previousAmount,
+    push,
+  }
 }
 
 const reviewConfig = {

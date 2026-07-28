@@ -42,12 +42,9 @@ export default function PenaltiesPage() {
     })()
   }, [authUser, isPreviewMode])
 
-  const penaltyAmount = (item: Penalty) => {
-    if (item.sourceType === 'scheduleSubmission') return 1_000
-    if (item.sourceType === 'lateRequest') return 500
-    return item.amount
-  }
+  const penaltyAmount = (item: Penalty) => item.status === 'Cancelled' ? 0 : Number(item.amount || 0)
   const total = penalties.reduce((sum, item) => sum + penaltyAmount(item), 0)
+  const activeCount = penalties.filter((item) => item.status !== 'Cancelled').length
 
   return (
     <main className="min-h-screen">
@@ -62,7 +59,7 @@ export default function PenaltiesPage() {
           <div className="mobile-card p-4">
             <AlertTriangle className="h-5 w-5 text-amber-500" />
             <p className="mt-5 text-xs font-semibold text-muted-foreground">Số lần phát sinh</p>
-            <p className="mt-1 text-xl font-black">{penalties.length} lần</p>
+            <p className="mt-1 text-xl font-black">{activeCount} lần</p>
           </div>
         </section>
 
@@ -81,22 +78,22 @@ export default function PenaltiesPage() {
                 ? penalty.penaltyDate
                 : penalty.penaltyDate.toDate()
               return (
-                <article key={penalty.id} className="mobile-card p-4">
+                <article key={penalty.id} className={`mobile-card p-4 ${penalty.status === 'Cancelled' ? 'opacity-65' : ''}`}>
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
                       <h2 className="font-extrabold">{penalty.title}</h2>
-                      <p className="mt-1 text-sm leading-5 text-muted-foreground">
-                        {penalty.sourceType === 'scheduleSubmission'
-                          ? 'Gửi lịch sau thời hạn. Khấu trừ 1.000đ vào tiền công của 1 giờ làm.'
-                          : penalty.sourceType === 'lateRequest'
-                            ? 'Báo đi trễ dưới 60 phút trước ca. Khấu trừ 500đ vào tiền công của 1 giờ làm.'
-                            : penalty.description}
-                      </p>
+                      <p className="mt-1 text-sm leading-5 text-muted-foreground">{penalty.description}</p>
                     </div>
-                    <span className="shrink-0 rounded-full bg-rose-50 px-3 py-1 text-xs font-black text-rose-600 dark:bg-rose-500/15">
-                      {penaltyAmount(penalty).toLocaleString('vi-VN')}đ
+                    <span className={`shrink-0 rounded-full px-3 py-1 text-xs font-black ${penalty.status === 'Cancelled' ? 'bg-slate-100 text-slate-500' : 'bg-rose-50 text-rose-600 dark:bg-rose-500/15'}`}>
+                      {penalty.status === 'Cancelled' ? 'Đã hủy' : `${penaltyAmount(penalty).toLocaleString('vi-VN')}đ`}
                     </span>
                   </div>
+                  {penalty.adjustmentReason && penalty.status !== 'Cancelled' && (
+                    <p className="mt-3 rounded-xl bg-indigo-50 p-3 text-xs font-semibold text-indigo-800">Điều chỉnh: {penalty.adjustmentReason}</p>
+                  )}
+                  {penalty.cancellationReason && (
+                    <p className="mt-3 rounded-xl bg-slate-100 p-3 text-xs font-semibold text-slate-700">Lý do hủy: {penalty.cancellationReason}</p>
+                  )}
                   <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-slate-100 pt-3 text-xs dark:border-white/10">
                     <span className="flex items-center gap-1 text-muted-foreground">
                       <CalendarDays className="h-3.5 w-3.5" /> {rawDate.toLocaleDateString('vi-VN')}
@@ -104,7 +101,9 @@ export default function PenaltiesPage() {
                     <span className="rounded-full bg-slate-100 px-2 py-1 font-semibold dark:bg-slate-800">
                       {penalty.createdBy === 'system' ? 'Tự động' : 'Quản lý'}
                     </span>
-                    <span className="ml-auto font-semibold text-emerald-600">Đã ghi nhận</span>
+                    <span className={`ml-auto font-semibold ${penalty.status === 'Cancelled' ? 'text-slate-500' : 'text-emerald-600'}`}>
+                      {penalty.status === 'Cancelled' ? 'Không khấu trừ' : 'Đã ghi nhận'}
+                    </span>
                   </div>
                 </article>
               )

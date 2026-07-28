@@ -4,6 +4,7 @@ import {
   cancelRequest,
   cancelScheduleBatch,
   createForgottenDutyPenalty,
+  managePenalty,
   reviewRequest,
   reviewScheduleBatch,
   replaceSchedules,
@@ -28,6 +29,7 @@ const handlers = {
   cancelScheduleBatch,
   setScheduleBatchEditing,
   createForgottenDutyPenalty,
+  managePenalty,
   reviewRequest,
   reviewScheduleBatch,
 } as const

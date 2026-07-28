@@ -35,9 +35,9 @@ type CustomShift = { start: string; end: string; note: string; request: string }
 type Selection = Record<string, Shift[]>
 
 const shiftOptions: { value: Shift; label: string; shortLabel: string; time: string }[] = [
-  { value: 'Morning', label: 'Ca sáng', shortLabel: 'sáng', time: '06:00–14:00' },
-  { value: 'Afternoon', label: 'Ca chiều', shortLabel: 'chiều', time: '14:00–22:00' },
-  { value: 'Evening', label: 'Ca tối', shortLabel: 'tối', time: '22:00–06:00' },
+  { value: 'Morning', label: 'Ca sáng', shortLabel: 'sáng', time: '07:30–11:30' },
+  { value: 'Afternoon', label: 'Ca chiều', shortLabel: 'chiều', time: '13:00–17:00' },
+  { value: 'Evening', label: 'Ca tối', shortLabel: 'tối', time: '18:00–22:00' },
   { value: 'Custom', label: 'Tùy chỉnh', shortLabel: 'tùy chỉnh', time: 'Tự chọn giờ' },
 ]
 

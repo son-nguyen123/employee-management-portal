@@ -1,12 +1,31 @@
 import { collection, getDocs, query, where, orderBy } from 'firebase/firestore'
 import { db } from '@/lib/firebase'
 import { Penalty } from '@/lib/models/types'
-import { callWorkflowApi } from '@/lib/services/workflowApi'
+import { callWorkflowApi, newWorkflowRequestId } from '@/lib/services/workflowApi'
 
 const PENALTIES_COLLECTION = 'penalties'
 
 export async function createForgottenDutyPenalty(employeeId: string, date: string, note: string): Promise<{ id: string; amount: number }> {
   return callWorkflowApi('createForgottenDutyPenalty', { employeeId, date, note })
+}
+
+export async function adjustPenalty(id: string, amount: number, reason: string): Promise<void> {
+  await callWorkflowApi('managePenalty', {
+    requestId: newWorkflowRequestId(),
+    id,
+    mode: 'adjust',
+    amount,
+    reason,
+  })
+}
+
+export async function cancelPenalty(id: string, reason: string): Promise<void> {
+  await callWorkflowApi('managePenalty', {
+    requestId: newWorkflowRequestId(),
+    id,
+    mode: 'cancel',
+    reason,
+  })
 }
 
 /**
@@ -76,7 +95,7 @@ export async function getAllPenalties(): Promise<Penalty[]> {
 export async function getEmployeeTotalPenalties(employeeId: string): Promise<number> {
   try {
     const penalties = await getEmployeePenalties(employeeId)
-    return penalties.reduce((total, penalty) => total + penalty.amount, 0)
+    return penalties.reduce((total, penalty) => total + (penalty.status === 'Cancelled' ? 0 : Number(penalty.amount || 0)), 0)
   } catch (error) {
     console.error('Error calculating total penalties:', error)
     throw error

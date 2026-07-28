@@ -11,6 +11,7 @@ type WorkflowAction =
   | 'cancelScheduleBatch'
   | 'setScheduleBatchEditing'
   | 'createForgottenDutyPenalty'
+  | 'managePenalty'
   | 'reviewRequest'
   | 'reviewScheduleBatch'
 
