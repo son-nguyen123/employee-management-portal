@@ -13,10 +13,12 @@ import {
   Send,
   SlidersHorizontal,
   Sparkles,
+  Trash2,
   X,
 } from 'lucide-react'
 import { useAuth } from '@/lib/hooks/useAuth'
 import {
+  cancelWorkScheduleBatch,
   getSchedulesByDateRange,
   replaceWorkSchedules,
   submitWorkSchedules,
@@ -252,10 +254,31 @@ export default function SchedulePage() {
     }
   }
 
+  const cancelSchedule = async () => {
+    if (!submittedIds.length || submittedStatus !== 'Pending') return
+    if (!window.confirm('Hủy toàn bộ bảng lịch đang chờ xác nhận?')) return
+    setSubmitting(true)
+    setMessage(null)
+    try {
+      if (isPreviewMode) {
+        const remaining = getPreviewSchedules().filter((item) => !submittedIds.includes(item.id))
+        window.sessionStorage.setItem('employee-portal-preview-schedules', JSON.stringify(remaining))
+      } else {
+        await cancelWorkScheduleBatch(submittedIds)
+      }
+      setSubmittedStatus('Cancelled')
+      setMessage('Đã hủy bảng lịch. Khoản phạt đã phát sinh trước đó (nếu có) vẫn được giữ nguyên.')
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'Chưa thể hủy bảng lịch.')
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
   const customDay = days.find((day) => day.key === customFor)
   const selectedCount = Object.values(selected).reduce((total, shifts) => total + shifts.length, 0)
   const compactMode = submittedIds.length > 0 && !editing
-  const canEdit = submittedStatus !== 'Approved'
+  const canEdit = submittedStatus === 'Pending' || submittedStatus === 'Rejected'
 
   if (loading) {
     return <main className="grid min-h-screen place-items-center"><Loader2 className="h-7 w-7 animate-spin text-indigo-600" /></main>
@@ -299,8 +322,8 @@ export default function SchedulePage() {
                   <p className="text-xs font-bold uppercase tracking-widest text-indigo-100">Bảng đăng ký tuần</p>
                   <h2 className="mt-1 text-lg font-extrabold">Lịch làm của bạn</h2>
                 </div>
-                <Badge variant={submittedStatus === 'Approved' ? 'success' : submittedStatus === 'Rejected' ? 'destructive' : 'warning'}>
-                  {submittedStatus === 'Approved' ? 'Đã xác nhận' : submittedStatus === 'Rejected' ? 'Bị từ chối' : 'Chờ xác nhận'}
+                <Badge variant={submittedStatus === 'Approved' ? 'success' : submittedStatus === 'Rejected' ? 'destructive' : submittedStatus === 'Cancelled' ? 'outline' : 'warning'}>
+                  {submittedStatus === 'Approved' ? 'Đã xác nhận' : submittedStatus === 'Rejected' ? 'Bị từ chối' : submittedStatus === 'Cancelled' ? 'Đã hủy' : 'Chờ xác nhận'}
                 </Badge>
               </div>
             </div>
@@ -323,9 +346,16 @@ export default function SchedulePage() {
               ))}
             </div>
             {canEdit && (
-              <button type="button" onClick={() => setEditing(true)} className="m-4 mt-2 flex min-h-12 w-[calc(100%-2rem)] items-center justify-center gap-2 rounded-2xl border border-indigo-200 bg-indigo-50 font-bold text-indigo-700 dark:border-indigo-500/30 dark:bg-indigo-500/10 dark:text-indigo-200">
-                <SlidersHorizontal className="h-4 w-4" /> Điều chỉnh
-              </button>
+              <div className="m-4 mt-2 grid grid-cols-2 gap-2">
+                <button type="button" onClick={() => setEditing(true)} className="flex min-h-12 items-center justify-center gap-2 rounded-2xl border border-indigo-200 bg-indigo-50 font-bold text-indigo-700 dark:border-indigo-500/30 dark:bg-indigo-500/10 dark:text-indigo-200">
+                  <SlidersHorizontal className="h-4 w-4" /> Điều chỉnh
+                </button>
+                {submittedStatus === 'Pending' && (
+                  <button type="button" onClick={cancelSchedule} disabled={submitting} className="flex min-h-12 items-center justify-center gap-2 rounded-2xl border border-rose-200 bg-rose-50 font-bold text-rose-700 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-200">
+                    {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />} Hủy yêu cầu
+                  </button>
+                )}
+              </div>
             )}
           </section>
         ) : (
@@ -399,7 +429,7 @@ export default function SchedulePage() {
       </div>
 
       {!compactMode && (
-        <div className="fixed inset-x-0 bottom-0 z-40 border-t border-slate-200/70 bg-white/95 p-3 pb-[max(.75rem,env(safe-area-inset-bottom))] backdrop-blur-xl dark:border-white/10 dark:bg-slate-950/95">
+        <div className="fixed inset-x-0 bottom-[calc(4.5rem+env(safe-area-inset-bottom))] z-30 border-t border-slate-200/70 bg-white/95 p-3 backdrop-blur-xl dark:border-white/10 dark:bg-slate-950/95 md:bottom-0">
           <div className="mx-auto grid max-w-2xl grid-cols-[.8fr_1.2fr] gap-2">
             <button type="button" onClick={editing ? () => { setSelected(cloneSelection(original)); setEditing(false) } : saveDraft} className="flex min-h-12 items-center justify-center gap-2 rounded-2xl border border-slate-200 font-bold dark:border-slate-700">
               {editing ? <RotateCcw className="h-4 w-4" /> : <Save className="h-4 w-4" />} {editing ? 'Hủy sửa' : 'Lưu nháp'}

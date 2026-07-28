@@ -14,7 +14,7 @@ const VIETNAM_OFFSET_MS = 7 * 60 * 60 * 1000
 const WEEK_MS = 7 * 24 * 60 * 60 * 1000
 const MAX_ARCHIVE_DOCUMENTS = 4_000
 const FINAL_SCHEDULE_STATUSES = new Set(['Approved', 'Rejected', 'Cancelled'])
-const FINAL_REQUEST_STATUSES = new Set(['Approved', 'Rejected'])
+const FINAL_REQUEST_STATUSES = new Set(['Approved', 'Rejected', 'Cancelled'])
 
 interface ArchivedDocument {
   path: string

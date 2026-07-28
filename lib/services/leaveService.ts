@@ -25,6 +25,22 @@ export async function createLeaveRequest(leaveData: Omit<LeaveRequest, 'id' | 'c
   return result.id
 }
 
+export async function reviseLeaveRequest(id: string, leaveData: Pick<LeaveRequest, 'leaveDate' | 'endDate' | 'duration' | 'reason' | 'workScheduleId'>): Promise<void> {
+  await callWorkflowApi('reviseRequest', {
+    resource: 'leave',
+    id,
+    leaveDate: leaveData.leaveDate instanceof Date ? leaveData.leaveDate.toISOString() : leaveData.leaveDate.toDate().toISOString(),
+    endDate: leaveData.endDate instanceof Date ? leaveData.endDate.toISOString() : leaveData.endDate?.toDate().toISOString(),
+    duration: leaveData.duration,
+    reason: leaveData.reason,
+    workScheduleId: leaveData.workScheduleId,
+  })
+}
+
+export async function cancelLeaveRequest(id: string): Promise<void> {
+  await callWorkflowApi('cancelRequest', { resource: 'leave', id })
+}
+
 /**
  * Get all leave requests for an employee
  */

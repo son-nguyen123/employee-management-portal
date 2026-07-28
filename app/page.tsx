@@ -5,7 +5,6 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import {
   AlertTriangle,
-  Bell,
   BookOpenText,
   CalendarDays,
   ChevronRight,
@@ -23,12 +22,9 @@ import {
 } from 'lucide-react'
 import { useTheme } from 'next-themes'
 import { useAuth, useUserRole } from '@/lib/hooks/useAuth'
-import { getUnreadNotificationCount } from '@/lib/services/notificationService'
 import { getAllEmployees } from '@/lib/services/employeeService'
 import { getAllSchedules } from '@/lib/services/scheduleService'
 import { getPreviewSchedules } from '@/lib/services/previewWorkflow'
-import { mockNotifications } from '@/lib/services/mockData'
-import { BottomNav } from '@/components/layout/bottom-nav'
 import { SkeletonLoader } from '@/components/ui/skeleton-loader'
 
 const staffFeatures = [
@@ -46,9 +42,7 @@ export default function Page() {
   const { authUser, employee, isLoading, isPreviewMode, logout } = useAuth()
   const role = useUserRole()
   const { theme, setTheme } = useTheme()
-  const [notificationCount, setNotificationCount] = useState(0)
   const [adminStats, setAdminStats] = useState({ confirmed: 0, total: 0, pending: 0 })
-  const [dataLoading, setDataLoading] = useState(true)
 
   useEffect(() => {
     if (!isLoading && !authUser) router.push('/auth/login')
@@ -63,23 +57,6 @@ export default function Page() {
       router.replace('/profile/setup')
     }
   }, [authUser, employee, isLoading, isPreviewMode, router])
-
-  useEffect(() => {
-    if (!authUser) return
-    const load = async () => {
-      try {
-        const count = isPreviewMode
-          ? mockNotifications.filter((item) => !item.isRead).length
-          : await getUnreadNotificationCount(authUser.uid)
-        setNotificationCount(count)
-      } catch {
-        setNotificationCount(0)
-      } finally {
-        setDataLoading(false)
-      }
-    }
-    load()
-  }, [authUser, isPreviewMode])
 
   useEffect(() => {
     if (!authUser || role !== 'admin') return
@@ -120,7 +97,7 @@ export default function Page() {
     loadAdminStats()
   }, [authUser, isPreviewMode, role])
 
-  if (isLoading || dataLoading) {
+  if (isLoading) {
     return <div className="mx-auto min-h-screen max-w-2xl p-4"><SkeletonLoader variant="card" count={6} /></div>
   }
   if (!authUser) return null
@@ -243,12 +220,6 @@ export default function Page() {
         </section>
       </div>
 
-      <BottomNav items={[
-        { href: '/', icon: <LayoutDashboard className="h-5 w-5" />, label: 'Trang chủ' },
-        { href: '/schedule', icon: <CalendarDays className="h-5 w-5" />, label: 'Lịch làm' },
-        { href: '/notifications', icon: <Bell className="h-5 w-5" />, label: 'Thông báo', badge: notificationCount || undefined },
-        { href: '/profile', icon: <UserRound className="h-5 w-5" />, label: 'Cá nhân' },
-      ]} />
     </main>
   )
 }

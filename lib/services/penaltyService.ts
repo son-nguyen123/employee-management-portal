@@ -1,8 +1,13 @@
 import { collection, getDocs, query, where, orderBy } from 'firebase/firestore'
 import { db } from '@/lib/firebase'
 import { Penalty } from '@/lib/models/types'
+import { callWorkflowApi } from '@/lib/services/workflowApi'
 
 const PENALTIES_COLLECTION = 'penalties'
+
+export async function createForgottenDutyPenalty(employeeId: string, date: string, note: string): Promise<{ id: string; amount: number }> {
+  return callWorkflowApi('createForgottenDutyPenalty', { employeeId, date, note })
+}
 
 /**
  * Get all penalties for an employee

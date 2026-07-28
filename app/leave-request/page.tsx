@@ -1,9 +1,9 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { CalendarDays, Check, CheckCircle2, Info, Loader2, Palmtree, Send } from 'lucide-react'
+import { CalendarDays, Check, CheckCircle2, Info, Loader2, Palmtree, Pencil, Send, Trash2 } from 'lucide-react'
 import { useAuth } from '@/lib/hooks/useAuth'
-import { createLeaveRequest, getEmployeeLeaves } from '@/lib/services/leaveService'
+import { cancelLeaveRequest, createLeaveRequest, getEmployeeLeaves, reviseLeaveRequest } from '@/lib/services/leaveService'
 import { mockLeaveRequests } from '@/lib/services/mockData'
 import { getEmployeeSchedules } from '@/lib/services/scheduleService'
 import { getPreviewSchedules } from '@/lib/services/previewWorkflow'
@@ -31,6 +31,7 @@ export default function LeaveRequestPage() {
   const [requests, setRequests] = useState<any[]>([])
   const [submitting, setSubmitting] = useState(false)
   const [message, setMessage] = useState('')
+  const [editingId, setEditingId] = useState<string | null>(null)
 
   useEffect(() => {
     if (!authUser) return
@@ -88,9 +89,13 @@ export default function LeaveRequestPage() {
       workScheduleId: duration === 'short' ? selectedScheduleId || undefined : undefined,
     }
     try {
-      if (!isPreviewMode) await createLeaveRequest(request)
-      setRequests((prev) => [{ ...request, id: `local-${Date.now()}` }, ...prev])
-      setMessage('Đã gửi yêu cầu nghỉ. Quản lý sẽ xem xét và phản hồi.')
+      const id = editingId || (isPreviewMode ? `local-${Date.now()}` : await createLeaveRequest(request))
+      if (editingId && !isPreviewMode) await reviseLeaveRequest(editingId, request)
+      setRequests((prev) => editingId
+        ? prev.map((item) => item.id === editingId ? { ...item, ...request, status: 'Pending' } : item)
+        : [{ ...request, id }, ...prev])
+      setMessage(editingId ? 'Đã gửi bản điều chỉnh cho quản lý.' : 'Đã gửi yêu cầu nghỉ. Quản lý sẽ xem xét và phản hồi.')
+      setEditingId(null)
       setStartDate('')
       setEndDate('')
       setReason('')
@@ -101,6 +106,33 @@ export default function LeaveRequestPage() {
       setSubmitting(false)
     }
   }
+
+  const editRequest = (request: any) => {
+    const start = request.leaveDate?.toDate?.() || request.leaveDate
+    const end = request.endDate?.toDate?.() || request.endDate
+    setEditingId(request.id)
+    setDuration(request.duration || 'short')
+    setStartDate(new Date(start).toISOString().slice(0, 10))
+    setEndDate(end ? new Date(end).toISOString().slice(0, 10) : '')
+    setReason(request.reason || '')
+    setSelectedScheduleId(request.workScheduleId || '')
+    setMessage('Bạn đang điều chỉnh yêu cầu đã gửi.')
+    window.scrollTo({ top: 0, behavior: 'smooth' })
+  }
+
+  const cancelRequest = async (id: string) => {
+    if (!window.confirm('Bạn muốn rút yêu cầu nghỉ này?')) return
+    try {
+      if (!isPreviewMode) await cancelLeaveRequest(id)
+      setRequests((prev) => prev.map((item) => item.id === id ? { ...item, status: 'Cancelled' } : item))
+      if (editingId === id) setEditingId(null)
+      setMessage('Đã rút yêu cầu nghỉ. Khoản phạt phát sinh trước đó (nếu có) vẫn được giữ.')
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'Chưa thể hủy yêu cầu.')
+    }
+  }
+
+  const hasPendingRequest = requests.some((item) => item.status === 'Pending')
 
   return (
     <main className="min-h-screen pb-8">
@@ -114,7 +146,7 @@ export default function LeaveRequestPage() {
           </p>
         </section>
 
-        <form onSubmit={submit} className="mobile-card p-4 sm:p-6">
+        {(!hasPendingRequest || editingId) && <form onSubmit={submit} className="mobile-card p-4 sm:p-6">
           <div className="grid grid-cols-2 gap-2 rounded-2xl bg-slate-100 p-1 dark:bg-slate-800">
             {[
               { value: 'short' as const, label: 'Nghỉ ngắn hạn', note: 'Một ngày' },
@@ -197,9 +229,9 @@ export default function LeaveRequestPage() {
           {message && <p className="mt-4 rounded-2xl bg-slate-100 p-3 text-sm font-semibold dark:bg-slate-800">{message}</p>}
           <button type="submit" disabled={submitting} className="mobile-primary-button mt-5">
             {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-            {submitting ? 'Đang gửi...' : 'Gửi yêu cầu nghỉ'}
+            {submitting ? 'Đang gửi...' : editingId ? 'Gửi điều chỉnh' : 'Gửi yêu cầu nghỉ'}
           </button>
-        </form>
+        </form>}
 
         <section className="mt-6">
           <h2 className="mb-3 text-lg font-extrabold">Yêu cầu gần đây</h2>
@@ -208,20 +240,23 @@ export default function LeaveRequestPage() {
               const start = request.leaveDate?.toDate?.() || request.leaveDate || request.startDate
               const end = request.endDate?.toDate?.() || request.endDate
               return (
-                <article key={request.id || index} className="mobile-card flex items-center gap-3 p-4">
-                  <div className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-emerald-50 text-emerald-600 dark:bg-emerald-500/10">
-                    <CheckCircle2 className="h-5 w-5" />
+                <article key={request.id || index} className="mobile-card p-4">
+                  <div className="flex items-center gap-3">
+                    <div className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-emerald-50 text-emerald-600 dark:bg-emerald-500/10"><CheckCircle2 className="h-5 w-5" /></div>
+                    <div className="min-w-0 flex-1">
+                      <h3 className="font-extrabold">{request.duration === 'long' ? 'Nghỉ dài hạn' : 'Nghỉ ngắn hạn'}</h3>
+                      <p className="text-xs text-muted-foreground">{start ? new Date(start).toLocaleDateString('vi-VN') : 'Chưa rõ ngày'}{request.duration === 'long' && end ? ` – ${new Date(end).toLocaleDateString('vi-VN')}` : ''}</p>
+                    </div>
+                    <Badge variant={request.status === 'Approved' ? 'success' : request.status === 'Rejected' ? 'destructive' : request.status === 'Cancelled' ? 'outline' : 'warning'}>
+                      {request.status === 'Approved' ? 'Đã duyệt' : request.status === 'Rejected' ? 'Từ chối' : request.status === 'Cancelled' ? 'Đã hủy' : 'Chờ duyệt'}
+                    </Badge>
                   </div>
-                  <div className="min-w-0 flex-1">
-                    <h3 className="font-extrabold">{request.duration === 'long' ? 'Nghỉ dài hạn' : 'Nghỉ ngắn hạn'}</h3>
-                    <p className="text-xs text-muted-foreground">
-                      {start ? new Date(start).toLocaleDateString('vi-VN') : 'Chưa rõ ngày'}
-                      {request.duration === 'long' && end ? ` – ${new Date(end).toLocaleDateString('vi-VN')}` : ''}
-                    </p>
-                  </div>
-                  <Badge variant={request.status === 'Approved' ? 'success' : request.status === 'Rejected' ? 'destructive' : 'warning'}>
-                    {request.status === 'Approved' ? 'Đã duyệt' : request.status === 'Rejected' ? 'Từ chối' : 'Chờ duyệt'}
-                  </Badge>
+                  {request.status === 'Pending' && (
+                    <div className="mt-4 grid grid-cols-2 gap-2">
+                      <button type="button" onClick={() => editRequest(request)} className="flex min-h-11 items-center justify-center gap-2 rounded-2xl bg-indigo-50 text-sm font-bold text-indigo-700 dark:bg-indigo-500/10 dark:text-indigo-200"><Pencil className="h-4 w-4" /> Điều chỉnh</button>
+                      <button type="button" onClick={() => cancelRequest(request.id)} className="flex min-h-11 items-center justify-center gap-2 rounded-2xl bg-rose-50 text-sm font-bold text-rose-700 dark:bg-rose-500/10 dark:text-rose-200"><Trash2 className="h-4 w-4" /> Hủy yêu cầu</button>
+                    </div>
+                  )}
                 </article>
               )
             })}

@@ -17,6 +17,14 @@ export async function createSalaryAdvance(advanceData: Omit<SalaryAdvance, 'id' 
   return result.id
 }
 
+export async function reviseSalaryAdvance(id: string, amount: number, reason: string): Promise<void> {
+  await callWorkflowApi('reviseRequest', { resource: 'salary', id, amount, reason })
+}
+
+export async function cancelSalaryAdvance(id: string): Promise<void> {
+  await callWorkflowApi('cancelRequest', { resource: 'salary', id })
+}
+
 /**
  * Get all salary advance requests for an employee
  */

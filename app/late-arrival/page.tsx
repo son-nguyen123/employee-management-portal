@@ -1,9 +1,9 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { CalendarDays, CheckCircle2, Clock3, Loader2, Send, X } from 'lucide-react'
+import { CalendarDays, CheckCircle2, Clock3, Loader2, Pencil, Send, Trash2, X } from 'lucide-react'
 import { useAuth } from '@/lib/hooks/useAuth'
-import { createLateRequest, getEmployeeLateRequests } from '@/lib/services/lateService'
+import { cancelLateRequest, createLateRequest, getEmployeeLateRequests, reviseLateRequest } from '@/lib/services/lateService'
 import { getEmployeeSchedules } from '@/lib/services/scheduleService'
 import { getPreviewSchedules } from '@/lib/services/previewWorkflow'
 import { mockLateRequests } from '@/lib/services/mockData'
@@ -29,6 +29,7 @@ export default function LateArrivalPage() {
   const [requests, setRequests] = useState<any[]>([])
   const [submitting, setSubmitting] = useState(false)
   const [message, setMessage] = useState('')
+  const [editingId, setEditingId] = useState<string | null>(null)
 
   useEffect(() => {
     if (!authUser) return
@@ -63,6 +64,7 @@ export default function LateArrivalPage() {
   }, [authUser, isPreviewMode])
 
   const openRequest = (shift: ShiftItem) => {
+    setEditingId(null)
     const defaultHour = (shiftMeta[shift.shift].startHour + 1) % 24
     setSelectedShift(shift)
     setArrivalTime(`${String(defaultHour).padStart(2, '0')}:00`)
@@ -80,8 +82,15 @@ export default function LateArrivalPage() {
     const lateMinutes = Math.max(1, arrivalMinutes - startMinutes)
     setSubmitting(true)
     try {
+      let requestId = editingId || `local-${Date.now()}`
       if (!isPreviewMode) {
-        await createLateRequest({
+        if (editingId) {
+          await reviseLateRequest(editingId, {
+            workScheduleId: selectedShift.id,
+            expectedArrival: arrivalTime,
+            reason: reason.trim(),
+          })
+        } else requestId = await createLateRequest({
           employeeId: authUser.uid,
           workScheduleId: selectedShift.id,
           date: selectedShift.date,
@@ -92,23 +101,50 @@ export default function LateArrivalPage() {
           status: 'Pending',
         })
       }
-      setRequests((prev) => [{
-        id: `local-${Date.now()}`,
+      const nextRequest = {
+        id: requestId,
+        workScheduleId: selectedShift.id,
         shift: selectedShift.shift,
         lateMinutes,
         expectedArrival: arrivalTime,
         reason: reason.trim(),
         status: 'Pending',
         date: selectedShift.date,
-      }, ...prev])
+      }
+      setRequests((prev) => editingId
+        ? prev.map((item) => item.id === editingId ? { ...item, ...nextRequest, id: editingId } : item)
+        : [nextRequest, ...prev])
       setSelectedShift(null)
-      setMessage('Đã gửi thông báo đi trễ cho quản lý.')
+      setEditingId(null)
+      setMessage(editingId ? 'Đã gửi bản điều chỉnh cho quản lý.' : 'Đã gửi thông báo đi trễ cho quản lý.')
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'Chưa thể gửi yêu cầu. Vui lòng thử lại.')
     } finally {
       setSubmitting(false)
     }
   }
+
+  const editRequest = (request: any) => {
+    const shift = shifts.find((item) => item.id === request.workScheduleId)
+    if (!shift) return setMessage('Không còn tìm thấy ca làm của yêu cầu này.')
+    setEditingId(request.id)
+    setSelectedShift(shift)
+    setArrivalTime(request.expectedArrival || '')
+    setReason(request.reason || '')
+  }
+
+  const cancelRequest = async (id: string) => {
+    if (!window.confirm('Bạn muốn rút thông báo đi trễ này?')) return
+    try {
+      if (!isPreviewMode) await cancelLateRequest(id)
+      setRequests((prev) => prev.map((item) => item.id === id ? { ...item, status: 'Cancelled' } : item))
+      setMessage('Đã rút yêu cầu. Khoản phạt báo trễ đã phát sinh (nếu có) vẫn được giữ.')
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'Chưa thể hủy yêu cầu.')
+    }
+  }
+
+  const hasPendingRequest = requests.some((item) => item.status === 'Pending')
 
   return (
     <main className="min-h-screen pb-8">
@@ -124,7 +160,7 @@ export default function LateArrivalPage() {
 
         {message && <p className="mb-4 rounded-2xl bg-indigo-50 p-3 text-sm font-semibold text-indigo-800 dark:bg-indigo-500/10 dark:text-indigo-200">{message}</p>}
 
-        <section>
+        {!hasPendingRequest && <section>
           <div className="mb-3 flex items-center justify-between">
             <h2 className="text-lg font-extrabold">Các ca làm của bạn</h2>
             <Badge variant="outline">{shifts.length} ca</Badge>
@@ -160,20 +196,30 @@ export default function LateArrivalPage() {
               </div>
             )}
           </div>
-        </section>
+        </section>}
 
         {!!requests.length && (
           <section className="mt-7">
             <h2 className="mb-3 text-lg font-extrabold">Lịch sử báo đi trễ</h2>
             <div className="space-y-3">
               {requests.slice(0, 4).map((request, index) => (
-                <article key={request.id || index} className="mobile-card flex items-center gap-3 p-4">
-                  <div className="grid h-10 w-10 place-items-center rounded-xl bg-amber-50 text-amber-600 dark:bg-amber-500/10"><Clock3 className="h-4 w-4" /></div>
-                  <div className="min-w-0 flex-1">
-                    <h3 className="font-bold">{shiftMeta[request.shift as ShiftName]?.label || 'Ca làm'} · trễ {request.lateMinutes} phút</h3>
-                    <p className="truncate text-xs text-muted-foreground">{request.reason}</p>
+                <article key={request.id || index} className="mobile-card p-4">
+                  <div className="flex items-center gap-3">
+                    <div className="grid h-10 w-10 place-items-center rounded-xl bg-amber-50 text-amber-600 dark:bg-amber-500/10"><Clock3 className="h-4 w-4" /></div>
+                    <div className="min-w-0 flex-1">
+                      <h3 className="font-bold">{shiftMeta[request.shift as ShiftName]?.label || 'Ca làm'} · trễ {request.lateMinutes} phút</h3>
+                      <p className="truncate text-xs text-muted-foreground">{request.reason}</p>
+                    </div>
+                    <Badge variant={request.status === 'Approved' ? 'success' : request.status === 'Rejected' ? 'destructive' : request.status === 'Cancelled' ? 'outline' : 'warning'}>
+                      {request.status === 'Approved' ? 'Đã duyệt' : request.status === 'Rejected' ? 'Từ chối' : request.status === 'Cancelled' ? 'Đã hủy' : 'Chờ duyệt'}
+                    </Badge>
                   </div>
-                  <Badge variant="warning">Chờ duyệt</Badge>
+                  {request.status === 'Pending' && (
+                    <div className="mt-4 grid grid-cols-2 gap-2">
+                      <button type="button" onClick={() => editRequest(request)} className="flex min-h-11 items-center justify-center gap-2 rounded-2xl bg-indigo-50 text-sm font-bold text-indigo-700 dark:bg-indigo-500/10 dark:text-indigo-200"><Pencil className="h-4 w-4" /> Điều chỉnh</button>
+                      <button type="button" onClick={() => cancelRequest(request.id)} className="flex min-h-11 items-center justify-center gap-2 rounded-2xl bg-rose-50 text-sm font-bold text-rose-700 dark:bg-rose-500/10 dark:text-rose-200"><Trash2 className="h-4 w-4" /> Hủy yêu cầu</button>
+                    </div>
+                  )}
                 </article>
               ))}
             </div>
@@ -190,7 +236,7 @@ export default function LateArrivalPage() {
                   <p className="text-xs font-bold uppercase tracking-wider text-amber-600">Báo đi trễ</p>
                   <h2 className="text-xl font-black">{shiftMeta[selectedShift.shift].label} · {selectedShift.date.toLocaleDateString('vi-VN')}</h2>
                 </div>
-                <button type="button" onClick={() => setSelectedShift(null)} className="grid h-11 w-11 place-items-center rounded-2xl bg-slate-100 dark:bg-slate-800" aria-label="Đóng"><X className="h-5 w-5" /></button>
+                <button type="button" onClick={() => { setSelectedShift(null); setEditingId(null) }} className="grid h-11 w-11 place-items-center rounded-2xl bg-slate-100 dark:bg-slate-800" aria-label="Đóng"><X className="h-5 w-5" /></button>
               </div>
               <label className="block text-sm font-bold">Giờ dự kiến có mặt
                 <input type="time" value={arrivalTime} onChange={(e) => setArrivalTime(e.target.value)} className="mobile-field mt-2" required />
@@ -200,7 +246,7 @@ export default function LateArrivalPage() {
               </label>
               <button type="submit" disabled={submitting} className="mobile-primary-button mt-5">
                 {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-                {submitting ? 'Đang gửi...' : 'Gửi thông báo đi trễ'}
+                {submitting ? 'Đang gửi...' : editingId ? 'Gửi điều chỉnh' : 'Gửi thông báo đi trễ'}
               </button>
             </div>
           </form>

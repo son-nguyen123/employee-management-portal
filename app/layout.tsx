@@ -5,6 +5,7 @@ import { SkipLoginFAB } from '@/components/demo/skip-login-fab'
 import { ForegroundNotificationListener } from '@/components/notifications/foreground-notification-listener'
 import { AuthProvider } from '@/lib/hooks/useAuth'
 import { ProfileCompletionGuard } from '@/components/auth/profile-completion-guard'
+import { PersistentBottomNav } from '@/components/layout/persistent-bottom-nav'
 import './globals.css'
 
 export const metadata: Metadata = {
@@ -52,6 +53,7 @@ export default function RootLayout({
             <SkipLoginFAB />
             <ForegroundNotificationListener />
             <ProfileCompletionGuard>{children}</ProfileCompletionGuard>
+            <PersistentBottomNav />
             {process.env.NODE_ENV === 'production' && <Analytics />}
           </AuthProvider>
         </ThemeProvider>

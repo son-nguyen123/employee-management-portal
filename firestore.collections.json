@@ -29,7 +29,7 @@
         "createdAt": "timestamp",
         "updatedAt": "timestamp"
       },
-      "optionalFields": ["reviewNote", "reviewedBy", "reviewedAt", "lockedAt"]
+      "optionalFields": ["reviewNote", "reviewedBy", "reviewedAt", "lockedAt", "cancelledBy", "cancelledAt"]
     },
     "leaveRequests": {
       "documentId": "auto",
@@ -38,11 +38,11 @@
         "leaveDate": "timestamp",
         "leaveType": "sick | casual | earned | personal",
         "reason": "string",
-        "status": "Pending | Approved | Rejected",
+        "status": "Pending | Approved | Rejected | Cancelled",
         "createdAt": "timestamp",
         "updatedAt": "timestamp"
       },
-      "optionalFields": ["workScheduleId", "endDate", "duration (short | long)", "approvedBy", "reviewNote", "reviewedBy", "reviewedAt"]
+      "optionalFields": ["workScheduleId", "endDate", "duration (short | long)", "approvedBy", "reviewNote", "reviewedBy", "reviewedAt", "revisedAt", "cancelledBy", "cancelledAt"]
     },
     "lateRequests": {
       "documentId": "auto",
@@ -53,11 +53,11 @@
         "shift": "Morning | Afternoon | Evening",
         "lateMinutes": "integer",
         "reason": "string",
-        "status": "Pending | Approved | Rejected",
+        "status": "Pending | Approved | Rejected | Cancelled",
         "createdAt": "timestamp",
         "updatedAt": "timestamp"
       },
-      "optionalFields": ["expectedArrival", "approvedBy", "reviewNote", "reviewedBy", "reviewedAt"]
+      "optionalFields": ["expectedArrival", "approvedBy", "reviewNote", "reviewedBy", "reviewedAt", "revisedAt", "cancelledBy", "cancelledAt"]
     },
     "salaryAdvances": {
       "documentId": "auto",
@@ -65,11 +65,11 @@
         "employeeId": "string",
         "amount": "number",
         "reason": "string",
-        "status": "Pending | Approved | Rejected",
+        "status": "Pending | Approved | Rejected | Cancelled",
         "createdAt": "timestamp",
         "updatedAt": "timestamp"
       },
-      "optionalFields": ["approvedBy", "reviewNote", "reviewedBy", "reviewedAt"]
+      "optionalFields": ["approvedBy", "reviewNote", "reviewedBy", "reviewedAt", "revisedAt", "cancelledBy", "cancelledAt"]
     },
     "penalties": {
       "documentId": "auto",
@@ -138,7 +138,7 @@
       "access": "Firebase Admin SDK only; client rules deny all access",
       "requiredFields": {
         "employeeId": "Firebase Authentication UID",
-        "action": "submitSchedules | submitLeave | submitLate | submitSalaryAdvance",
+        "action": "submitSchedules | replaceSchedules | submitLeave | submitLate | submitSalaryAdvance",
         "targetIds": "array of created document IDs",
         "penaltyId": "string or null",
         "createdAt": "timestamp"

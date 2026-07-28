@@ -20,6 +20,20 @@ export async function createLateRequest(
   return result.id
 }
 
+export async function reviseLateRequest(id: string, data: Pick<LateRequest, 'workScheduleId' | 'expectedArrival' | 'reason'>): Promise<void> {
+  await callWorkflowApi('reviseRequest', {
+    resource: 'late',
+    id,
+    workScheduleId: data.workScheduleId,
+    expectedArrival: data.expectedArrival,
+    reason: data.reason,
+  })
+}
+
+export async function cancelLateRequest(id: string): Promise<void> {
+  await callWorkflowApi('cancelRequest', { resource: 'late', id })
+}
+
 /**
  * Get all late requests for an employee
  */

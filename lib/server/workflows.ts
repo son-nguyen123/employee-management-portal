@@ -474,6 +474,179 @@ export async function submitSalaryAdvance(actor: RequestActor, raw: unknown) {
   return { id: advanceRef.id }
 }
 
+const employeeRequestCollections = {
+  leave: 'leaveRequests',
+  late: 'lateRequests',
+  salary: 'salaryAdvances',
+} as const
+
+export async function cancelRequest(actor: RequestActor, raw: unknown) {
+  requireStaff(actor)
+  const body = objectBody(raw)
+  const resource = text(body.resource, 'Loại yêu cầu', 20) as keyof typeof employeeRequestCollections
+  const collectionName = employeeRequestCollections[resource]
+  if (!collectionName) throw new ApiError(400, 'Loại yêu cầu không hợp lệ.')
+  const id = text(body.id, 'Mã yêu cầu', 128)
+  const targetRef = adminDb.collection(collectionName).doc(id)
+
+  await adminDb.runTransaction(async (transaction) => {
+    const target = await transaction.get(targetRef)
+    if (!target.exists) throw new ApiError(404, 'Không tìm thấy yêu cầu.')
+    const data = target.data()!
+    if (data.employeeId !== actor.uid) throw new ApiError(403, 'Bạn không thể hủy yêu cầu này.')
+    if (data.status !== 'Pending') throw new ApiError(409, 'Chỉ có thể hủy yêu cầu đang chờ duyệt.')
+    const now = FieldValue.serverTimestamp()
+    transaction.set(targetRef, {
+      status: 'Cancelled',
+      cancelledBy: actor.uid,
+      cancelledAt: now,
+      updatedAt: now,
+    }, { merge: true })
+  })
+
+  return { id, status: 'Cancelled' }
+}
+
+export async function cancelScheduleBatch(actor: RequestActor, raw: unknown) {
+  requireStaff(actor)
+  const body = objectBody(raw)
+  if (!Array.isArray(body.ids) || body.ids.length < 1 || body.ids.length > 21) {
+    throw new ApiError(400, 'Bảng lịch cần từ 1 đến 21 ca.')
+  }
+  const ids = body.ids.map((value, index) => text(value, `Mã ca ${index + 1}`, 128))
+  const refs = ids.map((id) => adminDb.collection('workSchedules').doc(id))
+
+  await adminDb.runTransaction(async (transaction) => {
+    const snapshots = await Promise.all(refs.map((ref) => transaction.get(ref)))
+    if (snapshots.some((snapshot) => !snapshot.exists)) throw new ApiError(404, 'Không tìm thấy đầy đủ bảng lịch.')
+    const schedules = snapshots.map((snapshot) => snapshot.data()!)
+    if (schedules.some((schedule) => schedule.employeeId !== actor.uid || schedule.status !== 'Pending')) {
+      throw new ApiError(409, 'Chỉ có thể hủy bảng lịch của bạn khi đang chờ xác nhận.')
+    }
+    const now = FieldValue.serverTimestamp()
+    refs.forEach((ref) => transaction.set(ref, {
+      status: 'Cancelled',
+      cancelledBy: actor.uid,
+      cancelledAt: now,
+      updatedAt: now,
+      lockedAt: null,
+    }, { merge: true }))
+  })
+
+  return { ids, status: 'Cancelled' }
+}
+
+export async function reviseRequest(actor: RequestActor, raw: unknown) {
+  requireStaff(actor)
+  const body = objectBody(raw)
+  const resource = text(body.resource, 'Loại yêu cầu', 20) as keyof typeof employeeRequestCollections
+  const collectionName = employeeRequestCollections[resource]
+  if (!collectionName) throw new ApiError(400, 'Loại yêu cầu không hợp lệ.')
+  const id = text(body.id, 'Mã yêu cầu', 128)
+  const targetRef = adminDb.collection(collectionName).doc(id)
+
+  await adminDb.runTransaction(async (transaction) => {
+    const target = await transaction.get(targetRef)
+    if (!target.exists) throw new ApiError(404, 'Không tìm thấy yêu cầu.')
+    const current = target.data()!
+    if (current.employeeId !== actor.uid) throw new ApiError(403, 'Bạn không thể điều chỉnh yêu cầu này.')
+    if (current.status !== 'Pending') throw new ApiError(409, 'Chỉ có thể điều chỉnh yêu cầu đang chờ duyệt.')
+
+    const updates: Record<string, unknown> = {}
+    if (resource === 'salary') {
+      updates.amount = numberValue(body.amount, 'Số tiền', 1, 1_000_000_000)
+      updates.reason = text(body.reason ?? '', 'Ghi chú', 1000, true)
+    } else if (resource === 'leave') {
+      const duration = String(body.duration)
+      if (!['short', 'long'].includes(duration)) throw new ApiError(400, 'Hình thức nghỉ không hợp lệ.')
+      const leaveDate = dateValue(body.leaveDate, 'Ngày nghỉ')
+      const endDate = dateValue(body.endDate ?? body.leaveDate, 'Ngày kết thúc')
+      if (endDate < leaveDate) throw new ApiError(400, 'Ngày kết thúc phải từ ngày bắt đầu trở đi.')
+      const scheduleId = body.workScheduleId == null ? '' : text(body.workScheduleId, 'Mã ca làm', 128)
+      if (scheduleId) {
+        const schedule = await transaction.get(adminDb.collection('workSchedules').doc(scheduleId))
+        if (!schedule.exists || schedule.get('employeeId') !== actor.uid || schedule.get('status') !== 'Approved') {
+          throw new ApiError(403, 'Bạn chỉ được xin nghỉ trên ca đã được duyệt của mình.')
+        }
+      }
+      updates.duration = duration
+      updates.leaveDate = Timestamp.fromDate(leaveDate)
+      updates.endDate = Timestamp.fromDate(endDate)
+      updates.reason = text(body.reason, 'Lý do', 1000)
+      updates.workScheduleId = scheduleId || FieldValue.delete()
+    } else {
+      const scheduleId = text(body.workScheduleId, 'Mã ca làm', 128)
+      const expectedArrival = text(body.expectedArrival, 'Giờ dự kiến', 5)
+      if (!/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(expectedArrival)) throw new ApiError(400, 'Giờ dự kiến không hợp lệ.')
+      const schedule = await transaction.get(adminDb.collection('workSchedules').doc(scheduleId))
+      if (!schedule.exists || schedule.get('employeeId') !== actor.uid || schedule.get('status') !== 'Approved') {
+        throw new ApiError(403, 'Bạn chỉ được báo trễ cho ca đã được duyệt của mình.')
+      }
+      const shift = schedule.get('shift') as Shift
+      const date = (schedule.get('date') as Timestamp).toDate()
+      const start = shiftStart(date, shift)
+      const hour = Number(expectedArrival.split(':')[0])
+      let arrival = new Date(`${date.toISOString().slice(0, 10)}T${expectedArrival}:00+07:00`)
+      if (shift === 'Evening' && hour < 12) arrival = new Date(arrival.getTime() + 86_400_000)
+      const lateMinutes = Math.ceil((arrival.getTime() - start.getTime()) / 60_000)
+      if (lateMinutes < 1 || lateMinutes > 720) throw new ApiError(400, 'Giờ dự kiến phải sau giờ bắt đầu ca.')
+      updates.workScheduleId = scheduleId
+      updates.date = schedule.get('date')
+      updates.shift = shift
+      updates.expectedArrival = expectedArrival
+      updates.lateMinutes = lateMinutes
+      updates.reason = text(body.reason, 'Lý do', 1000)
+    }
+
+    const now = FieldValue.serverTimestamp()
+    transaction.set(targetRef, {
+      ...updates,
+      status: 'Pending',
+      revisedAt: now,
+      updatedAt: now,
+    }, { merge: true })
+  })
+
+  return { id, status: 'Pending' }
+}
+
+export async function createForgottenDutyPenalty(actor: RequestActor, raw: unknown) {
+  requireManager(actor)
+  const body = objectBody(raw)
+  const employeeId = text(body.employeeId, 'Nhân viên', 128)
+  const dutyDate = dateValue(body.date, 'Ngày quên trực')
+  const note = text(body.note ?? '', 'Ghi chú', 500, true)
+  const employeeRef = adminDb.collection('employees').doc(employeeId)
+  const penaltyRef = adminDb.collection('penalties').doc()
+  const notificationRef = adminDb.collection('notifications').doc()
+
+  await adminDb.runTransaction(async (transaction) => {
+    const employee = await transaction.get(employeeRef)
+    if (!employee.exists || employee.get('status') !== 'active') {
+      throw new ApiError(404, 'Không tìm thấy nhân viên đang hoạt động.')
+    }
+    const now = FieldValue.serverTimestamp()
+    transaction.create(penaltyRef, {
+      employeeId,
+      title: 'Quên trực',
+      description: `Quên lịch trực ngày ${dutyDate.toLocaleDateString('vi-VN')}. Khấu trừ 1.000đ vào tiền công của 1 giờ làm.${note ? ` Ghi chú: ${note}` : ''}`,
+      category: 'Other',
+      amount: 1000,
+      penaltyDate: Timestamp.fromDate(dutyDate),
+      createdBy: actor.uid,
+      sourceType: 'forgottenDuty',
+      createdAt: now,
+    })
+    transaction.create(notificationRef, warningNotification(
+      employeeId,
+      'Ghi nhận phạt quên trực',
+      'Khấu trừ 1.000đ vào tiền công của 1 giờ làm. Mở Khoản phạt để xem chi tiết.'
+    ))
+  })
+
+  return { id: penaltyRef.id, amount: 1000 }
+}
+
 const reviewConfig = {
   schedule: {
     collection: 'workSchedules',

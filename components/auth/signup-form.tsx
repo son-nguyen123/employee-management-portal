@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation'
 import { AlertCircle, Loader2, Lock, Mail } from 'lucide-react'
 import { signInWithGoogle, signUp } from '@/lib/services/authService'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui/card'
+import { AuthShell } from '@/components/auth/auth-shell'
 
 export function SignupForm() {
   const router = useRouter()
@@ -67,8 +68,8 @@ export function SignupForm() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-indigo-50 via-background to-background px-3 pb-44 pt-8 dark:from-indigo-950/30">
-      <Card className="mx-auto w-full max-w-md rounded-[2rem] border-white/80 shadow-xl shadow-indigo-950/10">
+    <AuthShell eyebrow="Tạo tài khoản mới">
+      <Card className="w-full rounded-[2rem] border-0 bg-white/90 shadow-none backdrop-blur sm:border sm:border-white sm:shadow-2xl sm:shadow-indigo-950/10 dark:bg-slate-900/90">
         <CardHeader className="text-center">
           <div className="mx-auto mb-3 grid h-12 w-12 place-items-center rounded-2xl bg-indigo-600 text-xl font-black text-white">NS</div>
           <CardTitle className="text-2xl">Tạo tài khoản</CardTitle>
@@ -116,6 +117,6 @@ export function SignupForm() {
           </form>
         </CardContent>
       </Card>
-    </div>
+    </AuthShell>
   )
 }

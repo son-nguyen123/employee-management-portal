@@ -1,9 +1,13 @@
 import { NextResponse } from 'next/server'
 import { ApiError, authenticateRequest } from '@/lib/server/api-auth'
 import {
+  cancelRequest,
+  cancelScheduleBatch,
+  createForgottenDutyPenalty,
   reviewRequest,
   reviewScheduleBatch,
   replaceSchedules,
+  reviseRequest,
   submitLate,
   submitLeave,
   submitSalaryAdvance,
@@ -18,6 +22,10 @@ const handlers = {
   submitLeave,
   submitLate,
   submitSalaryAdvance,
+  reviseRequest,
+  cancelRequest,
+  cancelScheduleBatch,
+  createForgottenDutyPenalty,
   reviewRequest,
   reviewScheduleBatch,
 } as const

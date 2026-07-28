@@ -6,6 +6,7 @@ import Link from 'next/link'
 import { Mail, Lock, AlertCircle, Loader2 } from 'lucide-react'
 import { signIn, signInWithGoogle } from '@/lib/services/authService'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui/card'
+import { AuthShell } from '@/components/auth/auth-shell'
 
 export function LoginForm() {
   const router = useRouter()
@@ -54,8 +55,8 @@ export function LoginForm() {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-indigo-50 via-background to-background px-3 pb-44 pt-8 dark:from-indigo-950/30">
-      <Card className="mx-auto w-full max-w-md rounded-[2rem] border-white/80 shadow-xl shadow-indigo-950/10">
+    <AuthShell eyebrow="Đăng nhập an toàn">
+      <Card className="w-full rounded-[2rem] border-0 bg-white/90 shadow-none backdrop-blur sm:border sm:border-white sm:shadow-2xl sm:shadow-indigo-950/10 dark:bg-slate-900/90">
         <CardHeader className="space-y-2 text-center">
           <div className="flex justify-center mb-4">
             <div className="w-12 h-12 rounded-full bg-gradient-to-br from-primary to-primary/60 flex items-center justify-center">
@@ -88,7 +89,7 @@ export function LoginForm() {
                   placeholder="you@example.com"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  className="w-full pl-10 pr-4 py-2 rounded-lg border border-border bg-background hover:border-border/80 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-colors"
+                  className="mobile-field !pl-12"
                   required
                   disabled={loading}
                 />
@@ -107,7 +108,7 @@ export function LoginForm() {
                   placeholder="••••••••"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  className="w-full pl-10 pr-4 py-2 rounded-lg border border-border bg-background hover:border-border/80 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-colors"
+                  className="mobile-field !pl-12"
                   required
                   disabled={loading}
                 />
@@ -117,7 +118,7 @@ export function LoginForm() {
             <button
               type="submit"
               disabled={loading}
-              className="w-full py-2 px-4 rounded-lg bg-primary text-primary-foreground font-medium transition-all duration-200 hover:shadow-lg hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100 flex items-center justify-center gap-2"
+              className="mobile-primary-button"
             >
               {loading && <Loader2 className="w-4 h-4 animate-spin" />}
               {loading ? 'Đang đăng nhập...' : 'Đăng nhập'}
@@ -136,7 +137,7 @@ export function LoginForm() {
               type="button"
               onClick={handleGoogleSignIn}
               disabled={loading}
-              className="w-full py-2 px-4 rounded-lg border border-border bg-background font-medium transition-colors hover:bg-muted disabled:opacity-50 disabled:cursor-not-allowed"
+              className="min-h-12 w-full rounded-2xl border border-slate-200 bg-white font-bold transition active:scale-[.98] disabled:opacity-50 dark:border-slate-700 dark:bg-slate-900"
             >
               Tiếp tục bằng Google
             </button>
@@ -154,6 +155,6 @@ export function LoginForm() {
 
         </CardContent>
       </Card>
-    </div>
+    </AuthShell>
   )
 }

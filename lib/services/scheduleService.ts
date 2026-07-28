@@ -45,6 +45,10 @@ export async function replaceWorkSchedules(
   })
 }
 
+export async function cancelWorkScheduleBatch(ids: string[]): Promise<void> {
+  await callWorkflowApi('cancelScheduleBatch', { ids })
+}
+
 /**
  * Get all schedules for an employee
  */

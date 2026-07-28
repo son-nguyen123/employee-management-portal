@@ -42,7 +42,7 @@ export interface WorkSchedule {
 }
 
 // Leave Request Document
-export type LeaveStatus = 'Pending' | 'Approved' | 'Rejected'
+export type LeaveStatus = 'Pending' | 'Approved' | 'Rejected' | 'Cancelled'
 export type LeaveType = 'sick' | 'casual' | 'earned' | 'personal'
 
 export interface LeaveRequest {
@@ -64,7 +64,7 @@ export interface LeaveRequest {
 }
 
 // Late Request Document
-export type LateStatus = 'Pending' | 'Approved' | 'Rejected'
+export type LateStatus = 'Pending' | 'Approved' | 'Rejected' | 'Cancelled'
 
 export interface LateRequest {
   id?: string
@@ -85,7 +85,7 @@ export interface LateRequest {
 }
 
 // Salary Advance Document
-export type AdvanceStatus = 'Pending' | 'Approved' | 'Rejected'
+export type AdvanceStatus = 'Pending' | 'Approved' | 'Rejected' | 'Cancelled'
 
 export interface SalaryAdvance {
   id?: string
