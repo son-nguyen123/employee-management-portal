@@ -2,10 +2,12 @@ import { auth } from '@/lib/firebase'
 
 type WorkflowAction =
   | 'submitSchedules'
+  | 'replaceSchedules'
   | 'submitLeave'
   | 'submitLate'
   | 'submitSalaryAdvance'
   | 'reviewRequest'
+  | 'reviewScheduleBatch'
 
 export async function callWorkflowApi<T>(
   action: WorkflowAction,

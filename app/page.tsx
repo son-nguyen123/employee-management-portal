@@ -24,6 +24,9 @@ import {
 import { useTheme } from 'next-themes'
 import { useAuth, useUserRole } from '@/lib/hooks/useAuth'
 import { getUnreadNotificationCount } from '@/lib/services/notificationService'
+import { getAllEmployees } from '@/lib/services/employeeService'
+import { getAllSchedules } from '@/lib/services/scheduleService'
+import { getPreviewSchedules } from '@/lib/services/previewWorkflow'
 import { mockNotifications } from '@/lib/services/mockData'
 import { BottomNav } from '@/components/layout/bottom-nav'
 import { SkeletonLoader } from '@/components/ui/skeleton-loader'
@@ -38,18 +41,13 @@ const staffFeatures = [
   { title: 'Công việc trong xưởng', note: 'Danh sách công việc được giao', href: '/workshop', icon: Factory, tone: 'bg-slate-700' },
 ]
 
-const adminFeatures = [
-  { title: 'Trung tâm quản lý', note: 'Duyệt lịch và các yêu cầu', href: '/admin/dashboard', icon: LayoutDashboard },
-  { title: 'Danh sách nhân viên', note: 'Hồ sơ và trạng thái làm việc', href: '/admin/dashboard#employees', icon: UsersRound },
-  { title: 'Lịch chờ xác nhận', note: '3 lịch đang chờ xử lý', href: '/admin/dashboard#schedules', icon: ShieldCheck },
-]
-
 export default function Page() {
   const router = useRouter()
   const { authUser, employee, isLoading, isPreviewMode, logout } = useAuth()
   const role = useUserRole()
   const { theme, setTheme } = useTheme()
   const [notificationCount, setNotificationCount] = useState(0)
+  const [adminStats, setAdminStats] = useState({ confirmed: 0, total: 0, pending: 0 })
   const [dataLoading, setDataLoading] = useState(true)
 
   useEffect(() => {
@@ -73,6 +71,45 @@ export default function Page() {
     load()
   }, [authUser, isPreviewMode])
 
+  useEffect(() => {
+    if (!authUser || role !== 'admin') return
+    const loadAdminStats = async () => {
+      try {
+        const now = new Date()
+        const nextMonday = new Date(now)
+        const daysUntilNextMonday = ((8 - now.getDay()) % 7) || 7
+        nextMonday.setDate(now.getDate() + daysUntilNextMonday)
+        nextMonday.setHours(0, 0, 0, 0)
+        const nextSunday = new Date(nextMonday)
+        nextSunday.setDate(nextMonday.getDate() + 6)
+        nextSunday.setHours(23, 59, 59, 999)
+        const inRegistrationWeek = (value: Date | { toDate(): Date }) => {
+          const date = value instanceof Date ? value : value.toDate()
+          return date >= nextMonday && date <= nextSunday
+        }
+        if (isPreviewMode) {
+          const schedules = getPreviewSchedules()
+          const employeeIds = new Set(schedules.map((item) => item.employeeId))
+          setAdminStats({
+            confirmed: new Set(schedules.filter((item) => item.status === 'Approved' && inRegistrationWeek(new Date(item.date))).map((item) => item.employeeId)).size,
+            total: employeeIds.size,
+            pending: new Set(schedules.filter((item) => item.status === 'Pending' && inRegistrationWeek(new Date(item.date))).map((item) => item.employeeId)).size,
+          })
+          return
+        }
+        const [employees, schedules] = await Promise.all([getAllEmployees(), getAllSchedules()])
+        setAdminStats({
+          confirmed: new Set(schedules.filter((item) => item.status === 'Approved' && inRegistrationWeek(item.date)).map((item) => item.employeeId)).size,
+          total: employees.filter((item) => item.status === 'active').length,
+          pending: new Set(schedules.filter((item) => ['Pending', 'Registered'].includes(item.status) && inRegistrationWeek(item.date)).map((item) => item.employeeId)).size,
+        })
+      } catch {
+        // The main dashboard still works if management statistics are unavailable.
+      }
+    }
+    loadAdminStats()
+  }, [authUser, isPreviewMode, role])
+
   if (isLoading || dataLoading) {
     return <div className="mx-auto min-h-screen max-w-2xl p-4"><SkeletonLoader variant="card" count={6} /></div>
   }
@@ -80,6 +117,11 @@ export default function Page() {
 
   const displayName = employee?.fullName || authUser.displayName || 'Nhân viên'
   const isAdmin = role === 'admin'
+  const adminFeatures = [
+    { title: 'Đăng ký lịch', note: `${adminStats.pending} nhân viên đang chờ xác nhận`, href: '/admin/dashboard#schedules', icon: ShieldCheck },
+    { title: 'Điều hành', note: 'Phạt · xin nghỉ · đi trễ · ứng lương', href: '/admin/requests', icon: LayoutDashboard },
+    { title: 'Danh sách nhân viên', note: 'Tài khoản đang hoạt động trong tháng', href: '/admin/dashboard#employees', icon: UsersRound },
+  ]
 
   return (
     <main className="min-h-screen pb-24 md:pb-8">
@@ -116,17 +158,21 @@ export default function Page() {
           <div className="mt-6 rounded-3xl bg-gradient-to-br from-indigo-500 to-violet-600 p-5 shadow-xl shadow-indigo-950/30">
             <div className="flex items-start justify-between gap-4">
               <div>
-                <p className="text-xs font-semibold text-indigo-100">Lịch làm việc tuần này</p>
-                <p className="mt-1 text-2xl font-extrabold">4 ca đã đăng ký</p>
-                <p className="mt-1 text-sm text-indigo-100">Đang chờ quản lý xác nhận</p>
+                <p className="text-xs font-semibold text-indigo-100">{isAdmin ? 'Xác nhận lịch tuần này' : 'Lịch làm việc tuần này'}</p>
+                <p className="mt-1 text-2xl font-extrabold">
+                  {isAdmin ? `${adminStats.confirmed}/${adminStats.total} nhân viên` : '4 ca đã đăng ký'}
+                </p>
+                <p className="mt-1 text-sm text-indigo-100">
+                  {isAdmin ? 'đã được quản lý xác nhận' : 'Đang chờ quản lý xác nhận'}
+                </p>
               </div>
               <div className="rounded-2xl bg-white/15 px-3 py-2 text-center">
-                <span className="block text-xl font-black">02</span>
-                <span className="text-[10px] font-semibold uppercase tracking-wider">Thông báo</span>
+                <span className="block text-xl font-black">{isAdmin ? String(adminStats.pending).padStart(2, '0') : '02'}</span>
+                <span className="text-[10px] font-semibold uppercase tracking-wider">{isAdmin ? 'Đang chờ' : 'Thông báo'}</span>
               </div>
             </div>
-            <Link href="/schedule" className="mt-5 flex min-h-11 items-center justify-between rounded-2xl bg-white px-4 text-sm font-bold text-indigo-700">
-              Xem lịch của tôi
+            <Link href={isAdmin ? '/admin/dashboard#schedules' : '/schedule'} className="mt-5 flex min-h-11 items-center justify-between rounded-2xl bg-white px-4 text-sm font-bold text-indigo-700">
+              {isAdmin ? 'Mở bảng đăng ký lịch' : 'Xem lịch của tôi'}
               <ChevronRight className="h-4 w-4" />
             </Link>
           </div>
@@ -141,7 +187,7 @@ export default function Page() {
                 <p className="text-xs font-bold uppercase tracking-[0.14em] text-indigo-600">Quản trị</p>
                 <h2 className="text-xl font-extrabold tracking-tight">Cần bạn xử lý</h2>
               </div>
-              <span className="rounded-full bg-amber-100 px-3 py-1 text-xs font-bold text-amber-700">5 mục mới</span>
+              <span className="rounded-full bg-amber-100 px-3 py-1 text-xs font-bold text-amber-700">{adminStats.pending} mục mới</span>
             </div>
             <div className="space-y-2">
               {adminFeatures.map(({ title, note, href, icon: Icon }) => (

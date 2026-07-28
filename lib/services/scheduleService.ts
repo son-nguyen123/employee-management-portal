@@ -28,6 +28,23 @@ export async function submitWorkSchedules(
   })
 }
 
+export async function replaceWorkSchedules(
+  scheduleIds: string[],
+  schedules: Array<Omit<WorkSchedule, 'id' | 'createdAt' | 'updatedAt'>>
+): Promise<{ ids: string[]; penalty: number }> {
+  return callWorkflowApi('replaceSchedules', {
+    requestId: newWorkflowRequestId(),
+    scheduleIds,
+    schedules: schedules.map((schedule) => ({
+      date: schedule.date instanceof Date
+        ? schedule.date.toISOString()
+        : schedule.date.toDate().toISOString(),
+      shift: schedule.shift,
+      note: schedule.note,
+    })),
+  })
+}
+
 /**
  * Get all schedules for an employee
  */
@@ -100,6 +117,18 @@ export async function reviewWorkSchedule(
   await callWorkflowApi('reviewRequest', {
     resource: 'schedule',
     id: scheduleId,
+    status,
+    note: reviewNote,
+  })
+}
+
+export async function reviewWorkScheduleBatch(
+  ids: string[],
+  status: 'Approved' | 'Rejected',
+  reviewNote = ''
+): Promise<void> {
+  await callWorkflowApi('reviewScheduleBatch', {
+    ids,
     status,
     note: reviewNote,
   })

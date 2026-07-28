@@ -2,10 +2,10 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
-import { AlertTriangle, CalendarCheck, Check, ChevronRight, ClipboardCheck, Loader2, MessageSquareText, UsersRound, X } from 'lucide-react'
+import { AlertTriangle, CalendarCheck, Check, ChevronRight, ClipboardCheck, Loader2, UsersRound, X } from 'lucide-react'
 import { useAuth, useUserRole } from '@/lib/hooks/useAuth'
 import { getAllEmployees } from '@/lib/services/employeeService'
-import { getAllSchedules, reviewWorkSchedule } from '@/lib/services/scheduleService'
+import { getAllSchedules, reviewWorkScheduleBatch } from '@/lib/services/scheduleService'
 import { getPreviewSchedules, updatePreviewSchedule } from '@/lib/services/previewWorkflow'
 import type { Employee, WorkSchedule } from '@/lib/models/types'
 import { Header } from '@/components/layout/header'
@@ -18,7 +18,36 @@ type ScheduleRow = WorkSchedule & {
   employeeCode?: string
 }
 
-const shiftLabel = { Morning: 'Ca sáng', Afternoon: 'Ca chiều', Evening: 'Ca tối' }
+const shortShiftLabel = { Morning: 'sáng', Afternoon: 'chiều', Evening: 'tối' }
+
+type ScheduleBatch = {
+  key: string
+  employeeId: string
+  employeeName?: string
+  employeeCode?: string
+  schedules: ScheduleRow[]
+}
+
+function toDate(value: WorkSchedule['date']) {
+  return value instanceof Date ? value : value.toDate()
+}
+
+function mondayKey(date: Date) {
+  const result = new Date(date)
+  const day = result.getDay() || 7
+  result.setDate(result.getDate() - day + 1)
+  result.setHours(0, 0, 0, 0)
+  return result.toISOString().slice(0, 10)
+}
+
+function nextMondayKey() {
+  const now = new Date()
+  const result = new Date(now)
+  const daysUntilNextMonday = ((8 - now.getDay()) % 7) || 7
+  result.setDate(now.getDate() + daysUntilNextMonday)
+  result.setHours(0, 0, 0, 0)
+  return result.toISOString().slice(0, 10)
+}
 
 export default function AdminDashboardPage() {
   const { authUser, isPreviewMode } = useAuth()
@@ -79,31 +108,50 @@ export default function AdminDashboardPage() {
     load()
   }, [authUser, isPreviewMode])
 
-  const pending = useMemo(
-    () => schedules.filter((item) => ['Registered', 'Pending'].includes(item.status)),
+  const activeEmployees = useMemo(() => employees.filter((item) => item.status === 'active'), [employees])
+  const pendingBatches = useMemo(() => {
+    const grouped = new Map<string, ScheduleBatch>()
+    schedules.filter((item) => ['Registered', 'Pending'].includes(item.status)).forEach((schedule) => {
+      const key = `${schedule.employeeId}-${mondayKey(toDate(schedule.date))}`
+      const current = grouped.get(key)
+      if (current) current.schedules.push(schedule)
+      else grouped.set(key, {
+        key,
+        employeeId: schedule.employeeId,
+        employeeName: schedule.employeeName,
+        employeeCode: schedule.employeeCode,
+        schedules: [schedule],
+      })
+    })
+    return Array.from(grouped.values()).map((batch) => ({
+      ...batch,
+      schedules: batch.schedules.sort((a, b) => toDate(a.date).getTime() - toDate(b.date).getTime()),
+    }))
+  }, [schedules])
+  const confirmedEmployees = useMemo(
+    () => new Set(schedules.filter((item) =>
+      item.status === 'Approved' && mondayKey(toDate(item.date)) === nextMondayKey()
+    ).map((item) => item.employeeId)).size,
     [schedules]
   )
 
-  const review = async (schedule: ScheduleRow, status: 'Approved' | 'Rejected' | 'ChangesRequested') => {
+  const review = async (batch: ScheduleBatch, status: 'Approved' | 'Rejected') => {
     let reviewNote = ''
-    if (status !== 'Approved') {
-      reviewNote = window.prompt(
-        status === 'Rejected' ? 'Nhập lý do từ chối lịch:' : 'Nhập nội dung cần nhân viên chỉnh sửa:'
-      )?.trim() || ''
+    if (status === 'Rejected') {
+      reviewNote = window.prompt('Nhập lý do từ chối toàn bộ bảng lịch:')?.trim() || ''
       if (!reviewNote) return
     }
-    setProcessingId(schedule.id)
+    setProcessingId(batch.key)
     setMessage('')
     try {
-      if (isPreviewMode) updatePreviewSchedule(schedule.id, { status, reviewNote })
-      else await reviewWorkSchedule(schedule.id, status, reviewNote)
-      setSchedules((prev) => prev.map((item) => item.id === schedule.id ? { ...item, status, reviewNote } : item))
+      const ids = batch.schedules.map((item) => item.id)
+      if (isPreviewMode) ids.forEach((id) => updatePreviewSchedule(id, { status, reviewNote }))
+      else await reviewWorkScheduleBatch(ids, status, reviewNote)
+      setSchedules((prev) => prev.map((item) => ids.includes(item.id) ? { ...item, status, reviewNote } : item))
       setMessage(
         status === 'Approved'
-          ? 'Đã xác nhận và khóa ca làm.'
-          : status === 'Rejected'
-            ? 'Đã từ chối ca làm.'
-            : 'Đã gửi yêu cầu chỉnh sửa cho nhân viên.'
+          ? `Đã xác nhận toàn bộ bảng gồm ${ids.length} ca.`
+          : 'Đã từ chối bảng lịch và gửi thông báo cho nhân viên.'
       )
     } catch {
       setMessage('Không thể cập nhật. Kiểm tra tài khoản hiện tại có role admin trong employees/{uid}.')
@@ -135,9 +183,9 @@ export default function AdminDashboardPage() {
         </Link>
         <section className="grid grid-cols-3 gap-2">
           {[
-            { label: 'Nhân viên', value: employees.length, icon: UsersRound, color: 'bg-indigo-600' },
-            { label: 'Chờ duyệt', value: pending.length, icon: CalendarCheck, color: 'bg-amber-500' },
-            { label: 'Đã duyệt', value: schedules.filter((item) => item.status === 'Approved').length, icon: Check, color: 'bg-emerald-600' },
+            { label: 'Đang hoạt động', value: activeEmployees.length, icon: UsersRound, color: 'bg-indigo-600' },
+            { label: 'Bảng chờ', value: pendingBatches.length, icon: CalendarCheck, color: 'bg-amber-500' },
+            { label: 'Đã xác nhận', value: `${confirmedEmployees}/${activeEmployees.length}`, icon: Check, color: 'bg-emerald-600' },
           ].map(({ label, value, icon: Icon, color }) => (
             <article key={label} className="mobile-card p-3">
               <div className={`grid h-9 w-9 place-items-center rounded-xl text-white ${color}`}><Icon className="h-4 w-4" /></div>
@@ -157,41 +205,58 @@ export default function AdminDashboardPage() {
         {loading ? (
           <div className="grid min-h-56 place-items-center"><Loader2 className="h-7 w-7 animate-spin text-indigo-600" /></div>
         ) : tab === 'requests' ? (
-          <section className="mt-5 space-y-3">
-            {pending.map((schedule) => {
-              const date = schedule.date instanceof Date ? schedule.date : schedule.date.toDate()
+          <section id="schedules" className="mt-5 space-y-3">
+            {pendingBatches.map((batch) => {
+              const startDate = toDate(batch.schedules[0].date)
+              const endDate = toDate(batch.schedules[batch.schedules.length - 1].date)
               return (
-                <article key={schedule.id} className="mobile-card p-4">
-                  <Link href={`/admin/employees/${schedule.employeeId}`} className="flex items-start gap-3">
+                <article key={batch.key} className="overflow-hidden rounded-[1.75rem] border border-indigo-100 bg-white shadow-sm dark:border-indigo-500/20 dark:bg-slate-900">
+                  <div className="bg-gradient-to-r from-indigo-600 to-violet-600 p-4 text-white">
+                  <Link href={`/admin/employees/${batch.employeeId}`} className="flex items-start gap-3">
                     <div className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-slate-950 text-xs font-black text-white">
-                      {(schedule.employeeName || 'NV').split(' ').slice(-2).map((word) => word[0]).join('')}
+                      {(batch.employeeName || 'NV').split(' ').slice(-2).map((word) => word[0]).join('')}
                     </div>
                     <div className="min-w-0 flex-1">
-                      <h3 className="truncate font-extrabold">{schedule.employeeName || schedule.employeeId}</h3>
-                      <p className="text-xs text-muted-foreground">{schedule.employeeCode || 'Nhân viên'} · {date.toLocaleDateString('vi-VN')}</p>
-                      <p className="mt-2 text-sm font-bold text-indigo-600">{shiftLabel[schedule.shift]}</p>
+                      <h3 className="truncate font-extrabold">{batch.employeeName || batch.employeeId}</h3>
+                      <p className="text-xs text-indigo-100">{batch.employeeCode || 'Nhân viên'} · {startDate.toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit' })}–{endDate.toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit' })}</p>
+                      <p className="mt-1 text-xs font-semibold text-white/80">{batch.schedules.length} ca trong bảng</p>
                     </div>
-                    <ChevronRight className="h-5 w-5 text-slate-400" />
+                    <ChevronRight className="h-5 w-5 text-white/70" />
                   </Link>
-                  <div className="mt-4 grid grid-cols-3 gap-2 border-t border-slate-100 pt-3 dark:border-white/10">
-                    <button disabled={processingId === schedule.id} onClick={() => review(schedule, 'Rejected')} className="flex min-h-10 items-center justify-center gap-1 rounded-xl border border-rose-200 text-xs font-bold text-rose-600">
+                  </div>
+                  <div className="divide-y divide-slate-100 px-3 dark:divide-white/10">
+                    {Array.from(new Map(batch.schedules.map((schedule) => {
+                      const date = toDate(schedule.date)
+                      const dayKey = date.toISOString().slice(0, 10)
+                      return [dayKey, { date, rows: batch.schedules.filter((item) => toDate(item.date).toISOString().slice(0, 10) === dayKey) }]
+                    })).values()).map(({ date, rows }) => (
+                      <div key={date.toISOString()} className="flex items-start gap-3 py-3 text-sm">
+                        <span className="w-24 shrink-0 font-extrabold capitalize">{date.toLocaleDateString('vi-VN', { weekday: 'long' })}</span>
+                        <span className="text-muted-foreground">
+                          {rows.filter((item) => !item.note?.includes('[DUTY_ONLY]')).map((item) =>
+                            item.note?.includes('[CUSTOM:') ? 'tùy chỉnh' : shortShiftLabel[item.shift]
+                          ).join(' – ')}
+                          {rows.some((item) => item.note?.includes('[DUTY')) && <strong className="text-rose-600">{rows.some((item) => !item.note?.includes('[DUTY_ONLY]')) ? ' + ' : ''}trực</strong>}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="grid grid-cols-2 gap-2 border-t border-slate-100 p-3 dark:border-white/10">
+                    <button disabled={processingId === batch.key} onClick={() => review(batch, 'Rejected')} className="flex min-h-11 items-center justify-center gap-1 rounded-xl border border-rose-200 text-sm font-bold text-rose-600">
                       <X className="h-3.5 w-3.5" /> Từ chối
                     </button>
-                    <button disabled={processingId === schedule.id} onClick={() => review(schedule, 'ChangesRequested')} className="flex min-h-10 items-center justify-center gap-1 rounded-xl border border-amber-200 text-xs font-bold text-amber-700">
-                      <MessageSquareText className="h-3.5 w-3.5" /> Yêu cầu sửa
-                    </button>
-                    <button disabled={processingId === schedule.id} onClick={() => review(schedule, 'Approved')} className="flex min-h-10 items-center justify-center gap-1 rounded-xl bg-emerald-600 text-xs font-bold text-white">
-                      {processingId === schedule.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />} Duyệt
+                    <button disabled={processingId === batch.key} onClick={() => review(batch, 'Approved')} className="flex min-h-11 items-center justify-center gap-1 rounded-xl bg-emerald-600 text-sm font-bold text-white">
+                      {processingId === batch.key ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />} Xác nhận cả bảng
                     </button>
                   </div>
                 </article>
               )
             })}
-            {!pending.length && <div className="mobile-card p-8 text-center"><Check className="mx-auto h-8 w-8 text-emerald-600" /><h3 className="mt-3 font-extrabold">Đã xử lý hết</h3><p className="text-sm text-muted-foreground">Không còn lịch chờ duyệt.</p></div>}
+            {!pendingBatches.length && <div className="mobile-card p-8 text-center"><Check className="mx-auto h-8 w-8 text-emerald-600" /><h3 className="mt-3 font-extrabold">Đã xử lý hết</h3><p className="text-sm text-muted-foreground">Không còn bảng lịch chờ duyệt.</p></div>}
           </section>
         ) : (
           <section id="employees" className="mt-5 space-y-3">
-            {employees.map((employee) => (
+            {activeEmployees.map((employee) => (
               <Link key={employee.uid} href={`/admin/employees/${employee.uid}`} className="mobile-card flex min-h-20 items-center gap-3 p-3">
                 <div className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-indigo-50 font-black text-indigo-600 dark:bg-indigo-500/10">
                   {employee.fullName.split(' ').slice(-2).map((word) => word[0]).join('')}
@@ -200,7 +265,7 @@ export default function AdminDashboardPage() {
                   <h3 className="truncate font-extrabold">{employee.fullName}</h3>
                   <p className="text-xs text-muted-foreground">{employee.employeeCode} · {employee.phone || 'Chưa có SĐT'}</p>
                 </div>
-                <Badge variant={employee.status === 'active' ? 'success' : 'outline'}>{employee.status === 'active' ? 'Đang làm' : 'Tạm nghỉ'}</Badge>
+                <Badge variant="success">Đang làm tháng này</Badge>
                 <ChevronRight className="h-5 w-5 shrink-0 text-slate-400" />
               </Link>
             ))}
@@ -209,7 +274,7 @@ export default function AdminDashboardPage() {
 
         <div className="mt-6 flex gap-2 rounded-2xl border border-amber-200 bg-amber-50 p-3 text-xs leading-5 text-amber-800">
           <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-          Khi duyệt, ca làm sẽ bị khóa. Nhân viên chỉ có thể xem hoặc gửi yêu cầu điều chỉnh.
+          Một lần xác nhận sẽ duyệt và khóa toàn bộ bảng tuần của nhân viên.
         </div>
       </PageContainer>
     </main>

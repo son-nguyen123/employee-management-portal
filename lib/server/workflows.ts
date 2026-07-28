@@ -183,6 +183,88 @@ export async function submitSchedules(actor: RequestActor, raw: unknown) {
   }
 }
 
+export async function replaceSchedules(actor: RequestActor, raw: unknown) {
+  requireStaff(actor)
+  const body = objectBody(raw)
+  const id = requestId(body)
+  if (!Array.isArray(body.scheduleIds) || body.scheduleIds.length < 1 || body.scheduleIds.length > 21) {
+    throw new ApiError(400, 'Danh sách lịch cũ không hợp lệ.')
+  }
+  if (!Array.isArray(body.schedules) || body.schedules.length < 1 || body.schedules.length > 21) {
+    throw new ApiError(400, 'Mỗi lần gửi cần từ 1 đến 21 ca làm.')
+  }
+
+  const scheduleIds = body.scheduleIds.map((value, index) =>
+    text(value, `Mã lịch ${index + 1}`, 128)
+  )
+  const schedules = body.schedules.map((item, index) => {
+    const row = objectBody(item)
+    const date = dateValue(row.date, `Ngày ca ${index + 1}`)
+    const shift = row.shift
+    if (!shifts.includes(shift as Shift)) throw new ApiError(400, `Ca ${index + 1} không hợp lệ.`)
+    return {
+      date,
+      shift: shift as Shift,
+      note: text(row.note ?? '', `Ghi chú ca ${index + 1}`, 500, true),
+    }
+  })
+
+  const oldRefs = scheduleIds.map((scheduleId) => adminDb.collection('workSchedules').doc(scheduleId))
+  const newRefs = schedules.map(() => adminDb.collection('workSchedules').doc())
+  const workflow = workflowRef(actor, id)
+
+  await adminDb.runTransaction(async (transaction) => {
+    const [workflowSnapshot, ...oldSnapshots] = await Promise.all([
+      transaction.get(workflow),
+      ...oldRefs.map((ref) => transaction.get(ref)),
+    ])
+    if (workflowSnapshot.exists) throw new ApiError(409, 'Bản điều chỉnh này đã được gửi trước đó.')
+    if (oldSnapshots.some((snapshot) => !snapshot.exists)) {
+      throw new ApiError(404, 'Không tìm thấy đầy đủ lịch cần điều chỉnh.')
+    }
+    const oldData = oldSnapshots.map((snapshot) => snapshot.data()!)
+    if (oldData.some((schedule) =>
+      schedule.employeeId !== actor.uid ||
+      !['Pending', 'Registered', 'ChangesRequested', 'Rejected'].includes(schedule.status)
+    )) {
+      throw new ApiError(403, 'Bạn không thể điều chỉnh lịch này.')
+    }
+
+    const oldWeeks = new Set(oldData.map((schedule) =>
+      mondayFor((schedule.date as Timestamp).toDate()).toISOString()
+    ))
+    const newWeeks = new Set(schedules.map((schedule) => mondayFor(schedule.date).toISOString()))
+    if (oldWeeks.size !== 1 || newWeeks.size !== 1 || [...oldWeeks][0] !== [...newWeeks][0]) {
+      throw new ApiError(400, 'Bản điều chỉnh phải thuộc cùng tuần với lịch đã gửi.')
+    }
+
+    const now = FieldValue.serverTimestamp()
+    oldRefs.forEach((ref) => transaction.delete(ref))
+    schedules.forEach((schedule, index) => {
+      transaction.create(newRefs[index], {
+        employeeId: actor.uid,
+        date: Timestamp.fromDate(schedule.date),
+        shift: schedule.shift,
+        status: 'Pending',
+        note: schedule.note,
+        createdAt: now,
+        updatedAt: now,
+        lockedAt: null,
+      })
+    })
+    transaction.create(workflow, {
+      employeeId: actor.uid,
+      action: 'replaceSchedules',
+      targetIds: newRefs.map((ref) => ref.id),
+      replacedIds: scheduleIds,
+      penaltyId: null,
+      createdAt: now,
+    })
+  })
+
+  return { ids: newRefs.map((ref) => ref.id), penalty: 0 }
+}
+
 export async function submitLeave(actor: RequestActor, raw: unknown) {
   requireStaff(actor)
   const body = objectBody(raw)
@@ -474,6 +556,87 @@ export async function reviewRequest(actor: RequestActor, raw: unknown) {
     status,
   })
   return { id, status, push }
+}
+
+export async function reviewScheduleBatch(actor: RequestActor, raw: unknown) {
+  requireManager(actor)
+  const body = objectBody(raw)
+  if (!Array.isArray(body.ids) || body.ids.length < 1 || body.ids.length > 21) {
+    throw new ApiError(400, 'Bảng lịch cần từ 1 đến 21 ca.')
+  }
+  const ids = body.ids.map((value, index) => text(value, `Mã ca ${index + 1}`, 128))
+  if (new Set(ids).size !== ids.length) throw new ApiError(400, 'Bảng lịch có ca bị trùng.')
+  const status = text(body.status, 'Trạng thái', 30) as ReviewStatus
+  if (!['Approved', 'Rejected'].includes(status)) {
+    throw new ApiError(400, 'Trạng thái xử lý không hợp lệ.')
+  }
+  const note = text(body.note ?? '', 'Phản hồi', 1000, true)
+  if (status === 'Rejected' && !note) throw new ApiError(400, 'Vui lòng nhập lý do từ chối.')
+
+  const refs = ids.map((id) => adminDb.collection('workSchedules').doc(id))
+  let employeeId = ''
+  const notificationRef = adminDb.collection('notifications').doc(`schedule-batch-${ids[0]}-${status}`)
+  const dispatchRef = adminDb.collection('pushDispatches').doc(`schedule-batch-${ids[0]}-${status}`)
+
+  await adminDb.runTransaction(async (transaction) => {
+    const snapshots = await Promise.all(refs.map((ref) => transaction.get(ref)))
+    if (snapshots.some((snapshot) => !snapshot.exists)) {
+      throw new ApiError(404, 'Không tìm thấy đầy đủ bảng lịch.')
+    }
+    const schedules = snapshots.map((snapshot) => snapshot.data()!)
+    employeeId = schedules[0].employeeId
+    const week = mondayFor((schedules[0].date as Timestamp).toDate()).toISOString()
+    if (schedules.some((schedule) =>
+      schedule.employeeId !== employeeId ||
+      mondayFor((schedule.date as Timestamp).toDate()).toISOString() !== week ||
+      !['Pending', 'Registered'].includes(schedule.status)
+    )) {
+      throw new ApiError(409, 'Bảng lịch không đồng nhất hoặc đã được xử lý.')
+    }
+
+    const now = FieldValue.serverTimestamp()
+    refs.forEach((ref) => transaction.set(ref, {
+      status,
+      reviewNote: note,
+      reviewedBy: actor.uid,
+      reviewedAt: now,
+      updatedAt: now,
+      lockedAt: status === 'Approved' ? now : null,
+    }, { merge: true }))
+    transaction.set(notificationRef, {
+      employeeId,
+      title: status === 'Approved' ? 'Lịch làm đã được xác nhận' : 'Lịch làm đã bị từ chối',
+      message: status === 'Approved'
+        ? `Toàn bộ ${ids.length} ca trong bảng tuần của bạn đã được quản lý xác nhận.`
+        : `Bảng lịch tuần của bạn đã bị từ chối. Phản hồi: ${note}`,
+      type: status === 'Approved' ? 'success' : 'warning',
+      isRead: false,
+      createdAt: now,
+    })
+    transaction.set(dispatchRef, {
+      source: 'workSchedules',
+      sourceId: ids[0],
+      employeeId,
+      status,
+      state: 'queued',
+      createdAt: now,
+      updatedAt: now,
+    })
+  })
+
+  const push = await sendEmployeePush({
+    employeeId,
+    dispatchId: dispatchRef.id,
+    title: status === 'Approved' ? 'Lịch làm đã được xác nhận' : 'Lịch làm đã bị từ chối',
+    body: status === 'Approved'
+      ? 'Toàn bộ bảng lịch tuần của bạn đã được duyệt.'
+      : `Bảng lịch tuần của bạn đã bị từ chối. ${note}`,
+    link: '/schedule',
+    source: 'workSchedules',
+    sourceId: ids[0],
+    status,
+  })
+  return { ids, status, push }
 }
 
 async function sendEmployeePush(params: {

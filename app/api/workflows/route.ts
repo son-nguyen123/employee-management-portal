@@ -2,6 +2,8 @@ import { NextResponse } from 'next/server'
 import { ApiError, authenticateRequest } from '@/lib/server/api-auth'
 import {
   reviewRequest,
+  reviewScheduleBatch,
+  replaceSchedules,
   submitLate,
   submitLeave,
   submitSalaryAdvance,
@@ -12,10 +14,12 @@ export const runtime = 'nodejs'
 
 const handlers = {
   submitSchedules,
+  replaceSchedules,
   submitLeave,
   submitLate,
   submitSalaryAdvance,
   reviewRequest,
+  reviewScheduleBatch,
 } as const
 
 function safeServerError(error: unknown): { status: number; message: string } {
