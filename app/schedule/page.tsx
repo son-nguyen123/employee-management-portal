@@ -137,8 +137,9 @@ export default function SchedulePage() {
       window.sessionStorage.removeItem('schedule-draft')
       setMessage('Đã gửi lịch. Lịch đang chờ quản lý xác nhận.')
       setTimeout(() => router.push('/'), 1200)
-    } catch {
-      setMessage('Chưa thể gửi lịch. Vui lòng thử lại.')
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'Chưa thể gửi lịch. Vui lòng thử lại.')
+      window.scrollTo({ top: 0, behavior: 'smooth' })
     } finally {
       setSubmitting(false)
     }

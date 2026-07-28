@@ -27,6 +27,11 @@ export async function callWorkflowApi<T>(
     | { ok: false; error: string }
     | null
   if (!response.ok || !data?.ok) {
+    if (response.status === 404) {
+      throw new Error(
+        'Bản triển khai đang mở chưa có backend nghiệp vụ. Hãy đưa deployment mới nhất lên Production trên Vercel.'
+      )
+    }
     throw new Error(data && 'error' in data ? data.error : 'Không thể xử lý yêu cầu.')
   }
   return data.result

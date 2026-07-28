@@ -103,8 +103,8 @@ export default function LateArrivalPage() {
       }, ...prev])
       setSelectedShift(null)
       setMessage('Đã gửi thông báo đi trễ cho quản lý.')
-    } catch {
-      setMessage('Chưa thể gửi yêu cầu. Vui lòng thử lại.')
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'Chưa thể gửi yêu cầu. Vui lòng thử lại.')
     } finally {
       setSubmitting(false)
     }

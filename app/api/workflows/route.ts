@@ -18,6 +18,39 @@ const handlers = {
   reviewRequest,
 } as const
 
+function safeServerError(error: unknown): { status: number; message: string } {
+  if (error instanceof ApiError) {
+    return { status: error.status, message: error.message }
+  }
+
+  const details = error instanceof Error ? error.message : ''
+  if (details.startsWith('Thiếu biến môi trường server ')) {
+    return {
+      status: 503,
+      message: 'Backend chưa cấu hình đủ biến Firebase Admin trên môi trường đang chạy.',
+    }
+  }
+
+  const credentialError =
+    details.includes('Firebase Admin private key không hợp lệ') ||
+    details.includes('Failed to parse private key') ||
+    details.includes('Invalid PEM formatted message') ||
+    details.includes('app/invalid-credential') ||
+    details.includes('Could not load the default credentials')
+
+  if (credentialError) {
+    return {
+      status: 503,
+      message: 'Thông tin Firebase Admin trên máy chủ không hợp lệ. Hãy kiểm tra lại service account rồi redeploy Vercel.',
+    }
+  }
+
+  return {
+    status: 500,
+    message: 'Backend chưa sẵn sàng hoặc đã xảy ra lỗi máy chủ.',
+  }
+}
+
 export async function POST(request: Request) {
   try {
     const actor = await authenticateRequest(request)
@@ -32,10 +65,7 @@ export async function POST(request: Request) {
     const result = await handlers[action as keyof typeof handlers](actor, payload)
     return NextResponse.json({ ok: true, result })
   } catch (error) {
-    const status = error instanceof ApiError ? error.status : 500
-    const message = error instanceof ApiError
-      ? error.message
-      : 'Backend chưa sẵn sàng hoặc đã xảy ra lỗi máy chủ.'
+    const { status, message } = safeServerError(error)
     if (!(error instanceof ApiError)) console.error('Workflow API error:', error)
     return NextResponse.json({ ok: false, error: message }, { status })
   }

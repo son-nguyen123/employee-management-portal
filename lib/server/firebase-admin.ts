@@ -13,6 +13,31 @@ function requiredEnv(name: string): string {
   return value
 }
 
+function firebaseAdminPrivateKey(): string {
+  let privateKey = requiredEnv('FIREBASE_ADMIN_PRIVATE_KEY')
+
+  // Accept both a raw PEM value and a JSON-quoted value copied from a
+  // service-account file. Vercel also commonly stores newlines as "\n".
+  if (privateKey.startsWith('"') && privateKey.endsWith('"')) {
+    try {
+      const parsed = JSON.parse(privateKey)
+      if (typeof parsed === 'string') privateKey = parsed
+    } catch {
+      // Validation below returns a safe error without echoing the secret.
+    }
+  }
+
+  privateKey = privateKey.replace(/\\n/g, '\n')
+  if (
+    !privateKey.includes('-----BEGIN PRIVATE KEY-----') ||
+    !privateKey.includes('-----END PRIVATE KEY-----')
+  ) {
+    throw new Error('Firebase Admin private key không hợp lệ.')
+  }
+
+  return privateKey
+}
+
 function getAdminApp() {
   if (getApps().length) return getApps()[0]
 
@@ -20,7 +45,7 @@ function getAdminApp() {
     credential: cert({
       projectId: requiredEnv('FIREBASE_ADMIN_PROJECT_ID'),
       clientEmail: requiredEnv('FIREBASE_ADMIN_CLIENT_EMAIL'),
-      privateKey: requiredEnv('FIREBASE_ADMIN_PRIVATE_KEY').replace(/\\n/g, '\n'),
+      privateKey: firebaseAdminPrivateKey(),
     }),
   })
 }

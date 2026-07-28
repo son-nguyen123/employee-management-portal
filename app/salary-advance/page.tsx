@@ -77,7 +77,10 @@ export default function SalaryAdvancePage() {
       setFormData({ amount: '', reason: '' })
       setTimeout(() => router.push('/'), 1500)
     } catch (error) {
-      setMessage({ type: 'error', text: 'Không thể gửi yêu cầu' })
+      setMessage({
+        type: 'error',
+        text: error instanceof Error ? error.message : 'Không thể gửi yêu cầu',
+      })
     } finally {
       setSubmitting(false)
     }
