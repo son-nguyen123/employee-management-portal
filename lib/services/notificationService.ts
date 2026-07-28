@@ -128,6 +128,70 @@ export function subscribeToEmployeeNotifications(
 }
 
 /**
+ * The manager badge represents work that still needs a decision, not whether
+ * the notification page has been opened. It therefore follows workflow
+ * statuses directly and also covers pending records created before manager
+ * notifications were introduced.
+ */
+export function subscribeToManagementPendingCount(
+  callback: (count: number) => void
+): () => void {
+  const counts = {
+    schedules: 0,
+    leaveRequests: 0,
+    lateRequests: 0,
+    salaryAdvances: 0,
+  }
+  const publish = () => callback(Object.values(counts).reduce((total, value) => total + value, 0))
+
+  const now = new Date()
+  const daysUntilNextMonday = ((8 - now.getDay()) % 7) || 7
+  const nextMonday = new Date(now)
+  nextMonday.setDate(now.getDate() + daysUntilNextMonday)
+  nextMonday.setHours(0, 0, 0, 0)
+  const nextSunday = new Date(nextMonday)
+  nextSunday.setDate(nextMonday.getDate() + 6)
+  nextSunday.setHours(23, 59, 59, 999)
+
+  const scheduleQuery = query(
+    collection(db, 'workSchedules'),
+    where('status', 'in', ['Pending', 'Registered'])
+  )
+  const pendingQuery = (collectionName: string) => query(
+    collection(db, collectionName),
+    where('status', '==', 'Pending')
+  )
+
+  const unsubscribes = [
+    onSnapshot(scheduleQuery, (snapshot) => {
+      const batches = new Set<string>()
+      snapshot.docs.forEach((item) => {
+        const data = item.data()
+        const date = data.date?.toDate?.()
+        if (!(date instanceof Date) || date < nextMonday || date > nextSunday) return
+        batches.add(data.batchKey || `${data.employeeId}-${nextMonday.toISOString().slice(0, 10)}`)
+      })
+      counts.schedules = batches.size
+      publish()
+    }),
+    onSnapshot(pendingQuery('leaveRequests'), (snapshot) => {
+      counts.leaveRequests = snapshot.size
+      publish()
+    }),
+    onSnapshot(pendingQuery('lateRequests'), (snapshot) => {
+      counts.lateRequests = snapshot.size
+      publish()
+    }),
+    onSnapshot(pendingQuery('salaryAdvances'), (snapshot) => {
+      counts.salaryAdvances = snapshot.size
+      publish()
+    }),
+  ]
+
+  return () => unsubscribes.forEach((unsubscribe) => unsubscribe())
+}
+
+/**
  * Get count of unread notifications for an employee
  */
 export async function getUnreadNotificationCount(employeeId: string): Promise<number> {
