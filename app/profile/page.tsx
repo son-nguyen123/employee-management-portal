@@ -19,11 +19,13 @@ import {
   disablePushNotifications,
   enablePushNotifications,
   getPushPermissionState,
+  isPushDeviceRegistered,
   type PushPermissionState,
 } from '@/lib/services/messagingService'
 
-function permissionLabel(permission: PushPermissionState) {
-  if (permission === 'granted') return 'Đang bật'
+function permissionLabel(permission: PushPermissionState, isRegistered: boolean) {
+  if (permission === 'granted' && isRegistered) return 'Đang bật'
+  if (permission === 'granted') return 'Chưa hoàn tất'
   if (permission === 'denied') return 'Đã bị chặn'
   if (permission === 'unsupported' || permission === 'unavailable') {
     return 'Không được hỗ trợ'
@@ -35,12 +37,24 @@ export default function ProfilePage() {
   const { authUser, employee, isPreviewMode } = useAuth()
   const [permission, setPermission] =
     useState<PushPermissionState>('default')
+  const [isRegistered, setIsRegistered] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
   const [message, setMessage] = useState('')
 
   useEffect(() => {
-    void getPushPermissionState().then(setPermission)
-  }, [])
+    const loadPushState = async () => {
+      const nextPermission = await getPushPermissionState()
+      setPermission(nextPermission)
+      if (nextPermission === 'granted' && authUser && !isPreviewMode) {
+        try {
+          setIsRegistered(await isPushDeviceRegistered(authUser.uid))
+        } catch {
+          setIsRegistered(false)
+        }
+      }
+    }
+    void loadPushState()
+  }, [authUser, isPreviewMode])
 
   const rows = [
     {
@@ -71,6 +85,7 @@ export default function ProfilePage() {
     try {
       await enablePushNotifications(authUser.uid)
       setPermission('granted')
+      setIsRegistered(true)
       setMessage('Thiết bị này đã sẵn sàng nhận thông báo.')
     } catch (error) {
       setPermission(await getPushPermissionState())
@@ -92,6 +107,7 @@ export default function ProfilePage() {
     try {
       await disablePushNotifications(authUser.uid)
       setPermission(await getPushPermissionState())
+      setIsRegistered(false)
       setMessage('Đã ngừng nhận thông báo trên thiết bị này.')
     } catch (error) {
       setMessage(
@@ -164,12 +180,12 @@ export default function ProfilePage() {
           <div className="flex items-start gap-3">
             <div
               className={`grid h-12 w-12 shrink-0 place-items-center rounded-2xl ${
-                permission === 'granted'
+                isRegistered
                   ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300'
                   : 'bg-indigo-100 text-indigo-700 dark:bg-indigo-950 dark:text-indigo-300'
               }`}
             >
-              {permission === 'granted' ? (
+              {isRegistered ? (
                 <BellRing className="h-5 w-5" />
               ) : (
                 <BellOff className="h-5 w-5" />
@@ -179,7 +195,7 @@ export default function ProfilePage() {
               <div className="flex items-center justify-between gap-2">
                 <h2 className="font-extrabold">Thông báo trên thiết bị</h2>
                 <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-bold dark:bg-slate-800">
-                  {permissionLabel(permission)}
+                  {permissionLabel(permission, isRegistered)}
                 </span>
               </div>
               <p className="mt-1 text-sm leading-6 text-muted-foreground">
@@ -217,19 +233,21 @@ export default function ProfilePage() {
               cannotEnable
             }
             onClick={
-              permission === 'granted'
+              isRegistered
                 ? handleDisableNotifications
                 : handleEnableNotifications
             }
             className={`mt-4 flex min-h-12 w-full items-center justify-center gap-2 rounded-2xl px-4 text-sm font-extrabold text-white transition disabled:cursor-not-allowed disabled:opacity-50 ${
-              permission === 'granted'
+              isRegistered
                 ? 'bg-slate-700 hover:bg-slate-800'
                 : 'bg-indigo-600 hover:bg-indigo-700'
             }`}
           >
             {isSaving && <LoaderCircle className="h-4 w-4 animate-spin" />}
-            {permission === 'granted'
+            {isRegistered
               ? 'Tắt thông báo trên thiết bị này'
+              : permission === 'granted'
+                ? 'Hoàn tất đăng ký thiết bị'
               : permission === 'denied'
                 ? 'Mở quyền trong cài đặt trình duyệt'
                 : 'Bật thông báo'}

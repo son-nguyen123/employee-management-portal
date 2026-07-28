@@ -122,6 +122,17 @@ export async function getPushPermissionState(): Promise<PushPermissionState> {
   return Notification.permission
 }
 
+export async function isPushDeviceRegistered(employeeId: string): Promise<boolean> {
+  const state = await getPushPermissionState()
+  if (state !== 'granted') return false
+
+  const fid = await getId(getInstallations(app))
+  const snapshot = await getDoc(
+    doc(db, 'employees', employeeId, 'notificationDevices', fid)
+  )
+  return snapshot.exists()
+}
+
 export async function enablePushNotifications(
   employeeId: string
 ): Promise<PushRegistrationResult> {
