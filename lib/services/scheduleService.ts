@@ -49,6 +49,10 @@ export async function cancelWorkScheduleBatch(ids: string[]): Promise<void> {
   await callWorkflowApi('cancelScheduleBatch', { ids })
 }
 
+export async function setWorkScheduleBatchEditing(ids: string[], editing: boolean): Promise<{ status: string }> {
+  return callWorkflowApi('setScheduleBatchEditing', { ids, editing })
+}
+
 /**
  * Get all schedules for an employee
  */

@@ -21,9 +21,10 @@ import {
   cancelWorkScheduleBatch,
   getSchedulesByDateRange,
   replaceWorkSchedules,
+  setWorkScheduleBatchEditing,
   submitWorkSchedules,
 } from '@/lib/services/scheduleService'
-import { addPreviewSchedules, getPreviewSchedules } from '@/lib/services/previewWorkflow'
+import { addPreviewSchedules, getPreviewSchedules, updatePreviewSchedule } from '@/lib/services/previewWorkflow'
 import type { WorkSchedule } from '@/lib/models/types'
 import { Header } from '@/components/layout/header'
 import { Badge } from '@/components/ui/badge'
@@ -57,6 +58,8 @@ export default function SchedulePage() {
   const [submittedIds, setSubmittedIds] = useState<string[]>([])
   const [submittedStatus, setSubmittedStatus] = useState<string | null>(null)
   const [editing, setEditing] = useState(false)
+  const [editingOriginStatus, setEditingOriginStatus] = useState<string | null>(null)
+  const [requiresReapproval, setRequiresReapproval] = useState(false)
   const [loading, setLoading] = useState(true)
   const [submitting, setSubmitting] = useState(false)
   const [celebrating, setCelebrating] = useState(false)
@@ -94,7 +97,7 @@ export default function SchedulePage() {
               .map((item) => ({ ...item, date: new Date(item.date), createdAt: new Date(), updatedAt: new Date() } as WorkSchedule))
           : await getSchedulesByDateRange(authUser.uid, start, end)
         const current = schedules.filter((item) =>
-          ['Pending', 'Registered', 'ChangesRequested', 'Rejected', 'Approved'].includes(item.status)
+          ['Pending', 'Registered', 'ChangesRequested', 'Rejected', 'Approved', 'Editing'].includes(item.status)
         )
         if (current.length) {
           const hydrated: Selection = {}
@@ -118,6 +121,11 @@ export default function SchedulePage() {
           setDutyDay(loadedDuty)
           setSubmittedIds(current.map((item) => item.id!).filter(Boolean))
           setSubmittedStatus(current[0].status)
+          setRequiresReapproval(current.some((item) => item.requiresReapproval))
+          if (current[0].status === 'Editing') {
+            setEditingOriginStatus(current[0].editPreviousStatus || 'Pending')
+            setEditing(true)
+          }
         } else {
           const savedDraft = window.sessionStorage.getItem('schedule-draft')
           if (savedDraft) {
@@ -239,16 +247,72 @@ export default function SchedulePage() {
       }
       window.sessionStorage.removeItem('schedule-draft')
       setSubmittedIds(ids)
+      const needsReapproval = editingOriginStatus === 'Approved' || requiresReapproval
       setSubmittedStatus('Pending')
+      setRequiresReapproval(needsReapproval)
       setOriginal(cloneSelection(selected))
       setEditing(false)
+      setEditingOriginStatus(null)
       setCelebrating(true)
-      setMessage('Gửi lịch thành công! Bảng lịch đang chờ quản lý xác nhận.')
+      setMessage(needsReapproval
+        ? 'Đã gửi lịch sửa đổi. Bảng đang chờ quản lý xác nhận lại.'
+        : 'Gửi lịch thành công! Bảng lịch đang chờ quản lý xác nhận.')
       window.setTimeout(() => setCelebrating(false), 2400)
       window.scrollTo({ top: 0, behavior: 'smooth' })
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'Chưa thể gửi lịch. Vui lòng thử lại.')
       window.scrollTo({ top: 0, behavior: 'smooth' })
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  const startEditing = async () => {
+    if (!submittedIds.length || !submittedStatus) return
+    setSubmitting(true)
+    setMessage(null)
+    try {
+      const previousStatus = submittedStatus
+      if (isPreviewMode) {
+        submittedIds.forEach((id) => updatePreviewSchedule(id, {
+          status: 'Editing',
+          editPreviousStatus: previousStatus as any,
+        }))
+      } else {
+        await setWorkScheduleBatchEditing(submittedIds, true)
+      }
+      setEditingOriginStatus(previousStatus)
+      setSubmittedStatus('Editing')
+      setEditing(true)
+      setMessage('Bạn đang sửa bảng lịch. Quản lý sẽ thấy trạng thái “Đang sửa”.')
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'Chưa thể mở chế độ chỉnh sửa.')
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  const cancelEditing = async () => {
+    if (!submittedIds.length) return
+    setSubmitting(true)
+    setMessage(null)
+    try {
+      const restoredStatus = editingOriginStatus || 'Pending'
+      if (isPreviewMode) {
+        submittedIds.forEach((id) => updatePreviewSchedule(id, {
+          status: restoredStatus as any,
+          editPreviousStatus: undefined,
+        }))
+      } else {
+        await setWorkScheduleBatchEditing(submittedIds, false)
+      }
+      setSelected(cloneSelection(original))
+      setSubmittedStatus(restoredStatus)
+      setEditingOriginStatus(null)
+      setEditing(false)
+      setMessage('Đã hủy chỉnh sửa. Bảng lịch giữ nguyên như trước.')
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'Chưa thể hủy chỉnh sửa.')
     } finally {
       setSubmitting(false)
     }
@@ -278,7 +342,7 @@ export default function SchedulePage() {
   const customDay = days.find((day) => day.key === customFor)
   const selectedCount = Object.values(selected).reduce((total, shifts) => total + shifts.length, 0)
   const compactMode = submittedIds.length > 0 && !editing
-  const canEdit = submittedStatus === 'Pending' || submittedStatus === 'Rejected'
+  const canEdit = ['Pending', 'Rejected', 'Approved'].includes(submittedStatus || '')
 
   if (loading) {
     return <main className="grid min-h-screen place-items-center"><Loader2 className="h-7 w-7 animate-spin text-indigo-600" /></main>
@@ -323,7 +387,15 @@ export default function SchedulePage() {
                   <h2 className="mt-1 text-lg font-extrabold">Lịch làm của bạn</h2>
                 </div>
                 <Badge variant={submittedStatus === 'Approved' ? 'success' : submittedStatus === 'Rejected' ? 'destructive' : submittedStatus === 'Cancelled' ? 'outline' : 'warning'}>
-                  {submittedStatus === 'Approved' ? 'Đã xác nhận' : submittedStatus === 'Rejected' ? 'Bị từ chối' : submittedStatus === 'Cancelled' ? 'Đã hủy' : 'Chờ xác nhận'}
+                  {submittedStatus === 'Approved'
+                    ? 'Đã xác nhận'
+                    : submittedStatus === 'Rejected'
+                      ? 'Bị từ chối'
+                      : submittedStatus === 'Cancelled'
+                        ? 'Đã hủy'
+                        : requiresReapproval
+                          ? 'Chờ xác nhận lại'
+                          : 'Chờ xác nhận'}
                 </Badge>
               </div>
             </div>
@@ -347,8 +419,8 @@ export default function SchedulePage() {
             </div>
             {canEdit && (
               <div className="m-4 mt-2 grid grid-cols-2 gap-2">
-                <button type="button" onClick={() => setEditing(true)} className="flex min-h-12 items-center justify-center gap-2 rounded-2xl border border-indigo-200 bg-indigo-50 font-bold text-indigo-700 dark:border-indigo-500/30 dark:bg-indigo-500/10 dark:text-indigo-200">
-                  <SlidersHorizontal className="h-4 w-4" /> Điều chỉnh
+                <button type="button" onClick={() => void startEditing()} disabled={submitting} className="flex min-h-12 items-center justify-center gap-2 rounded-2xl border border-indigo-200 bg-indigo-50 font-bold text-indigo-700 disabled:opacity-60 dark:border-indigo-500/30 dark:bg-indigo-500/10 dark:text-indigo-200">
+                  {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <SlidersHorizontal className="h-4 w-4" />} Điều chỉnh
                 </button>
                 {submittedStatus === 'Pending' && (
                   <button type="button" onClick={cancelSchedule} disabled={submitting} className="flex min-h-12 items-center justify-center gap-2 rounded-2xl border border-rose-200 bg-rose-50 font-bold text-rose-700 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-200">
@@ -431,7 +503,7 @@ export default function SchedulePage() {
       {!compactMode && (
         <div className="fixed inset-x-0 bottom-[calc(4.5rem+env(safe-area-inset-bottom))] z-30 border-t border-slate-200/70 bg-white/95 p-3 backdrop-blur-xl dark:border-white/10 dark:bg-slate-950/95 md:bottom-0">
           <div className="mx-auto grid max-w-2xl grid-cols-[.8fr_1.2fr] gap-2">
-            <button type="button" onClick={editing ? () => { setSelected(cloneSelection(original)); setEditing(false) } : saveDraft} className="flex min-h-12 items-center justify-center gap-2 rounded-2xl border border-slate-200 font-bold dark:border-slate-700">
+            <button type="button" onClick={editing ? () => void cancelEditing() : saveDraft} disabled={submitting} className="flex min-h-12 items-center justify-center gap-2 rounded-2xl border border-slate-200 font-bold disabled:opacity-60 dark:border-slate-700">
               {editing ? <RotateCcw className="h-4 w-4" /> : <Save className="h-4 w-4" />} {editing ? 'Hủy sửa' : 'Lưu nháp'}
             </button>
             <button type="button" onClick={submitSchedule} disabled={!selectedCount || submitting} className="mobile-primary-button">

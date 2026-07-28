@@ -9,6 +9,7 @@ type WorkflowAction =
   | 'reviseRequest'
   | 'cancelRequest'
   | 'cancelScheduleBatch'
+  | 'setScheduleBatchEditing'
   | 'createForgottenDutyPenalty'
   | 'reviewRequest'
   | 'reviewScheduleBatch'

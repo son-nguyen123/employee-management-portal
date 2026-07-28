@@ -56,7 +56,7 @@ export function LoginForm() {
 
   return (
     <AuthShell eyebrow="Đăng nhập an toàn">
-      <Card className="w-full rounded-[2rem] border-0 bg-white/90 shadow-none backdrop-blur sm:border sm:border-white sm:shadow-2xl sm:shadow-indigo-950/10 dark:bg-slate-900/90">
+      <Card className="w-full rounded-[2rem] border-0 bg-white shadow-xl shadow-slate-900/10 sm:border sm:border-slate-200 dark:bg-slate-900">
         <CardHeader className="space-y-2 text-center">
           <div className="flex justify-center mb-4">
             <div className="w-12 h-12 rounded-full bg-gradient-to-br from-primary to-primary/60 flex items-center justify-center">

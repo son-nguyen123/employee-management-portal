@@ -17,13 +17,14 @@ import {
   Moon,
   ShieldCheck,
   Sun,
+  UserPlus,
   UserRound,
   UsersRound,
 } from 'lucide-react'
 import { useTheme } from 'next-themes'
 import { useAuth, useUserRole } from '@/lib/hooks/useAuth'
 import { getAllEmployees } from '@/lib/services/employeeService'
-import { getAllSchedules } from '@/lib/services/scheduleService'
+import { getAllSchedules, getSchedulesByDateRange } from '@/lib/services/scheduleService'
 import { getPreviewSchedules } from '@/lib/services/previewWorkflow'
 import { SkeletonLoader } from '@/components/ui/skeleton-loader'
 
@@ -43,6 +44,7 @@ export default function Page() {
   const role = useUserRole()
   const { theme, setTheme } = useTheme()
   const [adminStats, setAdminStats] = useState({ confirmed: 0, total: 0, pending: 0 })
+  const [showNewEmployeePrompt, setShowNewEmployeePrompt] = useState(false)
 
   useEffect(() => {
     if (!isLoading && !authUser) router.push('/auth/login')
@@ -59,7 +61,7 @@ export default function Page() {
   }, [authUser, employee, isLoading, isPreviewMode, router])
 
   useEffect(() => {
-    if (!authUser || role !== 'admin') return
+    if (!authUser || (role !== 'admin' && role !== 'manager')) return
     const loadAdminStats = async () => {
       try {
         const now = new Date()
@@ -80,7 +82,7 @@ export default function Page() {
           setAdminStats({
             confirmed: new Set(schedules.filter((item) => item.status === 'Approved' && inRegistrationWeek(new Date(item.date))).map((item) => item.employeeId)).size,
             total: employeeIds.size,
-            pending: new Set(schedules.filter((item) => item.status === 'Pending' && inRegistrationWeek(new Date(item.date))).map((item) => item.employeeId)).size,
+            pending: new Set(schedules.filter((item) => ['Pending', 'Editing'].includes(item.status) && inRegistrationWeek(new Date(item.date))).map((item) => item.employeeId)).size,
           })
           return
         }
@@ -88,7 +90,7 @@ export default function Page() {
         setAdminStats({
           confirmed: new Set(schedules.filter((item) => item.status === 'Approved' && inRegistrationWeek(item.date)).map((item) => item.employeeId)).size,
           total: employees.filter((item) => item.status === 'active').length,
-          pending: new Set(schedules.filter((item) => ['Pending', 'Registered'].includes(item.status) && inRegistrationWeek(item.date)).map((item) => item.employeeId)).size,
+          pending: new Set(schedules.filter((item) => ['Pending', 'Registered', 'Editing'].includes(item.status) && inRegistrationWeek(item.date)).map((item) => item.employeeId)).size,
         })
       } catch {
         // The main dashboard still works if management statistics are unavailable.
@@ -97,13 +99,47 @@ export default function Page() {
     loadAdminStats()
   }, [authUser, isPreviewMode, role])
 
+  useEffect(() => {
+    if (!authUser || !employee || role !== 'employee') {
+      setShowNewEmployeePrompt(false)
+      return
+    }
+
+    const loadCurrentWeek = async () => {
+      const now = new Date()
+      const monday = new Date(now)
+      const offset = now.getDay() === 0 ? -6 : 1 - now.getDay()
+      monday.setDate(now.getDate() + offset)
+      monday.setHours(0, 0, 0, 0)
+      const sunday = new Date(monday)
+      sunday.setDate(monday.getDate() + 6)
+      sunday.setHours(23, 59, 59, 999)
+      const joined = employee.joinDate instanceof Date ? employee.joinDate : employee.joinDate.toDate()
+      const appearsNew = Date.now() - joined.getTime() <= 45 * 24 * 60 * 60 * 1000
+
+      try {
+        const schedules = isPreviewMode
+          ? getPreviewSchedules().filter((item) => {
+              const date = new Date(item.date)
+              return item.employeeId === authUser.uid && date >= monday && date <= sunday
+            })
+          : await getSchedulesByDateRange(authUser.uid, monday, sunday)
+        setShowNewEmployeePrompt(appearsNew && !schedules.some((item) => item.status !== 'Cancelled'))
+      } catch {
+        setShowNewEmployeePrompt(false)
+      }
+    }
+
+    void loadCurrentWeek()
+  }, [authUser, employee, isPreviewMode, role])
+
   if (isLoading) {
     return <div className="mx-auto min-h-screen max-w-2xl p-4"><SkeletonLoader variant="card" count={6} /></div>
   }
   if (!authUser) return null
 
   const displayName = employee?.fullName || authUser.displayName || 'Nhân viên'
-  const isAdmin = role === 'admin'
+  const isAdmin = role === 'admin' || role === 'manager'
   const adminFeatures = [
     { title: 'Đăng ký lịch', note: `${adminStats.pending} nhân viên đang chờ xác nhận`, href: '/admin/dashboard#schedules', icon: ShieldCheck },
     { title: 'Điều hành', note: 'Phạt · xin nghỉ · đi trễ · ứng lương', href: '/admin/requests', icon: LayoutDashboard },
@@ -167,6 +203,22 @@ export default function Page() {
       </section>
 
       <div className="mx-auto max-w-2xl px-3 py-5 sm:px-6">
+        {showNewEmployeePrompt && (
+          <Link
+            href="/schedule"
+            className="mb-5 flex items-center gap-3 rounded-3xl border border-indigo-200 bg-indigo-50 p-4 text-indigo-950 shadow-sm transition active:scale-[0.99] dark:border-indigo-500/30 dark:bg-indigo-500/10 dark:text-indigo-100"
+          >
+            <div className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-indigo-600 text-white">
+              <UserPlus className="h-5 w-5" />
+            </div>
+            <div className="min-w-0 flex-1">
+              <p className="font-extrabold">Có vẻ bạn là nhân viên mới</p>
+              <p className="text-xs text-indigo-700 dark:text-indigo-200">Tuần này chưa có lịch · Đăng ký ngay</p>
+            </div>
+            <ChevronRight className="h-5 w-5 shrink-0" />
+          </Link>
+        )}
+
         {isAdmin && (
           <section className="mb-7">
             <div className="mb-3 flex items-end justify-between">

@@ -21,7 +21,7 @@ export function AuthShell({ children, eyebrow }: { children: React.ReactNode; ey
         </div>
         <p className="relative text-xs text-slate-500">Thiết kế tối ưu cho thao tác một tay trên điện thoại.</p>
       </section>
-      <section className="flex min-h-[100svh] items-center justify-center bg-gradient-to-b from-indigo-50/80 via-white to-white px-4 py-8 dark:from-indigo-950/30 dark:via-slate-950 dark:to-slate-950 sm:px-8 lg:py-12">
+      <section className="flex min-h-[100svh] items-center justify-center bg-slate-100 px-4 py-8 dark:bg-slate-950 sm:px-8 lg:py-12">
         <div className="w-full max-w-md">{children}</div>
       </section>
     </main>

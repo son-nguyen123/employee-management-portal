@@ -69,7 +69,7 @@ export function SignupForm() {
 
   return (
     <AuthShell eyebrow="Tạo tài khoản mới">
-      <Card className="w-full rounded-[2rem] border-0 bg-white/90 shadow-none backdrop-blur sm:border sm:border-white sm:shadow-2xl sm:shadow-indigo-950/10 dark:bg-slate-900/90">
+      <Card className="w-full rounded-[2rem] border-0 bg-white shadow-xl shadow-slate-900/10 sm:border sm:border-slate-200 dark:bg-slate-900">
         <CardHeader className="text-center">
           <div className="mx-auto mb-3 grid h-12 w-12 place-items-center rounded-2xl bg-indigo-600 text-xl font-black text-white">NS</div>
           <CardTitle className="text-2xl">Tạo tài khoản</CardTitle>

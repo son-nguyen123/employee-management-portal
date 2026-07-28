@@ -185,6 +185,11 @@ export default function ProfilePage() {
               <p className="mt-1 text-sm leading-6 text-muted-foreground">
                 Nhận thông báo khi lịch làm hoặc yêu cầu của bạn được xử lý.
               </p>
+              {(permission === 'unsupported' || permission === 'unavailable') && (
+                <p className="mt-2 text-xs font-semibold leading-5 text-amber-700 dark:text-amber-300">
+                  Không liên quan đến gói Firebase. Trên iPhone, hãy thêm web vào Màn hình chính rồi mở từ biểu tượng để bật thông báo.
+                </p>
+              )}
             </div>
           </div>
 

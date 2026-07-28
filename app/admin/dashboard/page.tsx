@@ -26,6 +26,8 @@ type ScheduleBatch = {
   employeeName?: string
   employeeCode?: string
   schedules: ScheduleRow[]
+  isEditing?: boolean
+  requiresReapproval?: boolean
 }
 
 function toDate(value: WorkSchedule['date']) {
@@ -114,7 +116,10 @@ export default function AdminDashboardPage() {
   const activeEmployees = useMemo(() => employees.filter((item) => item.status === 'active'), [employees])
   const pendingBatches = useMemo(() => {
     const grouped = new Map<string, ScheduleBatch>()
-    schedules.filter((item) => ['Registered', 'Pending'].includes(item.status)).forEach((schedule) => {
+    schedules.filter((item) =>
+      ['Registered', 'Pending', 'Editing'].includes(item.status) &&
+      mondayKey(toDate(item.date)) === nextMondayKey()
+    ).forEach((schedule) => {
       const key = `${schedule.employeeId}-${mondayKey(toDate(schedule.date))}`
       const current = grouped.get(key)
       if (current) current.schedules.push(schedule)
@@ -126,10 +131,24 @@ export default function AdminDashboardPage() {
         schedules: [schedule],
       })
     })
-    return Array.from(grouped.values()).map((batch) => ({
-      ...batch,
-      schedules: batch.schedules.sort((a, b) => toDate(a.date).getTime() - toDate(b.date).getTime()),
-    }))
+    return Array.from(grouped.values()).map((batch) => {
+      const uniqueRows = Array.from(new Map(batch.schedules
+        .sort((a, b) => {
+          const aUpdated = a.updatedAt instanceof Date ? a.updatedAt : a.updatedAt.toDate()
+          const bUpdated = b.updatedAt instanceof Date ? b.updatedAt : b.updatedAt.toDate()
+          return aUpdated.getTime() - bUpdated.getTime()
+        })
+        .map((schedule) => {
+          const key = `${toDate(schedule.date).toISOString().slice(0, 10)}-${schedule.shift}-${schedule.note || ''}`
+          return [key, schedule]
+        })).values())
+      return {
+        ...batch,
+        schedules: uniqueRows.sort((a, b) => toDate(a.date).getTime() - toDate(b.date).getTime()),
+        isEditing: uniqueRows.some((item) => item.status === 'Editing'),
+        requiresReapproval: uniqueRows.some((item) => item.requiresReapproval),
+      }
+    })
   }, [schedules])
   const confirmedEmployees = useMemo(
     () => new Set(schedules.filter((item) =>
@@ -163,7 +182,7 @@ export default function AdminDashboardPage() {
     }
   }
 
-  if (role !== 'admin' && !isPreviewMode) {
+  if ((!role || !['admin', 'manager'].includes(role)) && !isPreviewMode) {
     return (
       <main className="min-h-screen">
         <Header title="Trung tâm quản lý" />
@@ -213,8 +232,8 @@ export default function AdminDashboardPage() {
               const startDate = toDate(batch.schedules[0].date)
               const endDate = toDate(batch.schedules[batch.schedules.length - 1].date)
               return (
-                <article key={batch.key} className="overflow-hidden rounded-[1.75rem] border border-indigo-100 bg-white shadow-sm dark:border-indigo-500/20 dark:bg-slate-900">
-                  <div className="bg-gradient-to-r from-indigo-600 to-violet-600 p-4 text-white">
+                <article key={batch.key} className={`overflow-hidden rounded-[1.75rem] border bg-white shadow-sm transition dark:bg-slate-900 ${batch.isEditing ? 'border-slate-300 opacity-55 grayscale-[.35] dark:border-slate-700' : batch.requiresReapproval ? 'border-amber-300 dark:border-amber-500/30' : 'border-indigo-100 dark:border-indigo-500/20'}`}>
+                  <div className={`p-4 text-white ${batch.isEditing ? 'bg-slate-600' : batch.requiresReapproval ? 'bg-gradient-to-r from-amber-500 to-orange-600' : 'bg-gradient-to-r from-indigo-600 to-violet-600'}`}>
                   <Link href={`/admin/employees/${batch.employeeId}`} className="flex items-start gap-3">
                     <div className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-slate-950 text-xs font-black text-white">
                       {(batch.employeeName || 'NV').split(' ').slice(-2).map((word) => word[0]).join('')}
@@ -223,6 +242,9 @@ export default function AdminDashboardPage() {
                       <h3 className="truncate font-extrabold">{batch.employeeName || batch.employeeId}</h3>
                       <p className="text-xs text-indigo-100">{batch.employeeCode || 'Nhân viên'} · {startDate.toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit' })}–{endDate.toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit' })}</p>
                       <p className="mt-1 text-xs font-semibold text-white/80">{batch.schedules.length} ca trong bảng</p>
+                      <Badge className="mt-2 border-white/20 bg-white/15 text-white">
+                        {batch.isEditing ? 'Đang sửa' : batch.requiresReapproval ? 'Cần xác nhận lại' : 'Chờ xác nhận'}
+                      </Badge>
                     </div>
                     <ChevronRight className="h-5 w-5 text-white/70" />
                   </Link>
@@ -245,11 +267,11 @@ export default function AdminDashboardPage() {
                     ))}
                   </div>
                   <div className="grid grid-cols-2 gap-2 border-t border-slate-100 p-3 dark:border-white/10">
-                    <button disabled={processingId === batch.key} onClick={() => { setRejectingBatch(batch); setRejectReason('') }} className="flex min-h-11 items-center justify-center gap-1 rounded-xl border border-rose-200 text-sm font-bold text-rose-600">
+                    <button disabled={processingId === batch.key || batch.isEditing} onClick={() => { setRejectingBatch(batch); setRejectReason('') }} className="flex min-h-11 items-center justify-center gap-1 rounded-xl border border-rose-200 text-sm font-bold text-rose-600 disabled:cursor-not-allowed disabled:opacity-40">
                       {processingId === batch.key && processingAction === 'reject' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <X className="h-3.5 w-3.5" />} Từ chối
                     </button>
-                    <button disabled={processingId === batch.key} onClick={() => review(batch, 'Approved')} className="flex min-h-11 items-center justify-center gap-1 rounded-xl bg-emerald-600 text-sm font-bold text-white">
-                      {processingId === batch.key && processingAction === 'approve' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />} Xác nhận cả bảng
+                    <button disabled={processingId === batch.key || batch.isEditing} onClick={() => review(batch, 'Approved')} className="flex min-h-11 items-center justify-center gap-1 rounded-xl bg-emerald-600 text-sm font-bold text-white disabled:cursor-not-allowed disabled:opacity-40">
+                      {processingId === batch.key && processingAction === 'approve' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />} Xác nhận
                     </button>
                   </div>
                 </article>
@@ -277,7 +299,7 @@ export default function AdminDashboardPage() {
 
         <div className="mt-6 flex gap-2 rounded-2xl border border-amber-200 bg-amber-50 p-3 text-xs leading-5 text-amber-800">
           <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-          Một lần xác nhận sẽ duyệt và khóa toàn bộ bảng tuần của nhân viên.
+          Mỗi nhân viên chỉ có một bảng cho tuần kế tiếp. Bảng đang sửa sẽ tạm khóa thao tác xác nhận.
         </div>
       </PageContainer>
 

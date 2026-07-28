@@ -21,6 +21,7 @@ export type ScheduleStatus =
   | 'Registered'
   | 'Draft'
   | 'Pending'
+  | 'Editing'
   | 'ChangesRequested'
   | 'Approved'
   | 'Rejected'
@@ -37,6 +38,11 @@ export interface WorkSchedule {
   reviewedBy?: string
   reviewedAt?: Timestamp | Date
   lockedAt?: Timestamp | Date | null
+  batchKey?: string
+  editPreviousStatus?: ScheduleStatus
+  editingAt?: Timestamp | Date
+  requiresReapproval?: boolean
+  revisionCount?: number
   createdAt: Timestamp | Date
   updatedAt: Timestamp | Date
 }

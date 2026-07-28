@@ -1,5 +1,6 @@
 export type PreviewScheduleStatus =
   | 'Pending'
+  | 'Editing'
   | 'ChangesRequested'
   | 'Approved'
   | 'Rejected'
@@ -17,6 +18,8 @@ export interface PreviewSchedule {
   note: string
   status: PreviewScheduleStatus
   reviewNote?: string
+  editPreviousStatus?: PreviewScheduleStatus
+  requiresReapproval?: boolean
 }
 
 const STORAGE_KEY = 'employee-portal-preview-schedules'
