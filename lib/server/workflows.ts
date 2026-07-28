@@ -453,6 +453,16 @@ export async function replaceSchedules(actor: RequestActor, raw: unknown) {
     })
   })
 
+  await sendManagerPushes({
+    managerIds,
+    sourceKey: `schedule-revised-${newRefs[0].id}`,
+    title: 'Bảng lịch đã được điều chỉnh',
+    body: 'Nhân viên vừa gửi lại bảng lịch. Vui lòng kiểm tra và xác nhận.',
+    link: '/admin/dashboard',
+    source: 'workSchedules',
+    sourceId: newRefs[0].id,
+  })
+
   return { ids: newRefs.map((ref) => ref.id), penalty: 0 }
 }
 
@@ -954,6 +964,17 @@ export async function reviseRequest(actor: RequestActor, raw: unknown) {
         managerNotification(managerId, `${copy.title.replace(' chờ xử lý', '')} đã điều chỉnh`, 'Nhân viên vừa cập nhật nội dung. Vui lòng kiểm tra lại.')
       )
     })
+  })
+
+  const copy = managerRequestCopy[resource]
+  await sendManagerPushes({
+    managerIds,
+    sourceKey: `${resource}-revised-${id}`,
+    title: `${copy.title.replace(' chờ xử lý', '')} đã điều chỉnh`,
+    body: 'Nhân viên vừa cập nhật nội dung. Vui lòng kiểm tra lại.',
+    link: '/admin/requests',
+    source: collectionName,
+    sourceId: id,
   })
 
   return { id, status: 'Pending' }
