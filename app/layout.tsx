@@ -6,12 +6,22 @@ import { ForegroundNotificationListener } from '@/components/notifications/foreg
 import { AuthProvider } from '@/lib/hooks/useAuth'
 import { ProfileCompletionGuard } from '@/components/auth/profile-completion-guard'
 import { PersistentBottomNav } from '@/components/layout/persistent-bottom-nav'
+import { ServiceWorkerRegistrar } from '@/components/pwa/service-worker-registrar'
 import './globals.css'
 
 export const metadata: Metadata = {
   title: 'Trí Candy',
   description: 'Trí Candy — đăng ký lịch làm, gửi yêu cầu và theo dõi công việc dành cho nhân viên.',
   applicationName: 'Trí Candy',
+  manifest: '/manifest.webmanifest',
+  appleWebApp: {
+    capable: true,
+    title: 'Trí Candy',
+    statusBarStyle: 'default',
+  },
+  other: {
+    'apple-mobile-web-app-capable': 'yes',
+  },
   keywords: ['Trí Candy', 'nhân viên', 'lịch làm', 'quản lý', 'xin nghỉ', 'ứng lương'],
   icons: {
     icon: [
@@ -49,6 +59,7 @@ export default function RootLayout({
         <ThemeProvider>
           <AuthProvider>
             <SkipLoginFAB />
+            <ServiceWorkerRegistrar />
             <ForegroundNotificationListener />
             <ProfileCompletionGuard>{children}</ProfileCompletionGuard>
             <PersistentBottomNav />

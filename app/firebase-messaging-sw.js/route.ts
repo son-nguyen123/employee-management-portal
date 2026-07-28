@@ -13,6 +13,14 @@ export function GET(_request: NextRequest) {
   }
 
   const script = `
+self.addEventListener('install', () => {
+  self.skipWaiting();
+});
+
+self.addEventListener('activate', (event) => {
+  event.waitUntil(self.clients.claim());
+});
+
 importScripts('https://www.gstatic.com/firebasejs/12.16.0/firebase-app-compat.js');
 importScripts('https://www.gstatic.com/firebasejs/12.16.0/firebase-messaging-compat.js');
 
@@ -26,8 +34,8 @@ messaging.onBackgroundMessage((payload) => {
   const title = data.title || 'Trí Candy';
   const options = {
     body: data.body || data.message || 'Bạn có một thông báo mới.',
-    icon: '/icon.svg',
-    badge: '/icon.svg',
+    icon: '/pwa-icon-192.png',
+    badge: '/pwa-icon-192.png',
     data: {
       link: data.link || '/notifications'
     }
