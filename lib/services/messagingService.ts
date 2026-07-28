@@ -87,21 +87,26 @@ async function saveDeviceRegistration(employeeId: string, fid: string): Promise<
 function observeRegistrationChanges(
   messaging: Messaging,
   employeeId: string
-): void {
+): Promise<string> {
   registrationObserver?.()
   unregistrationObserver?.()
 
-  registrationObserver = onRegistered(messaging, (fid) => {
-    void saveDeviceRegistration(employeeId, fid).catch((error) => {
-      console.error('Không thể đồng bộ thiết bị nhận thông báo:', error)
+  return new Promise((resolve, reject) => {
+    registrationObserver = onRegistered(messaging, (fid) => {
+      void saveDeviceRegistration(employeeId, fid)
+        .then(() => resolve(fid))
+        .catch((error) => {
+          console.error('Không thể đồng bộ thiết bị nhận thông báo:', error)
+          reject(error)
+        })
     })
-  })
 
-  unregistrationObserver = onUnregistered(messaging, (fid) => {
-    void deleteDoc(
-      doc(db, 'employees', employeeId, 'notificationDevices', fid)
-    ).catch((error) => {
-      console.error('Không thể xóa thiết bị nhận thông báo:', error)
+    unregistrationObserver = onUnregistered(messaging, (fid) => {
+      void deleteDoc(
+        doc(db, 'employees', employeeId, 'notificationDevices', fid)
+      ).catch((error) => {
+        console.error('Không thể xóa thiết bị nhận thông báo:', error)
+      })
     })
   })
 }
@@ -159,20 +164,25 @@ export async function enablePushNotifications(
   await navigator.serviceWorker.ready
 
   const messaging = await getMessagingInstance()
-  // Register and persist the first device before attaching the lifecycle
-  // observer. Attaching it earlier makes onRegistered and this initial save
-  // race: both see a missing document, then the second write is evaluated as
-  // an update with a different createdAt and is correctly rejected by Rules.
-  await register(messaging, {
-    vapidKey,
-    serviceWorkerRegistration,
-  })
+  // Firebase's FID API requires onRegistered() to be attached before
+  // register(). Persist only from that callback so the initial document is
+  // written once and cannot race with a second create/update.
+  const firstRegistration = observeRegistrationChanges(messaging, employeeId)
+  try {
+    await register(messaging, {
+      vapidKey,
+      serviceWorkerRegistration,
+    })
+    const fid = await firstRegistration
+    return { fid, permission }
+  } catch (error) {
+    registrationObserver?.()
+    unregistrationObserver?.()
+    registrationObserver = null
+    unregistrationObserver = null
+    throw error
+  }
 
-  const fid = await getId(getInstallations(app))
-  await saveDeviceRegistration(employeeId, fid)
-  observeRegistrationChanges(messaging, employeeId)
-
-  return { fid, permission }
 }
 
 export async function disablePushNotifications(employeeId: string): Promise<void> {
