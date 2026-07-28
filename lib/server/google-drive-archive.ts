@@ -185,3 +185,47 @@ export async function storeWeeklyArchive(params: {
   }
   return verified
 }
+
+export async function testGoogleDriveArchiveConnection(): Promise<{
+  uploadedBytes: number
+  cleanedUp: boolean
+}> {
+  const accessToken = await googleAccessToken()
+  const folderId = await ensureArchiveFolder(accessToken)
+  const testId = `${Date.now()}-${crypto.randomUUID()}`
+  const json = JSON.stringify({
+    test: true,
+    application: 'employee-management-portal',
+  })
+  const file = await uploadJsonFile(
+    accessToken,
+    folderId,
+    `_connection-test-${testId}.json`,
+    `connection-test-${testId}`,
+    'connection-test',
+    json,
+  )
+  const verified = await driveRequest<DriveFile>(
+    accessToken,
+    `/files/${encodeURIComponent(file.id)}?fields=id,name,size`,
+  )
+  const uploadedBytes = Number(verified.size ?? 0)
+  if (uploadedBytes <= 0) {
+    throw new Error('Google Drive returned an empty connection-test file.')
+  }
+
+  const deleteResponse = await fetch(
+    `${DRIVE_API}/files/${encodeURIComponent(file.id)}`,
+    {
+      method: 'DELETE',
+      headers: { authorization: `Bearer ${accessToken}` },
+      cache: 'no-store',
+    },
+  )
+  if (!deleteResponse.ok) {
+    const details = (await deleteResponse.text()).slice(0, 500)
+    throw new Error(`Google Drive test cleanup failed (${deleteResponse.status}): ${details}`)
+  }
+
+  return { uploadedBytes, cleanedUp: true }
+}
