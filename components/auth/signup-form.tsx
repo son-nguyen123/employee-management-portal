@@ -92,7 +92,7 @@ export function SignupForm() {
                     value={value}
                     onChange={(event) => set(event.target.value)}
                     placeholder={placeholder}
-                    className="mobile-field pl-12"
+                    className="mobile-field !pl-12"
                     required
                     disabled={loading}
                   />

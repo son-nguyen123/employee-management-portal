@@ -6,7 +6,6 @@ import Link from 'next/link'
 import { Mail, Lock, AlertCircle, Loader2 } from 'lucide-react'
 import { signIn, signInWithGoogle } from '@/lib/services/authService'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui/card'
-import { Badge } from '../ui/badge'
 
 export function LoginForm() {
   const router = useRouter()
@@ -153,23 +152,6 @@ export function LoginForm() {
             </div>
           </form>
 
-          <div className="mt-6 pt-6 border-t border-border/50">
-            <p className="text-xs text-muted-foreground text-center mb-4">
-              Tài khoản mẫu để kiểm tra:
-            </p>
-            <div className="space-y-2 text-xs">
-              <div className="p-2 rounded bg-muted/50">
-                <Badge variant="outline" className="mb-1">Quản lý</Badge>
-                <p className="font-mono">admin@example.com</p>
-                <p className="font-mono">password123</p>
-              </div>
-              <div className="p-2 rounded bg-muted/50">
-                <Badge variant="outline" className="mb-1">Nhân viên</Badge>
-                <p className="font-mono">emp@example.com</p>
-                <p className="font-mono">password123</p>
-              </div>
-            </div>
-          </div>
         </CardContent>
       </Card>
     </div>

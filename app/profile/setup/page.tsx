@@ -2,14 +2,14 @@
 
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Camera, IdCard, Link as LinkIcon, Loader2, Phone, Save, UserRound } from 'lucide-react'
+import { Camera, IdCard, Link as LinkIcon, Loader2, LogOut, Phone, Save, UserRound } from 'lucide-react'
 import { useAuth } from '@/lib/hooks/useAuth'
 import { createEmployee, updateEmployee } from '@/lib/services/employeeService'
 import { updateUserProfile } from '@/lib/services/authService'
 
 export default function ProfileSetupPage() {
   const router = useRouter()
-  const { authUser, employee, isLoading, refreshEmployee } = useAuth()
+  const { authUser, employee, isLoading, refreshEmployee, logout } = useAuth()
   const [form, setForm] = useState({
     fullName: '',
     employeeCode: '',
@@ -18,6 +18,7 @@ export default function ProfileSetupPage() {
     facebookUrl: '',
   })
   const [saving, setSaving] = useState(false)
+  const [signingOut, setSigningOut] = useState(false)
   const [message, setMessage] = useState('')
 
   useEffect(() => {
@@ -73,6 +74,18 @@ export default function ProfileSetupPage() {
     }
   }
 
+  const switchAccount = async () => {
+    setSigningOut(true)
+    setMessage('')
+    try {
+      await logout()
+      router.replace('/auth/login')
+    } catch {
+      setMessage('Chưa thể đăng xuất. Vui lòng thử lại.')
+      setSigningOut(false)
+    }
+  }
+
   if (isLoading || !authUser) {
     return <main className="grid min-h-screen place-items-center"><Loader2 className="h-7 w-7 animate-spin text-indigo-600" /></main>
   }
@@ -103,13 +116,22 @@ export default function ProfileSetupPage() {
               {label}
               <div className="relative mt-2">
                 <Icon className="absolute left-4 top-3.5 h-5 w-5 text-muted-foreground" />
-                <input value={form[key]} onChange={(event) => setValue(key, event.target.value)} className="mobile-field pl-12" placeholder={placeholder} disabled={saving} required />
+                <input value={form[key]} onChange={(event) => setValue(key, event.target.value)} className="mobile-field !pl-12" placeholder={placeholder} disabled={saving || signingOut} required />
               </div>
             </label>
           ))}
           <button type="submit" disabled={saving} className="mobile-primary-button mt-2">
             {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
             {saving ? 'Đang lưu...' : 'Lưu và tiếp tục'}
+          </button>
+          <button
+            type="button"
+            onClick={switchAccount}
+            disabled={saving || signingOut}
+            className="flex min-h-12 w-full items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 font-bold text-slate-700 transition active:scale-[0.98] disabled:opacity-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200"
+          >
+            {signingOut ? <Loader2 className="h-4 w-4 animate-spin" /> : <LogOut className="h-4 w-4" />}
+            {signingOut ? 'Đang đăng xuất...' : 'Đăng xuất / dùng tài khoản khác'}
           </button>
         </form>
       </section>
