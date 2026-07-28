@@ -1,0 +1,109 @@
+{
+  "projectId": "employee-management-port-339fe",
+  "databaseId": "(default)",
+  "note": "Firestore creates collections on the first document write. This file documents the collection schema; it is not a SQL migration.",
+  "collections": {
+    "employees": {
+      "documentId": "Firebase Authentication UID",
+      "requiredFields": {
+        "uid": "string",
+        "employeeCode": "string",
+        "fullName": "string",
+        "phone": "string",
+        "email": "string",
+        "role": "admin | manager | employee",
+        "status": "active | inactive",
+        "joinDate": "timestamp",
+        "createdAt": "timestamp",
+        "updatedAt": "timestamp"
+      }
+    },
+    "workSchedules": {
+      "documentId": "auto",
+      "requiredFields": {
+        "employeeId": "string",
+        "date": "timestamp",
+        "shift": "Morning | Afternoon | Evening",
+        "status": "Registered | Approved | Rejected",
+        "note": "string",
+        "createdAt": "timestamp",
+        "updatedAt": "timestamp"
+      }
+    },
+    "leaveRequests": {
+      "documentId": "auto",
+      "requiredFields": {
+        "employeeId": "string",
+        "leaveDate": "timestamp",
+        "leaveType": "sick | casual | earned | personal",
+        "reason": "string",
+        "status": "Pending | Approved | Rejected",
+        "createdAt": "timestamp",
+        "updatedAt": "timestamp"
+      },
+      "optionalFields": ["workScheduleId", "approvedBy"]
+    },
+    "lateRequests": {
+      "documentId": "auto",
+      "requiredFields": {
+        "employeeId": "string",
+        "workScheduleId": "string",
+        "date": "timestamp",
+        "shift": "Morning | Afternoon | Evening",
+        "lateMinutes": "integer",
+        "reason": "string",
+        "status": "Pending | Approved | Rejected",
+        "createdAt": "timestamp",
+        "updatedAt": "timestamp"
+      },
+      "optionalFields": ["approvedBy"]
+    },
+    "salaryAdvances": {
+      "documentId": "auto",
+      "requiredFields": {
+        "employeeId": "string",
+        "amount": "number",
+        "reason": "string",
+        "status": "Pending | Approved | Rejected",
+        "createdAt": "timestamp",
+        "updatedAt": "timestamp"
+      },
+      "optionalFields": ["approvedBy"]
+    },
+    "penalties": {
+      "documentId": "auto",
+      "requiredFields": {
+        "employeeId": "string",
+        "title": "string",
+        "description": "string",
+        "category": "Late | Probation | Performance | Other",
+        "amount": "number",
+        "penaltyDate": "timestamp",
+        "createdBy": "string",
+        "createdAt": "timestamp"
+      }
+    },
+    "companyRules": {
+      "documentId": "auto or stable seed ID",
+      "requiredFields": {
+        "title": "string",
+        "content": "string",
+        "order": "integer",
+        "isActive": "boolean",
+        "createdAt": "timestamp",
+        "updatedAt": "timestamp"
+      }
+    },
+    "notifications": {
+      "documentId": "auto",
+      "requiredFields": {
+        "employeeId": "string",
+        "title": "string",
+        "message": "string",
+        "type": "info | success | warning | error",
+        "isRead": "boolean",
+        "createdAt": "timestamp"
+      }
+    }
+  }
+}

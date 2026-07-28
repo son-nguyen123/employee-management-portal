@@ -1,0 +1,423 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // ===============================================================
+    // Assumed data model
+    // ===============================================================
+    // employees/{uid}: uid, employeeCode, fullName, phone, email,
+    //   role, status, joinDate, createdAt, updatedAt
+    // workSchedules/{id}: employeeId, date, shift, status, note,
+    //   createdAt, updatedAt
+    // leaveRequests/{id}: employeeId, optional workScheduleId, leaveDate,
+    //   leaveType, reason, status, optional approvedBy, createdAt, updatedAt
+    // lateRequests/{id}: employeeId, workScheduleId, date, shift,
+    //   lateMinutes, reason, status, optional approvedBy, createdAt, updatedAt
+    // salaryAdvances/{id}: employeeId, amount, reason, status,
+    //   optional approvedBy, createdAt, updatedAt
+    // penalties/{id}: employeeId, title, description, category, amount,
+    //   penaltyDate, createdBy, createdAt
+    // companyRules/{id}: title, content, order, isActive, createdAt, updatedAt
+    // notifications/{id}: employeeId, title, message, type, isRead, createdAt
+
+    // ===============================================================
+    // Authentication and authorization helpers
+    // ===============================================================
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(uid) {
+      return isAuthenticated() && request.auth.uid == uid;
+    }
+
+    function hasEmployeeProfile() {
+      return isAuthenticated() &&
+        exists(/databases/$(database)/documents/employees/$(request.auth.uid));
+    }
+
+    function currentRole() {
+      return get(
+        /databases/$(database)/documents/employees/$(request.auth.uid)
+      ).data.role;
+    }
+
+    function isAdmin() {
+      return hasEmployeeProfile() && currentRole() == 'admin';
+    }
+
+    function isManagerOrAdmin() {
+      return hasEmployeeProfile() &&
+        currentRole() in ['manager', 'admin'];
+    }
+
+    function ownsResource(fieldName) {
+      return isAuthenticated() &&
+        resource.data[fieldName] == request.auth.uid;
+    }
+
+    function createsOwnedResource(fieldName) {
+      return isAuthenticated() &&
+        request.resource.data[fieldName] == request.auth.uid;
+    }
+
+    // ===============================================================
+    // Shared validation helpers
+    // ===============================================================
+    function validString(value, minLength, maxLength) {
+      return value is string &&
+        value.size() >= minLength &&
+        value.size() <= maxLength;
+    }
+
+    function validEmail(value) {
+      return validString(value, 3, 254) &&
+        value.matches('^.+@.+\\..+$');
+    }
+
+    function validOptionalString(data, fieldName, maxLength) {
+      return !(fieldName in data) ||
+        validString(data[fieldName], 0, maxLength);
+    }
+
+    function recentTimestamp(value) {
+      return value is timestamp &&
+        value >= request.time - duration.value(10, 'm') &&
+        value <= request.time + duration.value(10, 'm');
+    }
+
+    function timestampsValidOnCreate(data) {
+      return recentTimestamp(data.createdAt) &&
+        recentTimestamp(data.updatedAt);
+    }
+
+    function timestampsValidOnUpdate(data) {
+      return data.createdAt == resource.data.createdAt &&
+        recentTimestamp(data.updatedAt);
+    }
+
+    // ===============================================================
+    // Domain validators
+    // ===============================================================
+    function validEmployee(data) {
+      return data.keys().hasAll([
+          'uid', 'employeeCode', 'fullName', 'phone', 'email',
+          'role', 'status', 'joinDate', 'createdAt', 'updatedAt'
+        ]) &&
+        data.keys().hasOnly([
+          'uid', 'employeeCode', 'fullName', 'phone', 'email',
+          'role', 'status', 'joinDate', 'createdAt', 'updatedAt'
+        ]) &&
+        validString(data.uid, 1, 128) &&
+        validString(data.employeeCode, 3, 30) &&
+        validString(data.fullName, 1, 100) &&
+        validString(data.phone, 0, 30) &&
+        validEmail(data.email) &&
+        data.role in ['admin', 'manager', 'employee'] &&
+        data.status in ['active', 'inactive'] &&
+        data.joinDate is timestamp &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    function validWorkSchedule(data) {
+      return data.keys().hasAll([
+          'employeeId', 'date', 'shift', 'status', 'note',
+          'createdAt', 'updatedAt'
+        ]) &&
+        data.keys().hasOnly([
+          'employeeId', 'date', 'shift', 'status', 'note',
+          'createdAt', 'updatedAt'
+        ]) &&
+        validString(data.employeeId, 1, 128) &&
+        data.date is timestamp &&
+        data.shift in ['Morning', 'Afternoon', 'Evening'] &&
+        data.status in ['Registered', 'Approved', 'Rejected'] &&
+        validString(data.note, 0, 500) &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    function validLeaveRequest(data) {
+      return data.keys().hasAll([
+          'employeeId', 'leaveDate', 'leaveType', 'reason',
+          'status', 'createdAt', 'updatedAt'
+        ]) &&
+        data.keys().hasOnly([
+          'employeeId', 'workScheduleId', 'leaveDate', 'leaveType',
+          'reason', 'status', 'approvedBy', 'createdAt', 'updatedAt'
+        ]) &&
+        validString(data.employeeId, 1, 128) &&
+        validOptionalString(data, 'workScheduleId', 128) &&
+        data.leaveDate is timestamp &&
+        data.leaveType in ['sick', 'casual', 'earned', 'personal'] &&
+        validString(data.reason, 1, 1000) &&
+        data.status in ['Pending', 'Approved', 'Rejected'] &&
+        validOptionalString(data, 'approvedBy', 128) &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    function validLateRequest(data) {
+      return data.keys().hasAll([
+          'employeeId', 'workScheduleId', 'date', 'shift',
+          'lateMinutes', 'reason', 'status', 'createdAt', 'updatedAt'
+        ]) &&
+        data.keys().hasOnly([
+          'employeeId', 'workScheduleId', 'date', 'shift',
+          'lateMinutes', 'reason', 'status', 'approvedBy',
+          'createdAt', 'updatedAt'
+        ]) &&
+        validString(data.employeeId, 1, 128) &&
+        validString(data.workScheduleId, 1, 128) &&
+        data.date is timestamp &&
+        data.shift in ['Morning', 'Afternoon', 'Evening'] &&
+        data.lateMinutes is int &&
+        data.lateMinutes >= 1 &&
+        data.lateMinutes <= 720 &&
+        validString(data.reason, 1, 1000) &&
+        data.status in ['Pending', 'Approved', 'Rejected'] &&
+        validOptionalString(data, 'approvedBy', 128) &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    function validSalaryAdvance(data) {
+      return data.keys().hasAll([
+          'employeeId', 'amount', 'reason', 'status',
+          'createdAt', 'updatedAt'
+        ]) &&
+        data.keys().hasOnly([
+          'employeeId', 'amount', 'reason', 'status',
+          'approvedBy', 'createdAt', 'updatedAt'
+        ]) &&
+        validString(data.employeeId, 1, 128) &&
+        data.amount is number &&
+        data.amount > 0 &&
+        data.amount <= 1000000000 &&
+        validString(data.reason, 1, 1000) &&
+        data.status in ['Pending', 'Approved', 'Rejected'] &&
+        validOptionalString(data, 'approvedBy', 128) &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    function validPenalty(data) {
+      return data.keys().hasAll([
+          'employeeId', 'title', 'description', 'category',
+          'amount', 'penaltyDate', 'createdBy', 'createdAt'
+        ]) &&
+        data.keys().hasOnly([
+          'employeeId', 'title', 'description', 'category',
+          'amount', 'penaltyDate', 'createdBy', 'createdAt'
+        ]) &&
+        validString(data.employeeId, 1, 128) &&
+        validString(data.title, 1, 150) &&
+        validString(data.description, 1, 2000) &&
+        data.category in ['Late', 'Probation', 'Performance', 'Other'] &&
+        data.amount is number &&
+        data.amount >= 0 &&
+        data.amount <= 1000000000 &&
+        data.penaltyDate is timestamp &&
+        validString(data.createdBy, 1, 128) &&
+        data.createdAt is timestamp;
+    }
+
+    function validCompanyRule(data) {
+      return data.keys().hasAll([
+          'title', 'content', 'order', 'isActive',
+          'createdAt', 'updatedAt'
+        ]) &&
+        data.keys().hasOnly([
+          'title', 'content', 'order', 'isActive',
+          'createdAt', 'updatedAt'
+        ]) &&
+        validString(data.title, 1, 150) &&
+        validString(data.content, 1, 5000) &&
+        data.order is int &&
+        data.order >= 0 &&
+        data.order <= 10000 &&
+        data.isActive is bool &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    function validNotification(data) {
+      return data.keys().hasAll([
+          'employeeId', 'title', 'message', 'type',
+          'isRead', 'createdAt'
+        ]) &&
+        data.keys().hasOnly([
+          'employeeId', 'title', 'message', 'type',
+          'isRead', 'createdAt'
+        ]) &&
+        validString(data.employeeId, 1, 128) &&
+        validString(data.title, 1, 150) &&
+        validString(data.message, 1, 2000) &&
+        data.type in ['info', 'success', 'warning', 'error'] &&
+        data.isRead is bool &&
+        data.createdAt is timestamp;
+    }
+
+    // ===============================================================
+    // Collection access rules
+    // ===============================================================
+    match /employees/{uid} {
+      allow read: if isOwner(uid) || isManagerOrAdmin();
+
+      allow create: if validEmployee(request.resource.data) &&
+        timestampsValidOnCreate(request.resource.data) &&
+        request.resource.data.uid == uid &&
+        (
+          (
+            isOwner(uid) &&
+            request.resource.data.role == 'employee' &&
+            request.resource.data.status == 'active'
+          ) ||
+          isAdmin()
+        );
+
+      allow update: if validEmployee(request.resource.data) &&
+        timestampsValidOnUpdate(request.resource.data) &&
+        request.resource.data.uid == resource.data.uid &&
+        (
+          (
+            isOwner(uid) &&
+            request.resource.data.diff(resource.data).affectedKeys()
+              .hasOnly(['fullName', 'phone', 'updatedAt']) &&
+            request.resource.data.role == resource.data.role &&
+            request.resource.data.status == resource.data.status &&
+            request.resource.data.employeeCode == resource.data.employeeCode
+          ) ||
+          isAdmin()
+        );
+
+      allow delete: if isAdmin();
+    }
+
+    match /workSchedules/{scheduleId} {
+      allow read: if ownsResource('employeeId') || isManagerOrAdmin();
+
+      allow create: if createsOwnedResource('employeeId') &&
+        validWorkSchedule(request.resource.data) &&
+        timestampsValidOnCreate(request.resource.data) &&
+        request.resource.data.status == 'Registered';
+
+      allow update: if isManagerOrAdmin() &&
+        validWorkSchedule(request.resource.data) &&
+        timestampsValidOnUpdate(request.resource.data) &&
+        request.resource.data.employeeId == resource.data.employeeId &&
+        (
+          request.resource.data.status == resource.data.status ||
+          (
+            resource.data.status == 'Registered' &&
+            request.resource.data.status in ['Approved', 'Rejected']
+          )
+        );
+
+      allow delete: if isManagerOrAdmin();
+    }
+
+    match /leaveRequests/{leaveId} {
+      allow read: if ownsResource('employeeId') || isManagerOrAdmin();
+
+      allow create: if createsOwnedResource('employeeId') &&
+        validLeaveRequest(request.resource.data) &&
+        timestampsValidOnCreate(request.resource.data) &&
+        request.resource.data.status == 'Pending' &&
+        !('approvedBy' in request.resource.data);
+
+      allow update: if isManagerOrAdmin() &&
+        validLeaveRequest(request.resource.data) &&
+        timestampsValidOnUpdate(request.resource.data) &&
+        request.resource.data.employeeId == resource.data.employeeId &&
+        resource.data.status == 'Pending' &&
+        request.resource.data.status in ['Approved', 'Rejected'] &&
+        request.resource.data.approvedBy == request.auth.uid &&
+        request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['status', 'approvedBy', 'updatedAt']);
+    }
+
+    match /lateRequests/{lateId} {
+      allow read: if ownsResource('employeeId') || isManagerOrAdmin();
+
+      allow create: if createsOwnedResource('employeeId') &&
+        validLateRequest(request.resource.data) &&
+        timestampsValidOnCreate(request.resource.data) &&
+        request.resource.data.status == 'Pending' &&
+        !('approvedBy' in request.resource.data);
+
+      allow update: if isManagerOrAdmin() &&
+        validLateRequest(request.resource.data) &&
+        timestampsValidOnUpdate(request.resource.data) &&
+        request.resource.data.employeeId == resource.data.employeeId &&
+        resource.data.status == 'Pending' &&
+        request.resource.data.status in ['Approved', 'Rejected'] &&
+        request.resource.data.approvedBy == request.auth.uid &&
+        request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['status', 'approvedBy', 'updatedAt']);
+    }
+
+    match /salaryAdvances/{advanceId} {
+      allow read: if ownsResource('employeeId') || isManagerOrAdmin();
+
+      allow create: if createsOwnedResource('employeeId') &&
+        validSalaryAdvance(request.resource.data) &&
+        timestampsValidOnCreate(request.resource.data) &&
+        request.resource.data.status == 'Pending' &&
+        !('approvedBy' in request.resource.data);
+
+      allow update: if isManagerOrAdmin() &&
+        validSalaryAdvance(request.resource.data) &&
+        timestampsValidOnUpdate(request.resource.data) &&
+        request.resource.data.employeeId == resource.data.employeeId &&
+        resource.data.status == 'Pending' &&
+        request.resource.data.status in ['Approved', 'Rejected'] &&
+        request.resource.data.approvedBy == request.auth.uid &&
+        request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['status', 'approvedBy', 'updatedAt']);
+    }
+
+    match /penalties/{penaltyId} {
+      allow read: if ownsResource('employeeId') || isManagerOrAdmin();
+
+      allow create: if isManagerOrAdmin() &&
+        validPenalty(request.resource.data) &&
+        recentTimestamp(request.resource.data.createdAt) &&
+        request.resource.data.createdBy == request.auth.uid;
+    }
+
+    match /companyRules/{ruleId} {
+      allow read: if isAuthenticated() &&
+        (resource.data.isActive == true || isAdmin());
+
+      allow create: if isAdmin() &&
+        validCompanyRule(request.resource.data) &&
+        timestampsValidOnCreate(request.resource.data);
+
+      allow update: if isAdmin() &&
+        validCompanyRule(request.resource.data) &&
+        timestampsValidOnUpdate(request.resource.data);
+
+      allow delete: if isAdmin();
+    }
+
+    match /notifications/{notificationId} {
+      allow read: if ownsResource('employeeId');
+
+      allow create: if isManagerOrAdmin() &&
+        validNotification(request.resource.data) &&
+        recentTimestamp(request.resource.data.createdAt);
+
+      allow update: if ownsResource('employeeId') &&
+        validNotification(request.resource.data) &&
+        request.resource.data.diff(resource.data).affectedKeys()
+          .hasOnly(['isRead']);
+
+      allow delete: if ownsResource('employeeId') || isAdmin();
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

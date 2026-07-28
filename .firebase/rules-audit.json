@@ -1,0 +1,24 @@
+{
+  "score": 4,
+  "summary": "Prototype rules apply default deny, strict schemas, ownership checks, immutable authority fields, bounded strings, and workflow validation. The remaining operational risk is that role authority lives in Firestore and the first admin must be bootstrapped through trusted console access.",
+  "findings": [
+    {
+      "check": "Update bypass",
+      "severity": "minor",
+      "issue": "All allowed updates call domain validators and restrict immutable fields; emulator test coverage is not yet committed.",
+      "recommendation": "Add Security Rules unit tests with the Firebase Emulator Suite."
+    },
+    {
+      "check": "Authority source",
+      "severity": "minor",
+      "issue": "Manager/admin authority is read from employees/{uid}.role rather than custom claims.",
+      "recommendation": "For a larger deployment, move privileged roles to Firebase Auth custom claims managed by a trusted server."
+    },
+    {
+      "check": "Business logic vs rules",
+      "severity": "minor",
+      "issue": "The first admin cannot be created from the client by design.",
+      "recommendation": "Bootstrap the first admin from Firebase Console and document the process."
+    }
+  ]
+}

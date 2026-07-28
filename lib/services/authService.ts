@@ -1,0 +1,131 @@
+import {
+  createUserWithEmailAndPassword,
+  signInWithEmailAndPassword,
+  signOut,
+  onAuthStateChanged,
+  GoogleAuthProvider,
+  signInWithPopup,
+  User,
+  updateProfile,
+} from 'firebase/auth'
+import { auth } from '@/lib/firebase'
+import { AuthUser } from '@/lib/models/types'
+
+/**
+ * Sign up a new user with email and password
+ */
+export async function signUp(email: string, password: string, displayName?: string): Promise<User> {
+  try {
+    const userCredential = await createUserWithEmailAndPassword(auth, email, password)
+    const user = userCredential.user
+
+    if (displayName) {
+      await updateProfile(user, { displayName })
+    }
+
+    return user
+  } catch (error) {
+    console.error('Error signing up:', error)
+    throw error
+  }
+}
+
+/**
+ * Sign in user with email and password
+ */
+export async function signIn(email: string, password: string): Promise<User> {
+  try {
+    const userCredential = await signInWithEmailAndPassword(auth, email, password)
+    return userCredential.user
+  } catch (error) {
+    console.error('Error signing in:', error)
+    throw error
+  }
+}
+
+/**
+ * Sign in user with Google
+ */
+export async function signInWithGoogle(): Promise<User> {
+  try {
+    const provider = new GoogleAuthProvider()
+    provider.setCustomParameters({ prompt: 'select_account' })
+    const userCredential = await signInWithPopup(auth, provider)
+    return userCredential.user
+  } catch (error) {
+    console.error('Error signing in with Google:', error)
+    throw error
+  }
+}
+
+/**
+ * Sign out current user
+ */
+export async function logOut(): Promise<void> {
+  try {
+    await signOut(auth)
+  } catch (error) {
+    console.error('Error signing out:', error)
+    throw error
+  }
+}
+
+/**
+ * Get current authenticated user
+ */
+export function getCurrentUser(): User | null {
+  return auth.currentUser
+}
+
+/**
+ * Convert Firebase User to AuthUser
+ */
+export function convertFirebaseUserToAuthUser(user: User): AuthUser {
+  return {
+    uid: user.uid,
+    email: user.email,
+    displayName: user.displayName,
+    photoURL: user.photoURL,
+  }
+}
+
+/**
+ * Subscribe to auth state changes
+ */
+export function subscribeToAuthState(callback: (user: User | null) => void): () => void {
+  return onAuthStateChanged(auth, callback)
+}
+
+/**
+ * Update user profile
+ */
+export async function updateUserProfile(displayName?: string, photoURL?: string): Promise<void> {
+  try {
+    const user = auth.currentUser
+    if (user) {
+      await updateProfile(user, {
+        displayName: displayName || user.displayName,
+        photoURL: photoURL || user.photoURL,
+      })
+    }
+  } catch (error) {
+    console.error('Error updating user profile:', error)
+    throw error
+  }
+}
+
+/**
+ * Get user ID token
+ */
+export async function getUserIdToken(): Promise<string> {
+  try {
+    const user = auth.currentUser
+    if (user) {
+      return await user.getIdToken()
+    }
+    throw new Error('No authenticated user')
+  } catch (error) {
+    console.error('Error getting ID token:', error)
+    throw error
+  }
+}
