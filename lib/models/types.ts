@@ -6,6 +6,8 @@ export interface Employee {
   employeeCode: string
   fullName: string
   phone: string
+  photoURL?: string
+  facebookUrl?: string
   email: string
   role: 'admin' | 'manager' | 'employee'
   status: 'active' | 'inactive'

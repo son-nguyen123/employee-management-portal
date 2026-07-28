@@ -5,7 +5,7 @@ service cloud.firestore {
     // Assumed data model
     // ===============================================================
     // employees/{uid}: uid, employeeCode, fullName, phone, email,
-    //   role, status, joinDate, createdAt, updatedAt
+    //   optional photoURL/facebookUrl, role, status, joinDate, createdAt, updatedAt
     // workSchedules/{id}: employeeId, date, shift, status, note, optional reviewNote,
     //   optional reviewedBy/reviewedAt/lockedAt, createdAt, updatedAt
     // leaveRequests/{id}: employeeId, optional workScheduleId, leaveDate,
@@ -33,6 +33,19 @@ service cloud.firestore {
 
     function isOwner(uid) {
       return isAuthenticated() && request.auth.uid == uid;
+    }
+
+    function isDocOwner() {
+      return isAuthenticated() && resource.data.uid == request.auth.uid;
+    }
+
+    function uidUnchanged() {
+      return isAuthenticated() &&
+        request.resource.data.uid == request.auth.uid;
+    }
+
+    function uidNotModified() {
+      return request.resource.data.uid == resource.data.uid;
     }
 
     function hasEmployeeProfile() {
@@ -74,6 +87,17 @@ service cloud.firestore {
         value.matches('^.+@.+\\..+$');
     }
 
+    function validOptionalUrl(data, fieldName) {
+      return !(fieldName in data) ||
+        (
+          validString(data[fieldName], 0, 500) &&
+          (
+            data[fieldName] == '' ||
+            data[fieldName].matches('^https?://.*')
+          )
+        );
+    }
+
     function recentTimestamp(value) {
       return value is timestamp &&
         value >= request.time - duration.value(10, 'm') &&
@@ -100,12 +124,14 @@ service cloud.firestore {
         ]) &&
         data.keys().hasOnly([
           'uid', 'employeeCode', 'fullName', 'phone', 'email',
-          'role', 'status', 'joinDate', 'createdAt', 'updatedAt'
+          'photoURL', 'facebookUrl', 'role', 'status', 'joinDate', 'createdAt', 'updatedAt'
         ]) &&
         validString(data.uid, 1, 128) &&
         validString(data.employeeCode, 3, 30) &&
         validString(data.fullName, 1, 100) &&
         validString(data.phone, 0, 30) &&
+        validOptionalUrl(data, 'photoURL') &&
+        validOptionalUrl(data, 'facebookUrl') &&
         validEmail(data.email) &&
         data.role in ['admin', 'manager', 'employee'] &&
         data.status in ['active', 'inactive'] &&
@@ -176,6 +202,7 @@ service cloud.firestore {
 
       allow create: if validEmployee(request.resource.data) &&
         timestampsValidOnCreate(request.resource.data) &&
+        uidUnchanged() &&
         request.resource.data.uid == uid &&
         (
           (
@@ -188,15 +215,15 @@ service cloud.firestore {
 
       allow update: if validEmployee(request.resource.data) &&
         timestampsValidOnUpdate(request.resource.data) &&
+        uidNotModified() &&
         request.resource.data.uid == resource.data.uid &&
         (
           (
-            isOwner(uid) &&
+            isDocOwner() &&
             request.resource.data.diff(resource.data).affectedKeys()
-              .hasOnly(['fullName', 'phone', 'updatedAt']) &&
+              .hasOnly(['fullName', 'phone', 'employeeCode', 'photoURL', 'facebookUrl', 'updatedAt']) &&
             request.resource.data.role == resource.data.role &&
-            request.resource.data.status == resource.data.status &&
-            request.resource.data.employeeCode == resource.data.employeeCode
+            request.resource.data.status == resource.data.status
           ) ||
           isAdmin()
         );

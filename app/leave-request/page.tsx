@@ -1,15 +1,24 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { CalendarDays, CheckCircle2, Loader2, Palmtree, Send } from 'lucide-react'
+import { CalendarDays, Check, CheckCircle2, Info, Loader2, Palmtree, Send } from 'lucide-react'
 import { useAuth } from '@/lib/hooks/useAuth'
 import { createLeaveRequest, getEmployeeLeaves } from '@/lib/services/leaveService'
 import { mockLeaveRequests } from '@/lib/services/mockData'
+import { getEmployeeSchedules } from '@/lib/services/scheduleService'
+import { getPreviewSchedules } from '@/lib/services/previewWorkflow'
 import { Header } from '@/components/layout/header'
 import { PageContainer } from '@/components/layout/page-container'
 import { Badge } from '@/components/ui/badge'
 
 type Duration = 'short' | 'long'
+type ApprovedShift = { id: string; date: Date; shift: 'Morning' | 'Afternoon' | 'Evening' }
+
+const shiftLabels = {
+  Morning: 'Ca sáng',
+  Afternoon: 'Ca chiều',
+  Evening: 'Ca tối',
+}
 
 export default function LeaveRequestPage() {
   const { authUser, isPreviewMode } = useAuth()
@@ -17,6 +26,8 @@ export default function LeaveRequestPage() {
   const [startDate, setStartDate] = useState('')
   const [endDate, setEndDate] = useState('')
   const [reason, setReason] = useState('')
+  const [approvedShifts, setApprovedShifts] = useState<ApprovedShift[]>([])
+  const [selectedScheduleId, setSelectedScheduleId] = useState('')
   const [requests, setRequests] = useState<any[]>([])
   const [submitting, setSubmitting] = useState(false)
   const [message, setMessage] = useState('')
@@ -25,8 +36,28 @@ export default function LeaveRequestPage() {
     if (!authUser) return
     const load = async () => {
       try {
-        const data = isPreviewMode ? mockLeaveRequests : await getEmployeeLeaves(authUser.uid)
+        const [data, scheduleData] = isPreviewMode
+          ? [mockLeaveRequests, getPreviewSchedules().filter((item) => item.employeeId === authUser.uid)]
+          : await Promise.all([getEmployeeLeaves(authUser.uid), getEmployeeSchedules(authUser.uid)])
         setRequests(data.slice(0, 5))
+        const now = new Date()
+        const monday = new Date(now)
+        const day = now.getDay() || 7
+        monday.setDate(now.getDate() - day + 1)
+        monday.setHours(0, 0, 0, 0)
+        const sunday = new Date(monday)
+        sunday.setDate(monday.getDate() + 6)
+        sunday.setHours(23, 59, 59, 999)
+        setApprovedShifts(scheduleData
+          .filter((item) => {
+            const date = item.date instanceof Date ? item.date : typeof item.date === 'string' ? new Date(item.date) : item.date.toDate()
+            return item.status === 'Approved' && date >= monday && date <= sunday && !item.note?.includes('[DUTY_ONLY]')
+          })
+          .map((item) => ({
+            id: item.id!,
+            date: item.date instanceof Date ? item.date : typeof item.date === 'string' ? new Date(item.date) : item.date.toDate(),
+            shift: item.shift,
+          })))
       } catch {
         setRequests([])
       }
@@ -54,6 +85,7 @@ export default function LeaveRequestPage() {
       leaveType: 'personal' as const,
       reason: reason.trim(),
       status: 'Pending' as const,
+      workScheduleId: duration === 'short' ? selectedScheduleId || undefined : undefined,
     }
     try {
       if (!isPreviewMode) await createLeaveRequest(request)
@@ -62,6 +94,7 @@ export default function LeaveRequestPage() {
       setStartDate('')
       setEndDate('')
       setReason('')
+      setSelectedScheduleId('')
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'Chưa thể gửi yêu cầu. Vui lòng thử lại.')
     } finally {
@@ -90,7 +123,7 @@ export default function LeaveRequestPage() {
               <button
                 key={item.value}
                 type="button"
-                onClick={() => setDuration(item.value)}
+                onClick={() => { setDuration(item.value); setStartDate(''); setSelectedScheduleId('') }}
                 className={`min-h-14 rounded-xl px-2 text-sm transition ${duration === item.value ? 'bg-white font-extrabold text-indigo-600 shadow-sm dark:bg-slate-950' : 'text-muted-foreground'}`}
               >
                 <span className="block">{item.label}</span>
@@ -99,18 +132,53 @@ export default function LeaveRequestPage() {
             ))}
           </div>
 
-          <div className={`mt-5 grid gap-3 ${duration === 'long' ? 'grid-cols-2' : 'grid-cols-1'}`}>
-            <label className="text-sm font-bold">
-              {duration === 'short' ? 'Ngày nghỉ' : 'Từ ngày'}
-              <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} className="mobile-field mt-2" required />
-            </label>
+          {duration === 'short' && approvedShifts.length > 0 ? (
+            <div className="mt-5">
+              <div className="mb-3 flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-extrabold">Chọn ca muốn nghỉ</p>
+                  <p className="text-xs text-muted-foreground">Các ca đã được duyệt trong tuần này</p>
+                </div>
+                <Badge variant="success">{approvedShifts.length} ca</Badge>
+              </div>
+              <div className="space-y-2">
+                {approvedShifts.map((shift) => {
+                  const active = selectedScheduleId === shift.id
+                  return (
+                    <button key={shift.id} type="button" onClick={() => { setSelectedScheduleId(shift.id); setStartDate(shift.date.toISOString().slice(0, 10)) }} className={`flex min-h-16 w-full items-center gap-3 rounded-2xl border p-3 text-left transition ${active ? 'border-emerald-600 bg-emerald-600 text-white shadow-lg shadow-emerald-600/20' : 'border-slate-200 bg-slate-50 dark:border-slate-700 dark:bg-slate-800'}`}>
+                      <div className={`grid h-10 w-10 place-items-center rounded-xl ${active ? 'bg-white/15' : 'bg-white text-emerald-600 dark:bg-slate-900'}`}><CalendarDays className="h-4 w-4" /></div>
+                      <div className="min-w-0 flex-1">
+                        <p className="font-extrabold">{shiftLabels[shift.shift]}</p>
+                        <p className={`text-xs ${active ? 'text-emerald-50' : 'text-muted-foreground'}`}>{shift.date.toLocaleDateString('vi-VN', { weekday: 'long', day: '2-digit', month: '2-digit' })}</p>
+                      </div>
+                      {active && <Check className="h-5 w-5" />}
+                    </button>
+                  )
+                })}
+              </div>
+            </div>
+          ) : (
+            <>
+              {duration === 'short' && (
+                <div className="mt-5 flex gap-3 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm leading-6 text-amber-800 dark:bg-amber-500/10 dark:text-amber-200">
+                  <Info className="mt-0.5 h-5 w-5 shrink-0" />
+                  <div><p className="font-extrabold">Bạn không có lịch trong tuần này.</p><p>Bạn muốn đăng ký một ngày nghỉ?</p></div>
+                </div>
+              )}
+              <div className={`mt-5 grid gap-3 ${duration === 'long' ? 'grid-cols-2' : 'grid-cols-1'}`}>
+                <label className="text-sm font-bold">
+                  {duration === 'short' ? 'Ngày muốn nghỉ' : 'Từ ngày'}
+                  <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} className="mobile-field mt-2" required />
+                </label>
             {duration === 'long' && (
               <label className="text-sm font-bold">
                 Đến ngày
                 <input type="date" value={endDate} min={startDate} onChange={(e) => setEndDate(e.target.value)} className="mobile-field mt-2" required />
               </label>
             )}
-          </div>
+              </div>
+            </>
+          )}
 
           <label className="mt-5 block text-sm font-bold">
             Lý do xin nghỉ

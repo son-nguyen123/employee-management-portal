@@ -129,6 +129,24 @@ export async function submitSchedules(actor: RequestActor, raw: unknown) {
 
   const firstDate = schedules.reduce((min, row) => row.date < min ? row.date : min, schedules[0].date)
   const isLate = new Date() > scheduleDeadline(firstDate)
+  const weekStart = mondayFor(firstDate)
+  const weekEnd = new Date(weekStart)
+  weekEnd.setUTCDate(weekEnd.getUTCDate() + 6)
+  weekEnd.setUTCHours(23, 59, 59, 999)
+  const longLeaveSnapshots = await adminDb.collection('leaveRequests')
+    .where('employeeId', '==', actor.uid)
+    .where('duration', '==', 'long')
+    .get()
+  const hasCoveringLongLeave = longLeaveSnapshots.docs.some((snapshot) => {
+    const leave = snapshot.data()
+    if (!['Pending', 'Approved'].includes(leave.status)) return false
+    const start = (leave.leaveDate as Timestamp).toDate()
+    const end = (leave.endDate as Timestamp | undefined)?.toDate() ?? start
+    start.setUTCHours(0, 0, 0, 0)
+    end.setUTCHours(23, 59, 59, 999)
+    return start <= weekStart && end >= weekEnd
+  })
+  const shouldPenalize = isLate && !hasCoveringLongLeave
   const workflow = workflowRef(actor, id)
   const scheduleRefs = schedules.map(() => adminDb.collection('workSchedules').doc())
   const penaltyRef = adminDb.collection('penalties').doc(`schedule-${actor.uid}-${id}`)
@@ -151,11 +169,11 @@ export async function submitSchedules(actor: RequestActor, raw: unknown) {
       })
     })
 
-    if (isLate && workflowPolicy.scheduleLatePenalty > 0) {
+    if (shouldPenalize && workflowPolicy.scheduleLatePenalty > 0) {
       transaction.create(penaltyRef, penaltyData({
         employeeId: actor.uid,
         title: 'Đăng ký lịch trễ hạn',
-        description: `Lịch được gửi sau hạn Chủ nhật ${workflowPolicy.scheduleDeadlineHour}:00.`,
+        description: `Gửi lịch sau hạn Chủ nhật ${workflowPolicy.scheduleDeadlineHour}:00. Khấu trừ 1.000đ vào tiền công của 1 giờ làm.`,
         category: 'Late',
         amount: workflowPolicy.scheduleLatePenalty,
         sourceType: 'scheduleSubmission',
@@ -172,14 +190,14 @@ export async function submitSchedules(actor: RequestActor, raw: unknown) {
       employeeId: actor.uid,
       action: 'submitSchedules',
       targetIds: scheduleRefs.map((ref) => ref.id),
-      penaltyId: isLate ? penaltyRef.id : null,
+      penaltyId: shouldPenalize ? penaltyRef.id : null,
       createdAt: now,
     })
   })
 
   return {
     ids: scheduleRefs.map((ref) => ref.id),
-    penalty: isLate ? workflowPolicy.scheduleLatePenalty : 0,
+    penalty: shouldPenalize ? workflowPolicy.scheduleLatePenalty : 0,
   }
 }
 
@@ -230,12 +248,9 @@ export async function replaceSchedules(actor: RequestActor, raw: unknown) {
       throw new ApiError(403, 'Bạn không thể điều chỉnh lịch này.')
     }
 
-    const oldWeeks = new Set(oldData.map((schedule) =>
-      mondayFor((schedule.date as Timestamp).toDate()).toISOString()
-    ))
     const newWeeks = new Set(schedules.map((schedule) => mondayFor(schedule.date).toISOString()))
-    if (oldWeeks.size !== 1 || newWeeks.size !== 1 || [...oldWeeks][0] !== [...newWeeks][0]) {
-      throw new ApiError(400, 'Bản điều chỉnh phải thuộc cùng tuần với lịch đã gửi.')
+    if (newWeeks.size !== 1) {
+      throw new ApiError(400, 'Các ca trong bản điều chỉnh phải thuộc cùng một tuần.')
     }
 
     const now = FieldValue.serverTimestamp()
@@ -275,6 +290,9 @@ export async function submitLeave(actor: RequestActor, raw: unknown) {
   const endDate = dateValue(body.endDate ?? body.leaveDate, 'Ngày kết thúc')
   if (endDate < leaveDate) throw new ApiError(400, 'Ngày kết thúc phải từ ngày bắt đầu trở đi.')
   const reason = text(body.reason, 'Lý do', 1000)
+  const workScheduleId = body.workScheduleId == null
+    ? ''
+    : text(body.workScheduleId, 'Mã ca làm', 128)
   const leaveType = text(body.leaveType ?? 'personal', 'Loại nghỉ', 30)
   if (!['sick', 'casual', 'earned', 'personal'].includes(leaveType)) {
     throw new ApiError(400, 'Loại nghỉ không hợp lệ.')
@@ -290,8 +308,17 @@ export async function submitLeave(actor: RequestActor, raw: unknown) {
   await adminDb.runTransaction(async (transaction) => {
     if ((await transaction.get(workflow)).exists) throw new ApiError(409, 'Yêu cầu nghỉ này đã được gửi.')
     const now = FieldValue.serverTimestamp()
+    if (workScheduleId) {
+      const schedule = await transaction.get(adminDb.collection('workSchedules').doc(workScheduleId))
+      if (!schedule.exists ||
+        schedule.get('employeeId') !== actor.uid ||
+        schedule.get('status') !== 'Approved') {
+        throw new ApiError(403, 'Bạn chỉ được xin nghỉ trên ca đã được duyệt của mình.')
+      }
+    }
     transaction.create(leaveRef, {
       employeeId: actor.uid,
+      ...(workScheduleId ? { workScheduleId } : {}),
       leaveDate: Timestamp.fromDate(leaveDate),
       endDate: Timestamp.fromDate(endDate),
       duration,
@@ -321,12 +348,12 @@ export async function submitLeave(actor: RequestActor, raw: unknown) {
       employeeId: actor.uid,
       action: 'submitLeave',
       targetIds: [leaveRef.id],
-      penaltyId: isLate ? penaltyRef.id : null,
+      penaltyId: isLate && workflowPolicy.leaveLatePenalty > 0 ? penaltyRef.id : null,
       createdAt: now,
     })
   })
 
-  return { id: leaveRef.id, penalty: isLate ? workflowPolicy.leaveLatePenalty : 0 }
+  return { id: leaveRef.id, penalty: isLate && workflowPolicy.leaveLatePenalty > 0 ? workflowPolicy.leaveLatePenalty : 0 }
 }
 
 function shiftStart(date: Date, shift: Shift): Date {
@@ -391,7 +418,7 @@ export async function submitLate(actor: RequestActor, raw: unknown) {
       transaction.create(penaltyRef, penaltyData({
         employeeId: actor.uid,
         title: 'Báo đi trễ dưới 1 giờ trước ca',
-        description: 'Thông báo đi trễ được gửi dưới 60 phút trước giờ bắt đầu ca.',
+        description: 'Báo đi trễ dưới 60 phút trước giờ bắt đầu ca. Khấu trừ 500đ vào tiền công của 1 giờ làm.',
         category: 'Late',
         amount: computedPenalty,
         sourceType: 'lateRequest',
@@ -420,7 +447,7 @@ export async function submitSalaryAdvance(actor: RequestActor, raw: unknown) {
   const body = objectBody(raw)
   const id = requestId(body)
   const amount = numberValue(body.amount, 'Số tiền', 1, 1_000_000_000)
-  const reason = text(body.reason, 'Lý do', 1000)
+  const reason = text(body.reason ?? '', 'Ghi chú', 1000, true)
   const workflow = workflowRef(actor, id)
   const advanceRef = adminDb.collection('salaryAdvances').doc()
 

@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
-import { AlertTriangle, CalendarCheck, Check, ChevronRight, ClipboardCheck, Loader2, UsersRound, X } from 'lucide-react'
+import { AlertTriangle, CalendarCheck, Check, ChevronRight, ClipboardCheck, Loader2, MessageSquareText, UsersRound, X } from 'lucide-react'
 import { useAuth, useUserRole } from '@/lib/hooks/useAuth'
 import { getAllEmployees } from '@/lib/services/employeeService'
 import { getAllSchedules, reviewWorkScheduleBatch } from '@/lib/services/scheduleService'
@@ -57,6 +57,9 @@ export default function AdminDashboardPage() {
   const [tab, setTab] = useState<'requests' | 'employees'>('requests')
   const [loading, setLoading] = useState(true)
   const [processingId, setProcessingId] = useState('')
+  const [processingAction, setProcessingAction] = useState<'approve' | 'reject' | ''>('')
+  const [rejectingBatch, setRejectingBatch] = useState<ScheduleBatch | null>(null)
+  const [rejectReason, setRejectReason] = useState('')
   const [message, setMessage] = useState('')
 
   useEffect(() => {
@@ -135,13 +138,10 @@ export default function AdminDashboardPage() {
     [schedules]
   )
 
-  const review = async (batch: ScheduleBatch, status: 'Approved' | 'Rejected') => {
-    let reviewNote = ''
-    if (status === 'Rejected') {
-      reviewNote = window.prompt('Nhập lý do từ chối toàn bộ bảng lịch:')?.trim() || ''
-      if (!reviewNote) return
-    }
+  const review = async (batch: ScheduleBatch, status: 'Approved' | 'Rejected', reviewNote = '') => {
+    if (status === 'Rejected' && !reviewNote.trim()) return
     setProcessingId(batch.key)
+    setProcessingAction(status === 'Approved' ? 'approve' : 'reject')
     setMessage('')
     try {
       const ids = batch.schedules.map((item) => item.id)
@@ -153,10 +153,13 @@ export default function AdminDashboardPage() {
           ? `Đã xác nhận toàn bộ bảng gồm ${ids.length} ca.`
           : 'Đã từ chối bảng lịch và gửi thông báo cho nhân viên.'
       )
+      setRejectingBatch(null)
+      setRejectReason('')
     } catch {
       setMessage('Không thể cập nhật. Kiểm tra tài khoản hiện tại có role admin trong employees/{uid}.')
     } finally {
       setProcessingId('')
+      setProcessingAction('')
     }
   }
 
@@ -242,11 +245,11 @@ export default function AdminDashboardPage() {
                     ))}
                   </div>
                   <div className="grid grid-cols-2 gap-2 border-t border-slate-100 p-3 dark:border-white/10">
-                    <button disabled={processingId === batch.key} onClick={() => review(batch, 'Rejected')} className="flex min-h-11 items-center justify-center gap-1 rounded-xl border border-rose-200 text-sm font-bold text-rose-600">
-                      <X className="h-3.5 w-3.5" /> Từ chối
+                    <button disabled={processingId === batch.key} onClick={() => { setRejectingBatch(batch); setRejectReason('') }} className="flex min-h-11 items-center justify-center gap-1 rounded-xl border border-rose-200 text-sm font-bold text-rose-600">
+                      {processingId === batch.key && processingAction === 'reject' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <X className="h-3.5 w-3.5" />} Từ chối
                     </button>
                     <button disabled={processingId === batch.key} onClick={() => review(batch, 'Approved')} className="flex min-h-11 items-center justify-center gap-1 rounded-xl bg-emerald-600 text-sm font-bold text-white">
-                      {processingId === batch.key ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />} Xác nhận cả bảng
+                      {processingId === batch.key && processingAction === 'approve' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />} Xác nhận cả bảng
                     </button>
                   </div>
                 </article>
@@ -277,6 +280,57 @@ export default function AdminDashboardPage() {
           Một lần xác nhận sẽ duyệt và khóa toàn bộ bảng tuần của nhân viên.
         </div>
       </PageContainer>
+
+      {rejectingBatch && (
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-slate-950/55 p-0 backdrop-blur-sm sm:items-center sm:p-4" onClick={() => !processingId && setRejectingBatch(null)}>
+          <section className="w-full max-w-lg rounded-t-[2rem] bg-white p-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] shadow-2xl dark:bg-slate-900 sm:rounded-[2rem]" onClick={(event) => event.stopPropagation()}>
+            <div className="mx-auto mb-5 h-1.5 w-12 rounded-full bg-slate-200 dark:bg-slate-700 sm:hidden" />
+            <div className="flex items-start gap-3">
+              <div className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-rose-100 text-rose-600 dark:bg-rose-500/15">
+                <MessageSquareText className="h-5 w-5" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <h2 className="text-xl font-black">Lý do từ chối lịch</h2>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  Phản hồi này sẽ được gửi cho {rejectingBatch.employeeName || 'nhân viên'}.
+                </p>
+              </div>
+              <button type="button" disabled={!!processingId} onClick={() => setRejectingBatch(null)} className="grid h-10 w-10 place-items-center rounded-xl bg-slate-100 dark:bg-slate-800" aria-label="Đóng">
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="mt-5">
+              <p className="mb-2 text-xs font-bold uppercase tracking-wider text-muted-foreground">Lý do nhanh</p>
+              <div className="flex flex-wrap gap-2">
+                {[
+                  'Lịch chưa phù hợp nhu cầu nhân sự',
+                  'Cần bổ sung thêm ca làm',
+                  'Ca đăng ký đang bị trùng',
+                ].map((reason) => (
+                  <button key={reason} type="button" onClick={() => setRejectReason(reason)} className={`rounded-full border px-3 py-2 text-xs font-bold transition ${rejectReason === reason ? 'border-rose-500 bg-rose-500 text-white' : 'border-slate-200 bg-slate-50 dark:border-slate-700 dark:bg-slate-800'}`}>
+                    {reason}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <label className="mt-4 block text-sm font-bold">
+              Nội dung phản hồi
+              <textarea autoFocus value={rejectReason} onChange={(event) => setRejectReason(event.target.value)} className="mobile-field mt-2 min-h-28 py-3" maxLength={1000} placeholder="Nhập lý do cụ thể để nhân viên điều chỉnh..." />
+            </label>
+            <p className="mt-1 text-right text-xs text-muted-foreground">{rejectReason.length}/1000</p>
+
+            <div className="mt-5 grid grid-cols-[.8fr_1.2fr] gap-2">
+              <button type="button" disabled={!!processingId} onClick={() => setRejectingBatch(null)} className="min-h-12 rounded-2xl border border-slate-200 font-bold dark:border-slate-700">Hủy</button>
+              <button type="button" disabled={!rejectReason.trim() || !!processingId} onClick={() => review(rejectingBatch, 'Rejected', rejectReason.trim())} className="flex min-h-12 items-center justify-center gap-2 rounded-2xl bg-rose-600 px-4 font-bold text-white disabled:opacity-50">
+                {processingId === rejectingBatch.key && processingAction === 'reject' ? <Loader2 className="h-4 w-4 animate-spin" /> : <X className="h-4 w-4" />}
+                {processingId ? 'Đang từ chối...' : 'Từ chối bảng lịch'}
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
     </main>
   )
 }

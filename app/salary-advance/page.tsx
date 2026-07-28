@@ -45,8 +45,8 @@ export default function SalaryAdvancePage() {
     e.preventDefault()
     if (!authUser) return
 
-    if (!formData.amount || !formData.reason) {
-      setMessage({ type: 'error', text: 'Vui lòng điền đầy đủ thông tin' })
+    if (!formData.amount) {
+      setMessage({ type: 'error', text: 'Vui lòng nhập số tiền muốn ứng' })
       return
     }
 
@@ -69,7 +69,7 @@ export default function SalaryAdvancePage() {
       await createSalaryAdvance({
         employeeId: authUser.uid,
         amount,
-        reason: formData.reason,
+        reason: formData.reason.trim(),
         status: 'Pending',
       })
 
@@ -136,11 +136,13 @@ export default function SalaryAdvancePage() {
             </div>
 
             <div>
-              <label className="text-sm font-medium mb-2 block">Lý do</label>
+              <label className="text-sm font-medium mb-2 block">
+                Ghi chú <span className="font-normal text-muted-foreground">(không bắt buộc)</span>
+              </label>
               <textarea
                 value={formData.reason}
                 onChange={(e) => setFormData({ ...formData, reason: e.target.value })}
-                placeholder="Nhập lý do cần ứng lương..."
+                placeholder="Bạn có thể ghi thêm để quản lý dễ xem xét..."
                 rows={4}
                 className="w-full px-4 py-2 rounded-lg border border-border bg-background focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-colors resize-none"
                 disabled={submitting}
@@ -167,7 +169,7 @@ export default function SalaryAdvancePage() {
                   <div className="flex items-center justify-between">
                     <div>
                       <p className="font-medium">{Number(advance.amount || 0).toLocaleString('vi-VN')} VND</p>
-                      <p className="text-xs text-muted-foreground">{advance.reason}</p>
+                      <p className="text-xs text-muted-foreground">{advance.reason || 'Không có ghi chú'}</p>
                     </div>
                     <Badge
                       variant={

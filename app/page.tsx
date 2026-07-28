@@ -52,7 +52,17 @@ export default function Page() {
 
   useEffect(() => {
     if (!isLoading && !authUser) router.push('/auth/login')
-  }, [authUser, isLoading, router])
+    if (!isLoading && authUser && !isPreviewMode && (
+      !employee ||
+      !employee.fullName?.trim() ||
+      !employee.employeeCode?.trim() ||
+      !employee.phone?.trim() ||
+      !employee.photoURL?.trim() ||
+      !employee.facebookUrl?.trim()
+    )) {
+      router.replace('/profile/setup')
+    }
+  }, [authUser, employee, isLoading, isPreviewMode, router])
 
   useEffect(() => {
     if (!authUser) return

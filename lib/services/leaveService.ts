@@ -20,6 +20,7 @@ export async function createLeaveRequest(leaveData: Omit<LeaveRequest, 'id' | 'c
     duration: leaveData.duration,
     leaveType: leaveData.leaveType,
     reason: leaveData.reason,
+    workScheduleId: leaveData.workScheduleId,
   })
   return result.id
 }

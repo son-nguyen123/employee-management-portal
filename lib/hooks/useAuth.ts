@@ -1,6 +1,6 @@
 'use client'
 
-import React, { createContext, useContext, useEffect, useState, ReactNode } from 'react'
+import React, { createContext, useCallback, useContext, useEffect, useState, ReactNode } from 'react'
 import { User } from 'firebase/auth'
 import { subscribeToAuthState, convertFirebaseUserToAuthUser, logOut } from '@/lib/services/authService'
 import { getEmployeeByUID } from '@/lib/services/employeeService'
@@ -20,6 +20,7 @@ interface AuthContextType {
   isLoading: boolean
   isAuthenticated: boolean
   isPreviewMode: boolean
+  refreshEmployee: () => Promise<void>
   logout: () => Promise<void>
 }
 
@@ -110,12 +111,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }
 
+  const refreshEmployee = useCallback(async () => {
+    if (!authUser || demoMode) return
+    setEmployee(await getEmployeeByUID(authUser.uid))
+  }, [authUser, demoMode])
+
   const value: AuthContextType = {
     authUser,
     employee,
     isLoading,
     isAuthenticated: !!authUser,
     isPreviewMode: demoMode,
+    refreshEmployee,
     logout: handleLogout,
   }
 

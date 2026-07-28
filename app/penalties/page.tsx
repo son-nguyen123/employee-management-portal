@@ -42,7 +42,12 @@ export default function PenaltiesPage() {
     })()
   }, [authUser, isPreviewMode])
 
-  const total = penalties.reduce((sum, item) => sum + item.amount, 0)
+  const penaltyAmount = (item: Penalty) => {
+    if (item.sourceType === 'scheduleSubmission') return 1_000
+    if (item.sourceType === 'lateRequest') return 500
+    return item.amount
+  }
+  const total = penalties.reduce((sum, item) => sum + penaltyAmount(item), 0)
 
   return (
     <main className="min-h-screen">
@@ -51,8 +56,8 @@ export default function PenaltiesPage() {
         <section className="mb-4 grid grid-cols-2 gap-3">
           <div className="rounded-3xl bg-rose-600 p-4 text-white">
             <CircleDollarSign className="h-5 w-5 text-rose-200" />
-            <p className="mt-5 text-xs font-semibold text-rose-100">Tổng khoản phạt</p>
-            <p className="mt-1 text-xl font-black">{total.toLocaleString('vi-VN')} VND</p>
+            <p className="mt-5 text-xs font-semibold text-rose-100">Tổng khấu trừ</p>
+            <p className="mt-1 text-xl font-black">{total.toLocaleString('vi-VN')}đ</p>
           </div>
           <div className="mobile-card p-4">
             <AlertTriangle className="h-5 w-5 text-amber-500" />
@@ -63,7 +68,7 @@ export default function PenaltiesPage() {
 
         <div className="mb-4 flex gap-2 rounded-2xl border border-amber-200 bg-amber-50 p-3 text-xs leading-5 text-amber-800">
           <Info className="mt-0.5 h-4 w-4 shrink-0" />
-          Khoản phạt được backend tính theo thời điểm gửi và không thể sửa từ trình duyệt.
+          Mỗi vi phạm được khấu trừ một khoản cố định vào tiền công của 1 giờ làm: đăng ký lịch trễ 1.000đ, báo đi trễ muộn 500đ.
         </div>
 
         {message && <p className="mb-4 rounded-2xl bg-rose-50 p-3 text-sm font-semibold text-rose-700">{message}</p>}
@@ -80,10 +85,16 @@ export default function PenaltiesPage() {
                   <div className="flex items-start justify-between gap-3">
                     <div className="min-w-0">
                       <h2 className="font-extrabold">{penalty.title}</h2>
-                      <p className="mt-1 text-sm leading-5 text-muted-foreground">{penalty.description}</p>
+                      <p className="mt-1 text-sm leading-5 text-muted-foreground">
+                        {penalty.sourceType === 'scheduleSubmission'
+                          ? 'Gửi lịch sau thời hạn. Khấu trừ 1.000đ vào tiền công của 1 giờ làm.'
+                          : penalty.sourceType === 'lateRequest'
+                            ? 'Báo đi trễ dưới 60 phút trước ca. Khấu trừ 500đ vào tiền công của 1 giờ làm.'
+                            : penalty.description}
+                      </p>
                     </div>
                     <span className="shrink-0 rounded-full bg-rose-50 px-3 py-1 text-xs font-black text-rose-600 dark:bg-rose-500/15">
-                      {penalty.amount.toLocaleString('vi-VN')}đ
+                      {penaltyAmount(penalty).toLocaleString('vi-VN')}đ
                     </span>
                   </div>
                   <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-slate-100 pt-3 text-xs dark:border-white/10">

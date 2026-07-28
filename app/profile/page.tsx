@@ -9,7 +9,9 @@ import {
   Phone,
   ShieldCheck,
   UserRound,
+  ExternalLink,
 } from 'lucide-react'
+import Link from 'next/link'
 import { useAuth } from '@/lib/hooks/useAuth'
 import { Header } from '@/components/layout/header'
 import { PageContainer } from '@/components/layout/page-container'
@@ -115,8 +117,10 @@ export default function ProfilePage() {
       <PageContainer>
         <section className="mobile-card overflow-hidden">
           <div className="bg-slate-950 p-6 text-center text-white">
-            <div className="mx-auto grid h-20 w-20 place-items-center rounded-[1.75rem] bg-indigo-600">
-              <UserRound className="h-9 w-9" />
+            <div className="mx-auto grid h-20 w-20 place-items-center overflow-hidden rounded-[1.75rem] bg-indigo-600">
+              {employee?.photoURL || authUser?.photoURL
+                ? <img src={employee?.photoURL || authUser?.photoURL || ''} alt="" className="h-full w-full object-cover" />
+                : <UserRound className="h-9 w-9" />}
             </div>
             <h2 className="mt-4 text-xl font-extrabold">
               {employee?.fullName || authUser?.displayName || 'Nhân viên'}
@@ -146,6 +150,13 @@ export default function ProfilePage() {
                 </div>
               </div>
             ))}
+            {employee?.facebookUrl && (
+              <a href={employee.facebookUrl} target="_blank" rel="noreferrer" className="flex items-center gap-3 rounded-2xl p-3">
+                <div className="grid h-10 w-10 place-items-center rounded-xl bg-blue-50 text-blue-600 dark:bg-blue-500/10"><ExternalLink className="h-4 w-4" /></div>
+                <div className="min-w-0 flex-1"><p className="text-xs font-semibold text-muted-foreground">Facebook</p><p className="truncate font-bold">{employee.facebookUrl}</p></div>
+              </a>
+            )}
+            <Link href="/profile/setup" className="mt-2 flex min-h-11 items-center justify-center rounded-2xl bg-indigo-50 text-sm font-bold text-indigo-700 dark:bg-indigo-500/10 dark:text-indigo-200">Chỉnh sửa hồ sơ</Link>
           </div>
         </section>
 
