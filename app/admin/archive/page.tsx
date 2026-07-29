@@ -172,7 +172,7 @@ export default function AdminArchivePage() {
   const [appliedFilter, setAppliedFilter] = useState<AppliedFilter | null>(null)
   const [filterResults, setFilterResults] = useState<FilterResult[]>([])
   const [filtering, setFiltering] = useState(false)
-  const [openMonths, setOpenMonths] = useState<Set<string>>(() => new Set())
+  const [selectedBrowseMonth, setSelectedBrowseMonth] = useState('')
 
   const loadFiles = useCallback(async () => {
     if (!authUser) return
@@ -220,8 +220,10 @@ export default function AdminArchivePage() {
 
   useEffect(() => {
     if (!draftMonth && filterMonths[0]) setDraftMonth(filterMonths[0])
-    if (monthGroups[0]) setOpenMonths((current) => current.size ? current : new Set([monthGroups[0].key]))
-  }, [draftMonth, filterMonths, monthGroups])
+    if (monthGroups[0] && !monthGroups.some((group) => group.key === selectedBrowseMonth)) setSelectedBrowseMonth(monthGroups[0].key)
+  }, [draftMonth, filterMonths, monthGroups, selectedBrowseMonth])
+
+  const browseGroup = monthGroups.find((group) => group.key === selectedBrowseMonth) || monthGroups[0]
 
   const getArchive = useCallback(async (file: ArchiveFileSummary) => {
     const cached = archiveCache.current.get(file.id)
@@ -379,20 +381,15 @@ export default function AdminArchivePage() {
   }
 
   return (
-    <main className="min-h-screen pb-8">
+    <main className="min-h-screen pb-28">
       <Header title="Kho dữ liệu" subtitle="Lịch sử đã lưu an toàn trên Google Drive" />
       <PageContainer maxWidth="2xl">
-        <section className="overflow-hidden rounded-[1.75rem] bg-slate-950 p-5 text-white shadow-xl shadow-slate-950/15">
-          <div className="flex items-start gap-4">
-            <div className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-indigo-600"><Archive className="h-5 w-5" /></div>
-            <div className="min-w-0 flex-1"><p className="text-xs font-bold uppercase tracking-wider text-indigo-300">Lưu trữ dài hạn</p><h1 className="mt-1 text-xl font-black">{files.length} bản · {monthGroups.length} tháng</h1><p className="mt-1 text-xs leading-5 text-slate-300">Mỗi bản theo tuần Thứ Hai–Chủ Nhật; tháng có thể gồm 4 hoặc 5 tuần.</p></div>
+        <section className="overflow-hidden rounded-[1.75rem] bg-slate-950 p-4 text-white shadow-xl shadow-slate-950/15">
+          <div className="flex items-start gap-3">
+            <div className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-indigo-600"><Archive className="h-5 w-5" /></div>
+            <div className="min-w-0 flex-1"><p className="text-[11px] font-bold uppercase tracking-wider text-indigo-300">Lưu trữ dài hạn</p><h1 className="mt-0.5 text-xl font-black">{files.length} bản · {monthGroups.length} tháng</h1><p className="mt-1 text-xs leading-5 text-slate-300">Dữ liệu tuần đã lưu an toàn trên Google Drive.</p></div>
             <button type="button" onClick={() => void loadFiles()} disabled={loading} aria-label="Tải lại kho dữ liệu" className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-white/10 disabled:opacity-50"><RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} /></button>
           </div>
-        </section>
-
-        <section className="mt-4 rounded-3xl border border-indigo-100 bg-white p-4 shadow-sm dark:border-indigo-500/20 dark:bg-slate-900">
-          <div className="flex items-start gap-3"><div className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-indigo-50 text-indigo-600 dark:bg-indigo-500/10"><FlaskConical className="h-5 w-5" /></div><div><h2 className="font-extrabold">Kiểm thử bằng ngày lùi</h2><p className="mt-1 text-xs leading-5 text-muted-foreground">Tạo file test thật trên Drive nhưng không xóa dữ liệu Firebase.</p></div></div>
-          <div className="mt-4 grid min-w-0 grid-cols-[minmax(0,1fr)_auto] gap-2"><input type="date" value={testDate} onChange={(event) => setTestDate(event.target.value)} className="mobile-field min-w-0 !px-4 text-sm" /><button type="button" onClick={() => void createTestArchive()} disabled={creatingTest || isPreviewMode} className="min-h-12 shrink-0 whitespace-nowrap rounded-2xl bg-indigo-600 px-4 text-sm font-bold text-white disabled:opacity-50">{creatingTest ? 'Đang tạo...' : 'Tạo bản thử'}</button></div>
         </section>
 
         {message && <p className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 p-3 text-sm font-semibold text-amber-900 dark:border-amber-500/20 dark:bg-amber-500/10 dark:text-amber-100">{message}</p>}
@@ -403,6 +400,15 @@ export default function AdminArchivePage() {
         </div>
 
         {appliedFilter && <div className="mt-3 flex gap-2 overflow-x-auto pb-1"><span className="shrink-0 rounded-full bg-indigo-600 px-3 py-1.5 text-xs font-bold text-white">{monthLabel(appliedFilter.month)}</span>{appliedFilter.collection !== 'all' && <span className="shrink-0 rounded-full bg-indigo-50 px-3 py-1.5 text-xs font-bold text-indigo-700 dark:bg-indigo-500/10 dark:text-indigo-200">{collectionLabels[appliedFilter.collection]}</span>}{appliedFilter.employee && <span className="shrink-0 rounded-full bg-indigo-50 px-3 py-1.5 text-xs font-bold text-indigo-700 dark:bg-indigo-500/10 dark:text-indigo-200">{appliedFilter.employee}</span>}<button type="button" onClick={clearFilters} className="shrink-0 px-2 text-xs font-bold text-slate-500">Xóa lọc</button></div>}
+
+        {!appliedFilter && monthGroups.length > 0 && (
+          <nav aria-label="Chọn tháng lưu trữ" className="-mx-1 mt-3 flex snap-x snap-mandatory gap-2 overflow-x-auto px-1 pb-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+            {monthGroups.map((group) => {
+              const active = group.key === browseGroup?.key
+              return <button key={group.key} type="button" onClick={() => { setSelectedBrowseMonth(group.key); setSelected(null); setArchive(null) }} className={`min-w-[9.25rem] snap-start rounded-2xl border p-3 text-left transition active:scale-[0.98] ${active ? 'border-indigo-600 bg-indigo-600 text-white shadow-lg shadow-indigo-600/20' : 'border-slate-200 bg-white text-slate-900 shadow-sm dark:border-slate-700 dark:bg-slate-900 dark:text-white'}`}><p className={`text-[10px] font-bold uppercase tracking-wider ${active ? 'text-indigo-100' : 'text-slate-400'}`}>{group.weekKeys.length} tuần</p><p className="mt-1 font-black">{monthLabel(group.key)}</p><p className={`mt-1 text-xs ${active ? 'text-indigo-100' : 'text-muted-foreground'}`}>{group.files.length} bản lưu</p></button>
+            })}
+          </nav>
+        )}
 
         {loading || filtering ? (
           <div className="grid min-h-56 place-items-center"><Loader2 className="h-7 w-7 animate-spin text-indigo-600" /></div>
@@ -422,25 +428,20 @@ export default function AdminArchivePage() {
           </section>
         ) : (
           <section className="mt-4 space-y-3">
-            {monthGroups.map((group) => (
-              <details key={group.key} open={openMonths.has(group.key)} onToggle={(event) => { const isOpen = event.currentTarget.open; setOpenMonths((current) => { const next = new Set(current); if (isOpen) next.add(group.key); else next.delete(group.key); return next }) }} className="mobile-card overflow-hidden">
-                <summary className="flex cursor-pointer list-none items-center gap-3 p-4">
-                  <div className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-indigo-600 text-sm font-black text-white">T{Number(group.key.slice(5))}</div>
-                  <div className="min-w-0 flex-1"><h2 className="font-black">{monthLabel(group.key)}</h2><p className="mt-1 text-xs text-muted-foreground">{group.weekKeys.length} tuần · {group.files.length} bản lưu</p></div>
-                  <ChevronDown className="h-5 w-5 text-slate-400" />
-                </summary>
-                <div className="space-y-2 border-t border-slate-100 p-3 dark:border-white/10">
-                  {group.files.map((file) => {
+            {browseGroup && <div className="flex items-end justify-between gap-3 px-1"><div><h2 className="font-black">Các tuần trong {monthLabel(browseGroup.key).toLocaleLowerCase('vi')}</h2><p className="mt-1 text-xs text-muted-foreground">Chạm vào một tuần để xem dữ liệu.</p></div><Badge variant="outline">{browseGroup.weekKeys.length} tuần</Badge></div>}
+            {browseGroup?.files.map((file) => {
                     const weekKey = sourceWeekKey(file.archiveKey)
-                    const weekNumber = group.weekKeys.indexOf(weekKey) + 1
-                    return <div key={file.id} className="overflow-hidden rounded-2xl border border-slate-200 bg-white dark:border-white/10 dark:bg-slate-900"><button type="button" onClick={() => void openArchive(file)} className="flex w-full items-center gap-3 p-3 text-left"><div className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-indigo-50 text-indigo-600 dark:bg-indigo-500/10"><CalendarDays className="h-4 w-4" /></div><div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-2"><h3 className="font-extrabold">Tuần {weekNumber}</h3>{file.archiveKey.includes('-test-') && <Badge variant="outline">Bản thử</Badge>}</div><p className="mt-1 text-xs text-muted-foreground">{weekRange(weekKey)} · {bytes(file.size)}</p></div>{selected?.id === file.id && loadingFile ? <Loader2 className="h-5 w-5 animate-spin text-indigo-600" /> : <ChevronDown className="h-5 w-5 text-slate-400" />}</button>{selected?.id === file.id && archive && archiveDetails(archive, file)}</div>
+                    const weekNumber = browseGroup.weekKeys.indexOf(weekKey) + 1
+                    return <div key={file.id} className="mobile-card overflow-hidden"><button type="button" onClick={() => void openArchive(file)} className="flex w-full items-center gap-3 p-4 text-left"><div className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-indigo-50 text-indigo-600 dark:bg-indigo-500/10"><CalendarDays className="h-5 w-5" /></div><div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-2"><h3 className="font-extrabold">Tuần {weekNumber}</h3>{file.archiveKey.includes('-test-') && <Badge variant="outline">Bản thử</Badge>}</div><p className="mt-1 text-xs text-muted-foreground">{weekRange(weekKey)} · {bytes(file.size)}</p></div>{selected?.id === file.id && loadingFile ? <Loader2 className="h-5 w-5 animate-spin text-indigo-600" /> : <ChevronDown className={`h-5 w-5 text-slate-400 transition ${selected?.id === file.id ? 'rotate-180' : ''}`} />}</button>{selected?.id === file.id && archive && archiveDetails(archive, file)}</div>
                   })}
-                </div>
-              </details>
-            ))}
             {!monthGroups.length && !message && <div className="mobile-card p-8 text-center"><Database className="mx-auto h-8 w-8 text-slate-400" /><h2 className="mt-3 font-extrabold">Chưa có bản lưu</h2><p className="mt-1 text-sm text-muted-foreground">Bản lưu tuần sẽ xuất hiện sau khi tác vụ lưu trữ chạy thành công.</p></div>}
           </section>
         )}
+
+        <details className="group mt-6 overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm dark:border-slate-700 dark:bg-slate-900">
+          <summary className="flex cursor-pointer list-none items-center gap-3 p-4"><div className="grid h-10 w-10 shrink-0 place-items-center rounded-2xl bg-indigo-50 text-indigo-600 dark:bg-indigo-500/10"><FlaskConical className="h-4 w-4" /></div><div className="min-w-0 flex-1"><h2 className="text-sm font-extrabold">Công cụ kiểm thử</h2><p className="mt-0.5 text-xs text-muted-foreground">Tạo bản thử bằng ngày lùi khi cần kiểm tra.</p></div><ChevronDown className="h-5 w-5 text-slate-400 transition group-open:rotate-180" /></summary>
+          <div className="border-t border-slate-100 p-4 dark:border-white/10"><p className="text-xs leading-5 text-muted-foreground">File test được lưu thật trên Drive nhưng không xóa dữ liệu Firebase.</p><input type="date" value={testDate} onChange={(event) => setTestDate(event.target.value)} className="mobile-field mt-3 min-w-0 !px-4 text-sm" /><button type="button" onClick={() => void createTestArchive()} disabled={creatingTest || isPreviewMode} className="mt-2 flex min-h-12 w-full items-center justify-center rounded-2xl bg-indigo-600 px-4 text-sm font-bold text-white disabled:opacity-50">{creatingTest ? 'Đang tạo...' : 'Tạo bản thử'}</button></div>
+        </details>
       </PageContainer>
 
       {filterOpen && (
