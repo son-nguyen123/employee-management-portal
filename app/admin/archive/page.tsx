@@ -168,7 +168,6 @@ export default function AdminArchivePage() {
   })
   const [creatingTest, setCreatingTest] = useState(false)
   const [filterOpen, setFilterOpen] = useState(false)
-  const [draftMonth, setDraftMonth] = useState('')
   const [draftCollection, setDraftCollection] = useState<FilterCollection>('all')
   const [draftEmployee, setDraftEmployee] = useState('')
   const [appliedFilter, setAppliedFilter] = useState<AppliedFilter | null>(null)
@@ -177,6 +176,7 @@ export default function AdminArchivePage() {
   const [selectedBrowseMonth, setSelectedBrowseMonth] = useState('')
   const monthRailRef = useRef<HTMLDivElement>(null)
   const centeredYearRef = useRef<number | null>(null)
+  const filterRequestIdRef = useRef(0)
 
   const loadFiles = useCallback(async () => {
     if (!authUser) return
@@ -210,25 +210,12 @@ export default function AdminArchivePage() {
       }))
   }, [files])
 
-  const filterMonths = useMemo(() => {
-    const months = new Set<string>()
-    files.forEach((file) => {
-      const start = new Date(`${sourceWeekKey(file.archiveKey)}T12:00:00`)
-      const end = new Date(start)
-      end.setDate(end.getDate() + 6)
-      months.add(localMonthKey(start))
-      months.add(localMonthKey(end))
-    })
-    return [...months].sort((left, right) => right.localeCompare(left))
-  }, [files])
-
   useEffect(() => {
-    if (!draftMonth && filterMonths[0]) setDraftMonth(filterMonths[0])
     if (!selectedBrowseMonth && !loading) {
       const now = new Date()
       setSelectedBrowseMonth(monthGroups[0]?.key || `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`)
     }
-  }, [draftMonth, filterMonths, loading, monthGroups, selectedBrowseMonth])
+  }, [loading, monthGroups, selectedBrowseMonth])
 
   const browseGroup = monthGroups.find((group) => group.key === selectedBrowseMonth)
   const selectedYear = Number(selectedBrowseMonth.slice(0, 4)) || new Date().getFullYear()
@@ -328,14 +315,13 @@ export default function AdminArchivePage() {
     }
   }
 
-  const applyFilters = async () => {
-    if (!draftMonth) return
-    const nextFilter = { month: draftMonth, collection: draftCollection, employee: draftEmployee.trim() }
-    setFilterOpen(false)
+  const runFilters = useCallback(async (nextFilter: AppliedFilter, closePanel = false) => {
+    const requestId = ++filterRequestIdRef.current
+    if (closePanel) setFilterOpen(false)
     setFiltering(true)
     setMessage('')
     try {
-      const monthFiles = canonicalFiles(files.filter((file) => fileTouchesMonth(file, draftMonth)))
+      const monthFiles = canonicalFiles(files.filter((file) => fileTouchesMonth(file, nextFilter.month)))
       const loaded = await Promise.all(monthFiles.map(async (file) => ({ file, archive: await getArchive(file) })))
       const employeeNames = new Map<string, string>()
       loaded.forEach(({ archive: payload }) => {
@@ -378,21 +364,46 @@ export default function AdminArchivePage() {
           })
         })
       })
-      setFilterResults([...grouped.values()].sort((left, right) => `${right.weekStart}${right.date}`.localeCompare(`${left.weekStart}${left.date}`)))
-      setAppliedFilter(nextFilter)
+      if (requestId === filterRequestIdRef.current) {
+        setFilterResults([...grouped.values()].sort((left, right) => `${right.weekStart}${right.date}`.localeCompare(`${left.weekStart}${left.date}`)))
+        setAppliedFilter(nextFilter)
+      }
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : 'Chưa thể lọc dữ liệu trong tháng này.')
+      if (requestId === filterRequestIdRef.current) setMessage(error instanceof Error ? error.message : 'Chưa thể lọc dữ liệu trong tháng này.')
     } finally {
-      setFiltering(false)
+      if (requestId === filterRequestIdRef.current) setFiltering(false)
     }
+  }, [files, getArchive])
+
+  const applyFilters = () => {
+    if (!selectedBrowseMonth) return
+    void runFilters({ month: selectedBrowseMonth, collection: draftCollection, employee: draftEmployee.trim() }, true)
   }
 
+  useEffect(() => {
+    if (!appliedFilter || !selectedBrowseMonth || appliedFilter.month === selectedBrowseMonth) return
+    setFiltering(true)
+    const timeout = window.setTimeout(() => {
+      void runFilters({ ...appliedFilter, month: selectedBrowseMonth })
+    }, 250)
+    return () => window.clearTimeout(timeout)
+  }, [appliedFilter, runFilters, selectedBrowseMonth])
+
   const clearFilters = () => {
+    filterRequestIdRef.current += 1
     setAppliedFilter(null)
     setFilterResults([])
+    setFiltering(false)
     setDraftCollection('all')
     setDraftEmployee('')
   }
+
+  const filteredEmployeeGroups = useMemo(() => {
+    const groups = new Map<string, FilterResult[]>()
+    filterResults.forEach((result) => groups.set(result.employee, [...(groups.get(result.employee) || []), result]))
+    return [...groups.entries()].map(([employee, results]) => ({ employee, results }))
+  }, [filterResults])
+  const activeFilterCount = appliedFilter ? Number(appliedFilter.collection !== 'all') + Number(Boolean(appliedFilter.employee)) : 0
 
   const archiveDetails = (payload: WeeklyArchivePayload, file: ArchiveFileSummary) => {
     const employeeNames = new Map(
@@ -447,13 +458,11 @@ export default function AdminArchivePage() {
         {message && <p className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 p-3 text-sm font-semibold text-amber-900 dark:border-amber-500/20 dark:bg-amber-500/10 dark:text-amber-100">{message}</p>}
 
         <div className="mt-5 flex items-center justify-between gap-3">
-          <div><p className="text-xs font-bold uppercase tracking-wider text-indigo-600">Tra cứu</p><h2 className="text-xl font-black">{appliedFilter ? `${filterResults.length} kết quả` : 'Theo tháng'}</h2></div>
-          <button type="button" onClick={() => setFilterOpen(true)} className="flex min-h-11 items-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 text-sm font-bold shadow-sm dark:border-slate-700 dark:bg-slate-900"><SlidersHorizontal className="h-4 w-4" /> Lọc {appliedFilter && <span className="grid h-5 min-w-5 place-items-center rounded-full bg-indigo-600 px-1 text-[10px] text-white">{1 + Number(appliedFilter.collection !== 'all') + Number(Boolean(appliedFilter.employee))}</span>}</button>
+          <div><p className="text-xs font-bold uppercase tracking-wider text-indigo-600">Tra cứu</p><h2 className="text-xl font-black">{appliedFilter ? 'Đang lọc dữ liệu' : 'Theo tháng'}</h2></div>
+          <button type="button" onClick={() => setFilterOpen(true)} className="flex min-h-11 items-center gap-2 rounded-2xl border border-slate-200 bg-white px-4 text-sm font-bold shadow-sm dark:border-slate-700 dark:bg-slate-900"><SlidersHorizontal className="h-4 w-4" /> Lọc {activeFilterCount > 0 && <span className="grid h-5 min-w-5 place-items-center rounded-full bg-indigo-600 px-1 text-[10px] text-white">{activeFilterCount}</span>}</button>
         </div>
 
-        {appliedFilter && <div className="mt-3 flex gap-2 overflow-x-auto pb-1"><span className="shrink-0 rounded-full bg-indigo-600 px-3 py-1.5 text-xs font-bold text-white">{monthLabel(appliedFilter.month)}</span>{appliedFilter.collection !== 'all' && <span className="shrink-0 rounded-full bg-indigo-50 px-3 py-1.5 text-xs font-bold text-indigo-700 dark:bg-indigo-500/10 dark:text-indigo-200">{collectionLabels[appliedFilter.collection]}</span>}{appliedFilter.employee && <span className="shrink-0 rounded-full bg-indigo-50 px-3 py-1.5 text-xs font-bold text-indigo-700 dark:bg-indigo-500/10 dark:text-indigo-200">{appliedFilter.employee}</span>}<button type="button" onClick={clearFilters} className="shrink-0 px-2 text-xs font-bold text-slate-500">Xóa lọc</button></div>}
-
-        {!appliedFilter && selectedBrowseMonth && (
+        {selectedBrowseMonth && (
           <section className="mt-3 overflow-hidden rounded-3xl border border-slate-200/80 bg-white/70 py-3 shadow-sm backdrop-blur dark:border-slate-700 dark:bg-slate-900/70">
             <div className="flex items-center justify-center gap-4 px-3"><button type="button" onClick={() => selectYear(-1)} aria-label="Năm trước" className="grid h-9 w-9 place-items-center rounded-xl bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300"><ChevronLeft className="h-4 w-4" /></button><p className="min-w-20 text-center text-sm font-black">Năm {selectedYear}</p><button type="button" onClick={() => selectYear(1)} aria-label="Năm sau" className="grid h-9 w-9 place-items-center rounded-xl bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300"><ChevronRight className="h-4 w-4" /></button></div>
             <div className="relative mt-3"><div className="pointer-events-none absolute inset-y-0 left-1/2 z-0 w-[8.5rem] -translate-x-1/2 rounded-2xl bg-indigo-50/70 dark:bg-indigo-500/5" /><nav ref={monthRailRef} aria-label="Bánh xe chọn tháng" onScroll={handleMonthScroll} className="relative z-10 flex snap-x snap-mandatory gap-2 overflow-x-auto px-0 py-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"><span aria-hidden="true" className="shrink-0" style={{ width: 'calc(50% - 4.25rem)' }} />{wheelMonths.map((key) => { const group = monthGroups.find((item) => item.key === key); const active = key === selectedBrowseMonth; return <button key={key} data-month-key={key} type="button" onClick={() => { setSelectedBrowseMonth(key); setSelected(null); setArchive(null); centerMonth(key) }} className={`w-[8.5rem] shrink-0 snap-center rounded-2xl border px-3 py-3 text-center transition duration-200 active:scale-[0.98] ${active ? 'scale-100 border-indigo-600 bg-indigo-600 text-white shadow-lg shadow-indigo-600/25' : 'scale-90 border-slate-200 bg-white text-slate-500 opacity-70 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300'}`}><p className="text-[10px] font-bold uppercase tracking-wider">Tháng</p><p className="mt-0.5 text-2xl font-black">{Number(key.slice(5))}</p><p className={`mt-1 text-[10px] font-semibold ${active ? 'text-indigo-100' : 'text-slate-400'}`}>{group ? `${group.files.length} bản lưu` : 'Không có dữ liệu'}</p></button>})}<span aria-hidden="true" className="shrink-0" style={{ width: 'calc(50% - 4.25rem)' }} /></nav></div>
@@ -461,19 +470,22 @@ export default function AdminArchivePage() {
           </section>
         )}
 
+        {appliedFilter && (
+          <section className="mt-4 rounded-3xl border border-indigo-100 bg-indigo-50/80 p-4 dark:border-indigo-500/20 dark:bg-indigo-500/10">
+            <div className="flex items-start justify-between gap-3"><div><p className="text-[11px] font-bold uppercase tracking-wider text-indigo-600">Kết quả {monthLabel(selectedBrowseMonth)}</p><h2 className="mt-1 text-xl font-black">{filterResults.length} hoạt động · {filteredEmployeeGroups.length} nhân viên</h2></div><button type="button" onClick={clearFilters} className="shrink-0 rounded-xl bg-white px-3 py-2 text-xs font-bold text-slate-600 shadow-sm dark:bg-slate-900 dark:text-slate-300">Xóa lọc</button></div>
+            <div className="mt-3 flex flex-wrap gap-2">{appliedFilter.collection !== 'all' && <span className="rounded-full bg-indigo-600 px-3 py-1.5 text-xs font-bold text-white">{collectionLabels[appliedFilter.collection]}</span>}{appliedFilter.employee && <span className="rounded-full border border-indigo-200 bg-white px-3 py-1.5 text-xs font-bold text-indigo-700 dark:border-indigo-500/20 dark:bg-slate-900 dark:text-indigo-200">Nhân viên: {appliedFilter.employee}</span>}{appliedFilter.collection === 'all' && !appliedFilter.employee && <span className="text-xs font-semibold text-indigo-700 dark:text-indigo-200">Hiển thị tất cả dữ liệu trong tháng.</span>}</div>
+          </section>
+        )}
+
         {loading || filtering ? (
           <div className="grid min-h-56 place-items-center"><Loader2 className="h-7 w-7 animate-spin text-indigo-600" /></div>
         ) : appliedFilter ? (
           <section className="mt-4 space-y-3">
-            {filterResults.map((result) => (
-              <details key={result.key} className="mobile-card overflow-hidden">
-                <summary className="flex cursor-pointer list-none items-center gap-3 p-4">
-                  <div className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-indigo-50 text-indigo-600 dark:bg-indigo-500/10"><Database className="h-5 w-5" /></div>
-                  <div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-2"><p className="truncate font-extrabold">{result.employee}</p><Badge variant="outline">{collectionLabels[result.collection] || result.collection}</Badge></div><p className="mt-1 text-xs text-muted-foreground">{result.collection === 'workSchedules' ? `${result.records.length} ca · ${weekRange(result.weekKey)}` : result.date || weekRange(result.weekKey)}</p></div>
-                  <ChevronDown className="h-5 w-5 shrink-0 text-slate-400" />
-                </summary>
-                <div className="border-t border-slate-100 p-3 dark:border-white/10"><pre className="max-h-80 overflow-auto rounded-2xl bg-slate-950 p-3 text-[11px] leading-5 text-slate-200">{JSON.stringify(result.records.map((record) => record.data), null, 2)}</pre></div>
-              </details>
+            {filteredEmployeeGroups.map((group) => (
+              <article key={group.employee} className="mobile-card overflow-hidden">
+                <header className="flex items-center gap-3 border-b border-slate-100 p-4 dark:border-white/10"><div className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-indigo-600 text-sm font-black text-white">{group.employee.trim().charAt(0).toLocaleUpperCase('vi')}</div><div className="min-w-0 flex-1"><h3 className="truncate font-black">{group.employee}</h3><p className="mt-1 text-xs text-muted-foreground">{group.results.length} hoạt động trong {monthLabel(selectedBrowseMonth).toLocaleLowerCase('vi')}</p></div></header>
+                <div className="divide-y divide-slate-100 px-4 dark:divide-white/10">{group.results.map((result) => <details key={result.key} className="py-1"><summary className="flex cursor-pointer list-none items-center gap-3 py-3"><div className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-indigo-50 text-indigo-600 dark:bg-indigo-500/10"><Database className="h-4 w-4" /></div><div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-2"><p className="text-sm font-extrabold">{collectionLabels[result.collection] || result.collection}</p>{result.status && <Badge variant={result.status === 'Approved' ? 'success' : result.status === 'Rejected' ? 'destructive' : 'outline'}>{result.status}</Badge>}</div><p className="mt-1 text-xs text-muted-foreground">{result.collection === 'workSchedules' ? `${result.records.length} ca · ${weekRange(result.weekKey)}` : result.date || weekRange(result.weekKey)}</p></div><ChevronDown className="h-4 w-4 shrink-0 text-slate-400" /></summary><div className="pb-3"><pre className="max-h-80 overflow-auto rounded-2xl bg-slate-950 p-3 text-[11px] leading-5 text-slate-200">{JSON.stringify(result.records.map((record) => record.data), null, 2)}</pre></div></details>)}</div>
+              </article>
             ))}
             {!filterResults.length && <div className="mobile-card p-8 text-center"><Database className="mx-auto h-8 w-8 text-slate-400" /><h2 className="mt-3 font-extrabold">Không tìm thấy dữ liệu</h2><p className="mt-1 text-sm text-muted-foreground">Thử bỏ tên nhân viên hoặc chọn loại dữ liệu khác.</p></div>}
           </section>
@@ -501,13 +513,13 @@ export default function AdminArchivePage() {
             <div className="mx-auto mb-4 h-1.5 w-12 rounded-full bg-slate-200 sm:hidden" />
             <div className="flex items-center justify-between gap-3"><div><p className="text-xs font-bold uppercase tracking-wider text-indigo-600">Tra cứu kho</p><h2 id="archive-filter-title" className="text-xl font-black">Bộ lọc</h2></div><button type="button" onClick={() => setFilterOpen(false)} aria-label="Đóng bộ lọc" className="grid h-11 w-11 place-items-center rounded-2xl bg-slate-100 dark:bg-slate-800"><X className="h-5 w-5" /></button></div>
 
-            <label className="mt-5 block text-sm font-extrabold">Tháng<select value={draftMonth} onChange={(event) => setDraftMonth(event.target.value)} className="mobile-field mt-2">{filterMonths.map((key) => <option key={key} value={key}>{monthLabel(key)}</option>)}</select></label>
+            <div className="mt-5 rounded-2xl border border-indigo-100 bg-indigo-50 p-3 dark:border-indigo-500/20 dark:bg-indigo-500/10"><p className="text-[10px] font-bold uppercase tracking-wider text-indigo-600">Tháng đang xem</p><p className="mt-1 font-black">{monthLabel(selectedBrowseMonth)}</p><p className="mt-1 text-xs leading-5 text-indigo-700/80 dark:text-indigo-200/80">Đóng bảng lọc và vuốt vòng tháng để đổi thời gian.</p></div>
 
             <fieldset className="mt-5"><legend className="text-sm font-extrabold">Loại dữ liệu</legend><div className="mt-2 flex flex-wrap gap-2">{filterCollections.map(([key, label]) => <button key={key} type="button" onClick={() => setDraftCollection(key)} className={`min-h-10 rounded-full border px-3 text-xs font-bold transition ${draftCollection === key ? 'border-indigo-600 bg-indigo-600 text-white' : 'border-slate-200 bg-white text-slate-700 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200'}`}>{label}</button>)}</div></fieldset>
 
             <label className="mt-5 block text-sm font-extrabold">Nhân viên <span className="font-normal text-muted-foreground">(không bắt buộc)</span><input value={draftEmployee} onChange={(event) => setDraftEmployee(event.target.value)} className="mobile-field mt-2" placeholder="Nhập tên hoặc mã nhân viên" /></label>
 
-            <div className="mt-6 grid grid-cols-[auto_1fr] gap-2"><button type="button" onClick={() => { setDraftCollection('all'); setDraftEmployee('') }} className="min-h-12 rounded-2xl border border-slate-200 px-4 text-sm font-bold dark:border-slate-700">Đặt lại</button><button type="button" onClick={() => void applyFilters()} disabled={!draftMonth} className="min-h-12 rounded-2xl bg-indigo-600 px-4 text-sm font-bold text-white disabled:opacity-50">Xem kết quả</button></div>
+            <div className="mt-6 grid grid-cols-[auto_1fr] gap-2"><button type="button" onClick={() => { setDraftCollection('all'); setDraftEmployee('') }} className="min-h-12 rounded-2xl border border-slate-200 px-4 text-sm font-bold dark:border-slate-700">Đặt lại</button><button type="button" onClick={applyFilters} disabled={!selectedBrowseMonth} className="min-h-12 rounded-2xl bg-indigo-600 px-4 text-sm font-bold text-white disabled:opacity-50">Áp dụng bộ lọc</button></div>
           </section>
         </div>
       )}
