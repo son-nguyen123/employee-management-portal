@@ -47,14 +47,59 @@ export async function signIn(email: string, password: string): Promise<User> {
  * Sign in user with Google
  */
 export async function signInWithGoogle(): Promise<User> {
+  let hasLeftApp = false
+  let returnTimer: ReturnType<typeof setTimeout> | undefined
+  let rejectWhenReturned: ((reason: Error) => void) | undefined
+
+  const popupClosedError = Object.assign(
+    new Error('Google sign-in window was closed before completion.'),
+    { code: 'auth/popup-closed-by-user' }
+  )
+  const returnedWithoutResult = new Promise<never>((_, reject) => {
+    rejectWhenReturned = reject
+  })
+  const markAppHidden = () => {
+    hasLeftApp = true
+  }
+  const handleVisibilityChange = () => {
+    if (document.visibilityState === 'hidden') {
+      markAppHidden()
+      return
+    }
+    handleAppReturn()
+  }
+  const handleAppReturn = () => {
+    if (!hasLeftApp) return
+    if (returnTimer) clearTimeout(returnTimer)
+    returnTimer = setTimeout(() => {
+      if (!auth.currentUser) rejectWhenReturned?.(popupClosedError)
+    }, 1800)
+  }
+
   try {
     const provider = new GoogleAuthProvider()
     provider.setCustomParameters({ prompt: 'select_account' })
-    const userCredential = await signInWithPopup(auth, provider)
+    window.addEventListener('blur', markAppHidden)
+    window.addEventListener('focus', handleAppReturn)
+    window.addEventListener('pagehide', markAppHidden)
+    window.addEventListener('pageshow', handleAppReturn)
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+
+    const userCredential = await Promise.race([
+      signInWithPopup(auth, provider),
+      returnedWithoutResult,
+    ])
     return userCredential.user
   } catch (error) {
     console.error('Error signing in with Google:', error)
     throw error
+  } finally {
+    if (returnTimer) clearTimeout(returnTimer)
+    window.removeEventListener('blur', markAppHidden)
+    window.removeEventListener('focus', handleAppReturn)
+    window.removeEventListener('pagehide', markAppHidden)
+    window.removeEventListener('pageshow', handleAppReturn)
+    document.removeEventListener('visibilitychange', handleVisibilityChange)
   }
 }
 

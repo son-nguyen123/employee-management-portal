@@ -14,12 +14,13 @@ export function LoginForm() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
-  const [loading, setLoading] = useState(false)
+  const [loadingAction, setLoadingAction] = useState<'password' | 'google' | null>(null)
+  const loading = loadingAction !== null
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setError('')
-    setLoading(true)
+    setLoadingAction('password')
 
     try {
       await signIn(email, password)
@@ -33,13 +34,13 @@ export function LoginForm() {
             : 'Không thể đăng nhập'
       setError(errorMessage)
     } finally {
-      setLoading(false)
+      setLoadingAction(null)
     }
   }
 
   const handleGoogleSignIn = async () => {
     setError('')
-    setLoading(true)
+    setLoadingAction('google')
 
     try {
       await signInWithGoogle()
@@ -51,7 +52,7 @@ export function LoginForm() {
           : 'Không thể đăng nhập bằng Google'
       )
     } finally {
-      setLoading(false)
+      setLoadingAction(null)
     }
   }
 
@@ -120,8 +121,8 @@ export function LoginForm() {
               disabled={loading}
               className="mobile-primary-button"
             >
-              {loading && <Loader2 className="w-4 h-4 animate-spin" />}
-              {loading ? 'Đang đăng nhập...' : 'Đăng nhập'}
+              {loadingAction === 'password' && <Loader2 className="w-4 h-4 animate-spin" />}
+              {loadingAction === 'password' ? 'Đang đăng nhập...' : 'Đăng nhập'}
             </button>
 
             <div className="relative py-1">
@@ -137,9 +138,10 @@ export function LoginForm() {
               type="button"
               onClick={handleGoogleSignIn}
               disabled={loading}
-              className="min-h-12 w-full rounded-2xl border border-slate-200 bg-white font-bold transition active:scale-[.98] disabled:opacity-50 dark:border-slate-700 dark:bg-slate-900"
+              className="flex min-h-12 w-full items-center justify-center gap-2 rounded-2xl border border-indigo-200 bg-indigo-50/70 px-4 font-bold text-indigo-700 transition active:scale-[.98] disabled:opacity-50 dark:border-indigo-500/30 dark:bg-indigo-500/10 dark:text-indigo-200"
             >
-              Tiếp tục bằng Google
+              {loadingAction === 'google' && <Loader2 className="h-4 w-4 animate-spin" />}
+              {loadingAction === 'google' ? 'Đang mở Google...' : 'Truy cập Trí Candy bằng Google'}
             </button>
 
             <div className="text-center text-sm">

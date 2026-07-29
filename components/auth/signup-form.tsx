@@ -14,14 +14,15 @@ export function SignupForm() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
-  const [loading, setLoading] = useState(false)
+  const [loadingAction, setLoadingAction] = useState<'password' | 'google' | null>(null)
+  const loading = loadingAction !== null
 
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault()
     setError('')
     if (!email.includes('@')) return setError('Email không hợp lệ')
     if (password.length < 6) return setError('Mật khẩu phải có ít nhất 6 ký tự')
-    setLoading(true)
+    setLoadingAction('password')
     try {
       await signUp(email, password)
       router.push('/profile/setup')
@@ -38,7 +39,7 @@ export function SignupForm() {
                 : 'Không thể tạo tài khoản. Vui lòng thử lại.'
       )
     } finally {
-      setLoading(false)
+      setLoadingAction(null)
     }
   }
 
@@ -49,7 +50,7 @@ export function SignupForm() {
 
   const handleGoogle = async () => {
     setError('')
-    setLoading(true)
+    setLoadingAction('google')
     try {
       await signInWithGoogle()
       router.push('/profile/setup')
@@ -64,7 +65,7 @@ export function SignupForm() {
               : 'Không thể đăng ký bằng Google.'
       )
     } finally {
-      setLoading(false)
+      setLoadingAction(null)
     }
   }
 
@@ -103,15 +104,16 @@ export function SignupForm() {
               </label>
             ))}
             <button type="submit" disabled={loading} className="mobile-primary-button">
-              {loading && <Loader2 className="h-4 w-4 animate-spin" />}
-              {loading ? 'Đang tạo tài khoản...' : 'Tạo tài khoản'}
+              {loadingAction === 'password' && <Loader2 className="h-4 w-4 animate-spin" />}
+              {loadingAction === 'password' ? 'Đang tạo tài khoản...' : 'Tạo tài khoản'}
             </button>
             <div className="relative py-1">
               <div className="absolute inset-0 flex items-center"><span className="w-full border-t" /></div>
               <div className="relative flex justify-center text-xs uppercase"><span className="bg-card px-2 text-muted-foreground">Hoặc</span></div>
             </div>
-            <button type="button" onClick={handleGoogle} disabled={loading} className="min-h-12 w-full rounded-2xl border border-slate-200 bg-white font-bold transition active:scale-[0.98] dark:border-slate-700 dark:bg-slate-900">
-              Tiếp tục bằng Google
+            <button type="button" onClick={handleGoogle} disabled={loading} className="flex min-h-12 w-full items-center justify-center gap-2 rounded-2xl border border-indigo-200 bg-indigo-50/70 px-4 font-bold text-indigo-700 transition active:scale-[0.98] disabled:opacity-50 dark:border-indigo-500/30 dark:bg-indigo-500/10 dark:text-indigo-200">
+              {loadingAction === 'google' && <Loader2 className="h-4 w-4 animate-spin" />}
+              {loadingAction === 'google' ? 'Đang mở Google...' : 'Đăng ký Trí Candy bằng Google'}
             </button>
             <p className="text-center text-sm text-muted-foreground">
               Bạn đã có tài khoản? <Link href="/auth/login" className="font-bold text-indigo-600">Đăng nhập</Link>

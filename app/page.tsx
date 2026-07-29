@@ -266,7 +266,7 @@ export default function Page() {
               onClick={() => setEmployeeModeOpen((current) => !current)}
               aria-expanded={employeeModeOpen}
               aria-controls="employee-mode-actions"
-              className={`mobile-card flex min-h-20 w-full items-center gap-3 p-3 text-left transition duration-300 active:scale-[0.99] ${employeeModeOpen ? 'border-indigo-200 ring-4 ring-indigo-500/5 dark:border-indigo-500/30' : ''}`}
+              className={`mobile-card flex min-h-20 w-full items-center gap-3 border-indigo-100 bg-gradient-to-r from-indigo-50/95 via-white to-sky-50/90 p-3 text-left shadow-md shadow-indigo-950/5 transition duration-300 active:scale-[0.99] dark:border-indigo-500/25 dark:from-indigo-500/15 dark:via-slate-900 dark:to-sky-500/10 ${employeeModeOpen ? 'border-indigo-200 from-indigo-100/90 to-sky-100/80 ring-4 ring-indigo-500/5 dark:border-indigo-500/40 dark:from-indigo-500/20 dark:to-sky-500/15' : ''}`}
             >
               <div className={`grid h-12 w-12 shrink-0 place-items-center rounded-2xl transition duration-300 ${employeeModeOpen ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-600/20' : 'bg-indigo-50 text-indigo-600 dark:bg-indigo-500/15'}`}>
                 <UserRound className="h-5 w-5" />

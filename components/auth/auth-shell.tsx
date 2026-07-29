@@ -9,7 +9,7 @@ export function AuthShell({ children, eyebrow }: { children: React.ReactNode; ey
         <div className="absolute -bottom-28 left-10 h-72 w-72 rounded-full bg-fuchsia-500/20 blur-3xl" />
         <div className="relative flex items-center gap-3">
           <Image src="/tricandy-logo.png" alt="Logo Trí Candy" width={48} height={48} className="h-12 w-12 rounded-2xl object-cover shadow-lg" priority />
-          <div><p className="text-xs font-bold uppercase tracking-[.22em] text-pink-300">Employee Portal</p><p className="font-extrabold">Trí Candy</p></div>
+          <div><p className="text-xs font-bold uppercase tracking-[.22em] text-pink-300">Ứng dụng nhân sự</p><p className="font-extrabold">Trí Candy</p></div>
         </div>
         <div className="relative max-w-xl">
           <p className="text-sm font-bold uppercase tracking-[.18em] text-indigo-300">{eyebrow}</p>
