@@ -7,6 +7,7 @@ import {
   AlertTriangle,
   BookOpenText,
   CalendarDays,
+  CalendarRange,
   ChevronDown,
   ChevronRight,
   CircleDollarSign,
@@ -159,6 +160,7 @@ export default function Page() {
   const isAdmin = role === 'admin' || role === 'manager'
   const adminFeatures = [
     { title: 'Đăng ký lịch', note: `${adminStats.pending} nhân viên đang chờ xác nhận`, href: '/admin/dashboard#schedules', icon: ShieldCheck },
+    { title: 'Nhân sự tuần tới', note: 'Xem người làm theo từng ngày và ca', href: '/admin/next-week', icon: CalendarRange },
     { title: 'Điều hành', note: 'Yêu cầu nhân viên · khoản phạt', href: '/admin/requests', icon: LayoutDashboard },
     { title: 'Lịch sử xử lý', note: 'Xem và sửa quyết định trong tuần', href: '/admin/history', icon: History },
     { title: 'Danh sách nhân viên', note: 'Tài khoản đang hoạt động trong tháng', href: '/admin/dashboard#employees', icon: UsersRound },
