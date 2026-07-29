@@ -7,6 +7,7 @@ import { AuthProvider } from '@/lib/hooks/useAuth'
 import { ProfileCompletionGuard } from '@/components/auth/profile-completion-guard'
 import { PersistentBottomNav } from '@/components/layout/persistent-bottom-nav'
 import { ServiceWorkerRegistrar } from '@/components/pwa/service-worker-registrar'
+import { InstallAppPrompt } from '@/components/pwa/install-app-prompt'
 import './globals.css'
 
 export const metadata: Metadata = {
@@ -62,6 +63,7 @@ export default function RootLayout({
             <ServiceWorkerRegistrar />
             <ForegroundNotificationListener />
             <ProfileCompletionGuard>{children}</ProfileCompletionGuard>
+            <InstallAppPrompt />
             <PersistentBottomNav />
             {process.env.NODE_ENV === 'production' && <Analytics />}
           </AuthProvider>
