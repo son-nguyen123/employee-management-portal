@@ -502,30 +502,48 @@ export default function SchedulePage() {
                 </Badge>
               </div>
             </div>
-            <div className="divide-y divide-slate-100 p-2 dark:divide-white/10">
-              {!selectedCount && (
-                <div className="rounded-2xl bg-slate-50 px-4 py-5 text-center dark:bg-slate-800">
-                  <p className="font-extrabold">Tuần này bạn không đăng ký ca nào</p>
-                  <p className="mt-1 text-xs text-muted-foreground">Bảng nghỉ cả tuần đã được gửi cho quản lý xác nhận.</p>
+            <details className="group border-b border-slate-100 dark:border-white/10">
+              <summary className="flex cursor-pointer list-none items-center gap-3 px-4 py-4 transition active:bg-slate-50 dark:active:bg-white/5">
+                <div className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-indigo-50 text-indigo-600 dark:bg-indigo-500/10">
+                  <CalendarDays className="h-5 w-5" />
                 </div>
-              )}
-              {days.filter((day) => selected[day.key]?.length || dutyDay === day.key).map((day) => (
-                <div key={day.key} className="flex gap-3 px-3 py-3">
-                  <div className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-indigo-50 text-xs font-black text-indigo-600 dark:bg-indigo-500/10">{day.shortName}</div>
-                  <div className="min-w-0">
-                    <p className="text-sm font-extrabold">{day.name} ({day.date.toLocaleDateString('vi-VN', { day: 'numeric', month: 'numeric' })})</p>
-                    <p className="mt-0.5 text-sm text-muted-foreground">
-                      {(selected[day.key] || []).map((shift) =>
-                        shift === 'Custom'
-                          ? `tùy chỉnh ${customData[day.key]?.start || '08:00'}–${customData[day.key]?.end || '17:00'}`
-                          : shiftOptions.find((item) => item.value === shift)?.shortLabel
-                      ).filter(Boolean).join(' – ')}
-                      {dutyDay === day.key && <span className="font-bold text-rose-600">{selected[day.key]?.length ? ' + ' : ''}trực 17:00–17:30</span>}
-                    </p>
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-extrabold">
+                    {selectedCount ? 'Các ngày đã đăng ký' : 'Nghỉ cả tuần'}
+                  </p>
+                  <p className="mt-0.5 text-xs text-muted-foreground">
+                    {selectedCount
+                      ? `${days.filter((day) => selected[day.key]?.length).length} ngày · ${selectedCount} ca${dutyDay ? ' · có lịch trực' : ''}`
+                      : 'Không đăng ký ca làm nào trong tuần này'}
+                  </p>
+                </div>
+                <ChevronDown className="h-5 w-5 shrink-0 text-slate-400 transition-transform duration-200 group-open:rotate-180" />
+              </summary>
+              <div className="divide-y divide-slate-100 border-t border-slate-100 px-2 dark:divide-white/10 dark:border-white/10">
+                {!selectedCount && (
+                  <div className="m-2 rounded-2xl bg-slate-50 px-4 py-4 text-center dark:bg-slate-800">
+                    <p className="font-extrabold">Tuần này bạn không đăng ký ca nào</p>
+                    <p className="mt-1 text-xs text-muted-foreground">Bảng nghỉ cả tuần đã được gửi cho quản lý xác nhận.</p>
                   </div>
-                </div>
-              ))}
-            </div>
+                )}
+                {days.filter((day) => selected[day.key]?.length || dutyDay === day.key).map((day) => (
+                  <div key={day.key} className="flex gap-3 px-3 py-3">
+                    <div className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-indigo-50 text-xs font-black text-indigo-600 dark:bg-indigo-500/10">{day.shortName}</div>
+                    <div className="min-w-0">
+                      <p className="text-sm font-extrabold">{day.name} ({day.date.toLocaleDateString('vi-VN', { day: 'numeric', month: 'numeric' })})</p>
+                      <p className="mt-0.5 text-sm text-muted-foreground">
+                        {(selected[day.key] || []).map((shift) =>
+                          shift === 'Custom'
+                            ? `tùy chỉnh ${customData[day.key]?.start || '08:00'}–${customData[day.key]?.end || '17:00'}`
+                            : shiftOptions.find((item) => item.value === shift)?.shortLabel
+                        ).filter(Boolean).join(' – ')}
+                        {dutyDay === day.key && <span className="font-bold text-rose-600">{selected[day.key]?.length ? ' + ' : ''}trực 17:00–17:30</span>}
+                      </p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </details>
             {weekNote.trim() && (
               <div className="mx-4 mb-3 rounded-2xl border border-slate-100 bg-white px-3 py-3 text-sm leading-6 text-slate-700 shadow-sm dark:border-white/10 dark:bg-slate-900 dark:text-slate-200">
                 <strong>Ghi chú:</strong> {weekNote.trim()}
