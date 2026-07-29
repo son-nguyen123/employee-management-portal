@@ -91,3 +91,18 @@ Sau đó redeploy và gọi endpoint thêm một lần. Hệ thống chỉ xóa 
 Cron trong `vercel.json` chạy `0 18 * * 0`, tức 18:00 Chủ nhật UTC. Tại Việt Nam
 là khoảng 01:00 sáng Thứ Hai. Gói Vercel Hobby có thể chạy vào bất kỳ thời điểm
 nào trong giờ đó.
+
+## 7. Đổi sang tài khoản Google Drive khác
+
+Không cần tạo lại Firebase và không cần đổi code.
+
+1. Đăng xuất OAuth Playground hoặc mở cửa sổ ẩn danh.
+2. Nếu OAuth app đang ở chế độ Testing, thêm Gmail mới vào **Test users**.
+3. Làm lại mục **4. Lấy Refresh Token**, nhưng đăng nhập bằng Gmail Drive mới.
+4. Trong Vercel, thay duy nhất `GOOGLE_DRIVE_REFRESH_TOKEN` bằng token mới.
+   Giữ nguyên Client ID/Client secret nếu vẫn dùng cùng OAuth Client.
+5. Redeploy Production rồi chạy endpoint `/api/archive/test` để kiểm tra.
+
+Thư mục và file đã lưu trong tài khoản cũ không tự chuyển sang tài khoản mới.
+Muốn xem chung lịch sử cũ, hãy tải/chuyển các file cũ sang tài khoản mới; các
+bản lưu tạo sau khi đổi token sẽ nằm trong Drive mới.

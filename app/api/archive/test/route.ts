@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { testGoogleDriveArchiveConnection } from '@/lib/server/google-drive-archive'
+import { runArchivePreview } from '@/lib/server/weekly-archive'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -21,6 +22,14 @@ export async function GET(request: Request) {
   }
 
   try {
+    const referenceDate = new URL(request.url).searchParams.get('referenceDate')?.trim()
+    if (referenceDate) {
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(referenceDate)) {
+        return NextResponse.json({ ok: false, error: 'Ngày kiểm thử không hợp lệ.' }, { status: 400 })
+      }
+      const result = await runArchivePreview(new Date(`${referenceDate}T12:00:00+07:00`))
+      return NextResponse.json({ ok: true, result: { ...result, message: 'Đã tạo bản lưu thử trên Drive mà không xóa Firestore.' } })
+    }
     const result = await testGoogleDriveArchiveConnection()
     return NextResponse.json({
       ok: true,

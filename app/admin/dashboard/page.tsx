@@ -321,7 +321,6 @@ export default function AdminDashboardPage() {
                     <a href={employee?.facebookUrl || 'https://facebook.com/'} target="_blank" rel="noreferrer" className="flex min-h-10 items-center justify-center gap-2 rounded-xl bg-blue-600 text-sm font-bold"><ExternalLink className="h-4 w-4" /> Mở Facebook</a>
                   </div>
                   </div>
-                  {weekNote && <div className="border-b border-slate-100 bg-indigo-50 px-4 py-3 text-sm text-indigo-950 dark:border-white/10 dark:bg-indigo-500/10 dark:text-indigo-100"><strong>Ghi chú:</strong> {weekNote}</div>}
                   <div className="divide-y divide-slate-100 px-3 dark:divide-white/10">
                     {Array.from(new Map(batch.schedules.map((schedule) => {
                       const date = toDate(schedule.date)
@@ -339,6 +338,7 @@ export default function AdminDashboardPage() {
                       </div>
                     ))}
                   </div>
+                  {weekNote && <div className="mx-3 mb-3 rounded-2xl border border-slate-100 bg-white px-3 py-3 text-sm leading-6 text-slate-700 shadow-sm dark:border-white/10 dark:bg-slate-900 dark:text-slate-200"><strong>Ghi chú:</strong> {weekNote}</div>}
                   <div className="grid grid-cols-2 gap-2 border-t border-slate-100 p-3 dark:border-white/10">
                     <button disabled={processingId === batch.key || batch.isEditing} onClick={() => { setRejectingBatch(batch); setRejectReason('') }} className="flex min-h-11 items-center justify-center gap-1 rounded-xl border border-rose-200 text-sm font-bold text-rose-600 disabled:cursor-not-allowed disabled:opacity-40">
                       {processingId === batch.key && processingAction === 'reject' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <X className="h-3.5 w-3.5" />} Từ chối

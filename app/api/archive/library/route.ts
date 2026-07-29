@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { ApiError, authenticateRequest, requireManager } from '@/lib/server/api-auth'
 import { listWeeklyArchives, readWeeklyArchive } from '@/lib/server/google-drive-archive'
+import { runArchivePreview } from '@/lib/server/weekly-archive'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -28,5 +29,24 @@ export async function GET(request: Request) {
           ? details
           : 'Chưa thể đọc kho dữ liệu Google Drive.',
     }, { status: notConfigured ? 503 : status })
+  }
+}
+
+export async function POST(request: Request) {
+  try {
+    const actor = await authenticateRequest(request)
+    requireManager(actor)
+    const body = await request.json() as { referenceDate?: unknown }
+    if (typeof body.referenceDate !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(body.referenceDate)) {
+      throw new ApiError(400, 'Ngày kiểm thử không hợp lệ.')
+    }
+    const referenceDate = new Date(`${body.referenceDate}T12:00:00+07:00`)
+    if (Number.isNaN(referenceDate.getTime())) throw new ApiError(400, 'Ngày kiểm thử không hợp lệ.')
+    const result = await runArchivePreview(referenceDate)
+    return NextResponse.json({ ok: true, result })
+  } catch (error) {
+    const status = error instanceof ApiError ? error.status : 500
+    if (!(error instanceof ApiError)) console.error('Archive preview failed:', error)
+    return NextResponse.json({ ok: false, error: error instanceof ApiError ? error.message : 'Chưa thể tạo bản lưu thử trên Google Drive.' }, { status })
   }
 }

@@ -56,7 +56,6 @@ const localDateKey = (date: Date) =>
 export default function SchedulePage() {
   const { authUser, isPreviewMode } = useAuth()
   const [managerFacebookUrl, setManagerFacebookUrl] = useState(process.env.NEXT_PUBLIC_MANAGER_FACEBOOK_URL?.trim() || '')
-  const [managerName, setManagerName] = useState('quản lý')
   const [selected, setSelected] = useState<Selection>({})
   const [original, setOriginal] = useState<Selection>({})
   const [customFor, setCustomFor] = useState<string | null>(null)
@@ -79,7 +78,6 @@ export default function SchedulePage() {
     if (!authUser || isPreviewMode) return
     void getManagementContact().then((contact) => {
       if (contact.facebookUrl) setManagerFacebookUrl(contact.facebookUrl)
-      if (contact.fullName) setManagerName(contact.fullName)
     }).catch(() => undefined)
   }, [authUser, isPreviewMode])
 
@@ -491,6 +489,15 @@ export default function SchedulePage() {
                 )}
               </div>
             )}
+            <div className={`${canEdit ? 'mx-4 mb-4 -mt-1' : 'm-4'} border-t border-slate-100 pt-3 dark:border-white/10`}>
+              {managerFacebookUrl ? (
+                <a href={managerFacebookUrl} target="_blank" rel="noreferrer" className="flex min-h-12 w-full items-center justify-center gap-2 rounded-2xl bg-blue-600 px-4 font-extrabold text-white shadow-lg shadow-blue-600/15 transition active:scale-[0.99]">
+                  <ExternalLink className="h-4 w-4" /> Liên hệ quản lí
+                </a>
+              ) : (
+                <p className="rounded-2xl bg-slate-50 p-3 text-center text-xs font-semibold text-slate-500 dark:bg-slate-800">Chưa có Facebook liên hệ của quản lí.</p>
+              )}
+            </div>
           </section>
         ) : (
           <>
@@ -514,13 +521,6 @@ export default function SchedulePage() {
                 <span className="flex items-center gap-2"><MessageSquareText className="h-4 w-4 text-indigo-600" /> Ghi chú cho quản lý</span>
                 <textarea value={weekNote} onChange={(event) => setWeekNote(event.target.value)} maxLength={400} className="mobile-field mt-2 min-h-24 py-3" placeholder="Ví dụ: tuần này em nghỉ 3 buổi, em xin làm tăng ca..." />
               </label>
-              {managerFacebookUrl ? (
-                <a href={managerFacebookUrl} target="_blank" rel="noreferrer" className="flex min-h-12 items-center justify-center gap-2 rounded-2xl bg-blue-600 px-4 font-bold text-white">
-                  <ExternalLink className="h-4 w-4" /> Nhắn {managerName} qua Facebook
-                </a>
-              ) : (
-                <p className="rounded-2xl bg-amber-50 p-3 text-center text-xs font-semibold text-amber-800">Quản lý chưa cấu hình đường dẫn Facebook liên hệ.</p>
-              )}
             </div>
 
             {editing && (

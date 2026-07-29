@@ -65,6 +65,22 @@ function previousVietnamWeek(now: Date): ArchiveWindow {
   }
 }
 
+function vietnamWeekContaining(now: Date): ArchiveWindow {
+  const shifted = new Date(now.getTime() + VIETNAM_OFFSET_MS)
+  const weekday = shifted.getUTCDay() || 7
+  const mondayShifted = Date.UTC(
+    shifted.getUTCFullYear(),
+    shifted.getUTCMonth(),
+    shifted.getUTCDate() - weekday + 1,
+  )
+  const start = new Date(mondayShifted - VIETNAM_OFFSET_MS)
+  return {
+    key: formatVietnamDate(start),
+    start,
+    end: new Date(start.getTime() + WEEK_MS),
+  }
+}
+
 function normalizeForJson(value: unknown): unknown {
   if (value === null || value === undefined) return value
   if (value instanceof Date) return value.toISOString()
@@ -363,5 +379,37 @@ export async function runWeeklyArchive(now = new Date()): Promise<WeeklyArchiveR
       updatedAt: FieldValue.serverTimestamp(),
     }, { merge: true })
     throw error
+  }
+}
+
+export async function runArchivePreview(referenceDate: Date): Promise<WeeklyArchiveResult> {
+  const window = vietnamWeekContaining(referenceDate)
+  const { records, paths, counts } = await collectDocuments(window)
+  const archiveKey = `${window.key}-test-${Date.now()}`
+  const payload = {
+    schemaVersion: 1,
+    testArchive: true,
+    application: 'employee-management-portal',
+    firebaseProjectId: process.env.FIREBASE_ADMIN_PROJECT_ID,
+    archiveKey,
+    sourceWeekKey: window.key,
+    timezone: 'Asia/Ho_Chi_Minh',
+    weekStart: window.start.toISOString(),
+    weekEndExclusive: window.end.toISOString(),
+    exportedAt: new Date().toISOString(),
+    counts,
+    records,
+  }
+  const json = JSON.stringify(payload, null, 2)
+  const checksum = createHash('sha256').update(json).digest('hex')
+  const driveFile = await storeWeeklyArchive({ archiveKey, checksum, json })
+  return {
+    state: paths.length ? 'verified' : 'empty',
+    archiveKey,
+    documentCount: paths.length,
+    counts,
+    driveFileId: driveFile.id,
+    driveWebViewLink: driveFile.webViewLink,
+    deleted: false,
   }
 }

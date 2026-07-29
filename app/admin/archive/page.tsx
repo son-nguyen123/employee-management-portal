@@ -1,7 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Archive, CalendarDays, ChevronDown, Database, ExternalLink, Loader2, RefreshCw, Search } from 'lucide-react'
+import { Archive, CalendarDays, ChevronDown, Database, ExternalLink, FlaskConical, Loader2, RefreshCw, Search } from 'lucide-react'
 import { Header } from '@/components/layout/header'
 import { PageContainer } from '@/components/layout/page-container'
 import { Badge } from '@/components/ui/badge'
@@ -9,6 +9,7 @@ import { useAuth, useUserRole } from '@/lib/hooks/useAuth'
 import {
   listArchiveFiles,
   readArchiveFile,
+  createArchivePreview,
   type ArchiveFileSummary,
   type ArchivedRecord,
   type WeeklyArchivePayload,
@@ -54,6 +55,12 @@ export default function AdminArchivePage() {
   const [loadingFile, setLoadingFile] = useState(false)
   const [message, setMessage] = useState('')
   const [search, setSearch] = useState('')
+  const [testDate, setTestDate] = useState(() => {
+    const date = new Date()
+    date.setDate(date.getDate() - 7)
+    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
+  })
+  const [creatingTest, setCreatingTest] = useState(false)
 
   const loadFiles = useCallback(async () => {
     if (!authUser) return
@@ -89,6 +96,21 @@ export default function AdminArchivePage() {
     }
   }
 
+  const createTestArchive = async () => {
+    if (!testDate || isPreviewMode) return
+    setCreatingTest(true)
+    setMessage('')
+    try {
+      const result = await createArchivePreview(testDate)
+      await loadFiles()
+      setMessage(`Đã tạo bản lưu thử có ${result.documentCount} mục. Firestore không bị xóa.`)
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'Chưa thể tạo bản lưu thử.')
+    } finally {
+      setCreatingTest(false)
+    }
+  }
+
   const visibleFiles = files.filter((file) =>
     `${file.archiveKey} ${file.name}`.toLowerCase().includes(search.trim().toLowerCase())
   )
@@ -118,6 +140,11 @@ export default function AdminArchivePage() {
             </div>
             <button type="button" onClick={() => void loadFiles()} disabled={loading} aria-label="Tải lại kho dữ liệu" className="grid h-11 w-11 place-items-center rounded-2xl bg-white/10 disabled:opacity-50"><RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} /></button>
           </div>
+        </section>
+
+        <section className="mt-4 rounded-3xl border border-indigo-100 bg-white p-4 shadow-sm dark:border-indigo-500/20 dark:bg-slate-900">
+          <div className="flex items-start gap-3"><div className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-indigo-50 text-indigo-600 dark:bg-indigo-500/10"><FlaskConical className="h-5 w-5" /></div><div><h2 className="font-extrabold">Kiểm thử bằng ngày lùi</h2><p className="mt-1 text-xs leading-5 text-muted-foreground">Chọn một ngày thuộc tuần muốn kiểm tra. Hệ thống tạo file test thật trên Drive nhưng không xóa dữ liệu Firebase.</p></div></div>
+          <div className="mt-4 grid grid-cols-[1fr_auto] gap-2"><input type="date" value={testDate} onChange={(event) => setTestDate(event.target.value)} className="mobile-field" /><button type="button" onClick={() => void createTestArchive()} disabled={creatingTest || isPreviewMode} className="min-h-12 rounded-2xl bg-indigo-600 px-4 text-sm font-bold text-white disabled:opacity-50">{creatingTest ? 'Đang tạo...' : 'Tạo bản thử'}</button></div>
         </section>
 
         {message && <p className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 p-3 text-sm font-semibold text-amber-900 dark:border-amber-500/20 dark:bg-amber-500/10 dark:text-amber-100">{message}</p>}
