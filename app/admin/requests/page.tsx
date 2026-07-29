@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { AlertTriangle, Check, CircleDollarSign, Clock3, FileText, Loader2, X } from 'lucide-react'
+import { AlertTriangle, Check, CircleDollarSign, Clock3, ExternalLink, FileText, Loader2, Phone, X } from 'lucide-react'
 import { useAuth } from '@/lib/hooks/useAuth'
 import { subscribeToPendingLeaveRequests, updateLeaveStatus } from '@/lib/services/leaveService'
 import { subscribeToPendingLateRequests, updateLateStatus } from '@/lib/services/lateService'
@@ -336,6 +336,13 @@ export default function AdminRequestsPage() {
                       <div className="flex items-center gap-2"><h2 className="font-extrabold">{row.title}</h2><Badge variant="warning">Chờ duyệt</Badge></div>
                       <p className="mt-1 text-sm text-muted-foreground">{row.detail}</p>
                       <p className="mt-2 text-xs font-semibold text-indigo-600">{row.employeeName}</p>
+                      {(() => {
+                        const employee = employees.find((item) => item.uid === row.employeeId)
+                        return <div className="mt-3 grid grid-cols-2 gap-2">
+                          <a href={`tel:${employee?.phone || ''}`} className="flex min-h-10 items-center justify-center gap-2 rounded-xl border border-slate-200 text-xs font-bold dark:border-slate-700"><Phone className="h-4 w-4" /> Gọi điện</a>
+                          <a href={employee?.facebookUrl || 'https://facebook.com/'} target="_blank" rel="noreferrer" className="flex min-h-10 items-center justify-center gap-2 rounded-xl bg-blue-600 text-xs font-bold text-white"><ExternalLink className="h-4 w-4" /> Mở Facebook</a>
+                        </div>
+                      })()}
                     </div>
                   </div>
                   <div className="mt-4 grid grid-cols-2 gap-2">

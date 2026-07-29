@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
-import { AlertTriangle, CalendarCheck, Check, ChevronRight, ClipboardCheck, Loader2, MessageSquareText, UsersRound, X } from 'lucide-react'
+import { AlertTriangle, CalendarCheck, Check, ChevronRight, ClipboardCheck, ExternalLink, Loader2, MessageSquareText, Phone, UsersRound, X } from 'lucide-react'
 import { useAuth, useUserRole } from '@/lib/hooks/useAuth'
 import { subscribeToAllEmployees } from '@/lib/services/employeeService'
 import { reviewWorkScheduleBatch, subscribeToAllSchedules } from '@/lib/services/scheduleService'
@@ -11,6 +11,7 @@ import type { Employee, WorkSchedule } from '@/lib/models/types'
 import { Header } from '@/components/layout/header'
 import { PageContainer } from '@/components/layout/page-container'
 import { Badge } from '@/components/ui/badge'
+import { getWeeklyScheduleTarget, updateWeeklyScheduleTarget } from '@/lib/services/managementSettingsService'
 
 type ScheduleRow = WorkSchedule & {
   id: string
@@ -34,12 +35,16 @@ function toDate(value: WorkSchedule['date']) {
   return value instanceof Date ? value : value.toDate()
 }
 
+function localDateKey(date: Date) {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
+}
+
 function mondayKey(date: Date) {
   const result = new Date(date)
   const day = result.getDay() || 7
   result.setDate(result.getDate() - day + 1)
   result.setHours(0, 0, 0, 0)
-  return result.toISOString().slice(0, 10)
+  return localDateKey(result)
 }
 
 function nextMondayKey() {
@@ -48,7 +53,7 @@ function nextMondayKey() {
   const daysUntilNextMonday = ((8 - now.getDay()) % 7) || 7
   result.setDate(now.getDate() + daysUntilNextMonday)
   result.setHours(0, 0, 0, 0)
-  return result.toISOString().slice(0, 10)
+  return localDateKey(result)
 }
 
 export default function AdminDashboardPage() {
@@ -63,6 +68,15 @@ export default function AdminDashboardPage() {
   const [rejectingBatch, setRejectingBatch] = useState<ScheduleBatch | null>(null)
   const [rejectReason, setRejectReason] = useState('')
   const [message, setMessage] = useState('')
+  const [expectedEmployees, setExpectedEmployees] = useState(0)
+  const [savingTarget, setSavingTarget] = useState(false)
+
+  useEffect(() => {
+    if (!authUser || isPreviewMode) return
+    void getWeeklyScheduleTarget(nextMondayKey())
+      .then((result) => setExpectedEmployees(result.expectedEmployees))
+      .catch(() => setMessage('Chưa tải được mục tiêu nhân viên của tuần này.'))
+  }, [authUser, isPreviewMode])
 
   useEffect(() => {
     if (!authUser) return
@@ -175,12 +189,33 @@ export default function AdminDashboardPage() {
       }
     })
   }, [schedules])
-  const confirmedEmployees = useMemo(
+  const submittedEmployees = useMemo(
     () => new Set(schedules.filter((item) =>
-      item.status === 'Approved' && mondayKey(toDate(item.date)) === nextMondayKey()
+      item.status !== 'Cancelled' && mondayKey(toDate(item.date)) === nextMondayKey()
     ).map((item) => item.employeeId)).size,
     [schedules]
   )
+  const weeklyTarget = expectedEmployees || activeEmployees.length
+
+  const saveWeeklyTarget = async () => {
+    const target = Math.floor(expectedEmployees)
+    if (target < 1) {
+      setMessage('Số nhân viên cần gửi lịch phải từ 1 trở lên.')
+      return
+    }
+    setSavingTarget(true)
+    try {
+      if (!isPreviewMode) {
+        const result = await updateWeeklyScheduleTarget(nextMondayKey(), target)
+        setExpectedEmployees(result.expectedEmployees)
+      }
+      setMessage(`Đã lưu mục tiêu chung ${target} nhân viên cho tuần kế tiếp.`)
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'Chưa thể lưu mục tiêu tuần.')
+    } finally {
+      setSavingTarget(false)
+    }
+  }
 
   const review = async (batch: ScheduleBatch, status: 'Approved' | 'Rejected', reviewNote = '') => {
     if (status === 'Rejected' && !reviewNote.trim()) return
@@ -232,7 +267,7 @@ export default function AdminDashboardPage() {
           {[
             { label: 'Đang hoạt động', value: activeEmployees.length, icon: UsersRound, color: 'bg-indigo-600' },
             { label: 'Bảng chờ', value: pendingBatches.length, icon: CalendarCheck, color: 'bg-amber-500' },
-            { label: 'Đã xác nhận', value: `${confirmedEmployees}/${activeEmployees.length}`, icon: Check, color: 'bg-emerald-600' },
+            { label: 'Đã gửi lịch', value: `${submittedEmployees}/${weeklyTarget}`, icon: Check, color: 'bg-emerald-600' },
           ].map(({ label, value, icon: Icon, color }) => (
             <article key={label} className="mobile-card p-3">
               <div className={`grid h-9 w-9 place-items-center rounded-xl text-white ${color}`}><Icon className="h-4 w-4" /></div>
@@ -240,6 +275,12 @@ export default function AdminDashboardPage() {
               <p className="truncate text-[11px] font-semibold text-muted-foreground">{label}</p>
             </article>
           ))}
+        </section>
+        <section className="mt-3 flex items-end gap-3 rounded-2xl border border-slate-200 bg-white p-3 dark:border-slate-700 dark:bg-slate-900">
+          <label className="min-w-0 flex-1 text-xs font-bold text-muted-foreground">Số nhân viên cần gửi lịch tuần này
+            <input type="number" min="1" inputMode="numeric" value={expectedEmployees || ''} onChange={(event) => setExpectedEmployees(Math.max(0, Number(event.target.value) || 0))} className="mobile-field mt-2" placeholder={String(activeEmployees.length)} />
+          </label>
+          <button type="button" disabled={savingTarget} onClick={() => void saveWeeklyTarget()} className="min-h-12 rounded-2xl bg-slate-950 px-5 text-sm font-bold text-white disabled:opacity-60 dark:bg-white dark:text-slate-950">{savingTarget ? 'Đang lưu...' : 'Lưu'}</button>
         </section>
 
         <div className="mt-5 grid grid-cols-2 gap-2 rounded-2xl bg-slate-100 p-1 dark:bg-slate-800">
@@ -256,30 +297,37 @@ export default function AdminDashboardPage() {
             {pendingBatches.map((batch) => {
               const startDate = toDate(batch.schedules[0].date)
               const endDate = toDate(batch.schedules[batch.schedules.length - 1].date)
+              const employee = employees.find((item) => item.uid === batch.employeeId)
+              const noShifts = batch.schedules.some((item) => item.note?.includes('[NO_SHIFTS]'))
+              const weekNote = batch.schedules.map((item) => item.note?.match(/\[WEEK_NOTE\]\s*([^\[]+)/)?.[1]?.trim()).find(Boolean)
               return (
                 <article key={batch.key} className={`overflow-hidden rounded-[1.75rem] border bg-white shadow-sm transition dark:bg-slate-900 ${batch.isEditing ? 'border-slate-300 opacity-55 grayscale-[.35] dark:border-slate-700' : batch.requiresReapproval ? 'border-amber-300 dark:border-amber-500/30' : 'border-indigo-100 dark:border-indigo-500/20'}`}>
                   <div className={`p-4 text-white ${batch.isEditing ? 'bg-slate-600' : batch.requiresReapproval ? 'bg-gradient-to-r from-amber-500 to-orange-600' : 'bg-gradient-to-r from-indigo-600 to-violet-600'}`}>
-                  <Link href={`/admin/employees/${batch.employeeId}`} className="flex items-start gap-3">
+                  <div className="flex items-start gap-3">
                     <div className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-slate-950 text-xs font-black text-white">
                       {(batch.employeeName || 'NV').split(' ').slice(-2).map((word) => word[0]).join('')}
                     </div>
                     <div className="min-w-0 flex-1">
                       <h3 className="truncate font-extrabold">{batch.employeeName || batch.employeeId}</h3>
                       <p className="text-xs text-indigo-100">{batch.employeeCode || 'Nhân viên'} · {startDate.toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit' })}–{endDate.toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit' })}</p>
-                      <p className="mt-1 text-xs font-semibold text-white/80">{batch.schedules.length} ca trong bảng</p>
+                      <p className="mt-1 text-xs font-semibold text-white/80">{noShifts ? 'Tuần này không đăng ký ca nào' : `${batch.schedules.filter((item) => !item.note?.includes('[DUTY_ONLY]')).length} ca trong bảng`}</p>
                       <Badge className="mt-2 border-white/20 bg-white/15 text-white">
                         {batch.isEditing ? 'Đang sửa' : batch.requiresReapproval ? 'Cần xác nhận lại' : 'Chờ xác nhận'}
                       </Badge>
                     </div>
-                    <ChevronRight className="h-5 w-5 text-white/70" />
-                  </Link>
                   </div>
+                  <div className="mt-3 grid grid-cols-2 gap-2">
+                    <a href={`tel:${employee?.phone || ''}`} className="flex min-h-10 items-center justify-center gap-2 rounded-xl bg-white/15 text-sm font-bold"><Phone className="h-4 w-4" /> Gọi điện</a>
+                    <a href={employee?.facebookUrl || 'https://facebook.com/'} target="_blank" rel="noreferrer" className="flex min-h-10 items-center justify-center gap-2 rounded-xl bg-blue-600 text-sm font-bold"><ExternalLink className="h-4 w-4" /> Mở Facebook</a>
+                  </div>
+                  </div>
+                  {weekNote && <div className="border-b border-slate-100 bg-indigo-50 px-4 py-3 text-sm text-indigo-950 dark:border-white/10 dark:bg-indigo-500/10 dark:text-indigo-100"><strong>Ghi chú:</strong> {weekNote}</div>}
                   <div className="divide-y divide-slate-100 px-3 dark:divide-white/10">
                     {Array.from(new Map(batch.schedules.map((schedule) => {
                       const date = toDate(schedule.date)
                       const dayKey = date.toISOString().slice(0, 10)
                       return [dayKey, { date, rows: batch.schedules.filter((item) => toDate(item.date).toISOString().slice(0, 10) === dayKey) }]
-                    })).values()).map(({ date, rows }) => (
+                    })).values()).filter(({ rows }) => !rows.some((item) => item.note?.includes('[NO_SHIFTS]'))).map(({ date, rows }) => (
                       <div key={date.toISOString()} className="flex items-start gap-3 py-3 text-sm">
                         <span className="w-24 shrink-0 font-extrabold capitalize">{date.toLocaleDateString('vi-VN', { weekday: 'long' })}</span>
                         <span className="text-muted-foreground">

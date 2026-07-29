@@ -133,6 +133,17 @@
         "updatedAt": "timestamp"
       }
     },
+    "weeklyScheduleTargets": {
+      "documentId": "Monday in YYYY-MM-DD format",
+      "access": "Firebase Admin SDK only; client rules deny all access",
+      "requiredFields": {
+        "weekStart": "YYYY-MM-DD string",
+        "expectedEmployees": "integer from 1 to 1000",
+        "updatedBy": "manager/admin Firebase Authentication UID",
+        "createdAt": "timestamp",
+        "updatedAt": "timestamp"
+      }
+    },
     "workflowRequests": {
       "documentId": "employee UID + client request ID",
       "access": "Firebase Admin SDK only; client rules deny all access",

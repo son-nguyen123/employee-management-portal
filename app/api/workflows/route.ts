@@ -7,6 +7,9 @@ import {
   managePenalty,
   reviewRequest,
   reviewScheduleBatch,
+  getWeeklyScheduleTarget,
+  updateWeeklyScheduleTarget,
+  getManagementContact,
   replaceSchedules,
   reviseRequest,
   setScheduleBatchEditing,
@@ -32,6 +35,9 @@ const handlers = {
   managePenalty,
   reviewRequest,
   reviewScheduleBatch,
+  getWeeklyScheduleTarget,
+  updateWeeklyScheduleTarget,
+  getManagementContact,
 } as const
 
 function safeServerError(error: unknown): { status: number; message: string } {

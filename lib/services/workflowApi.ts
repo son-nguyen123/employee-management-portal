@@ -14,6 +14,9 @@ type WorkflowAction =
   | 'managePenalty'
   | 'reviewRequest'
   | 'reviewScheduleBatch'
+  | 'getWeeklyScheduleTarget'
+  | 'updateWeeklyScheduleTarget'
+  | 'getManagementContact'
 
 export async function callWorkflowApi<T>(
   action: WorkflowAction,

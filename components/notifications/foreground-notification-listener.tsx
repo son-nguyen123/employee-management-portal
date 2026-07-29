@@ -7,6 +7,7 @@ import {
   subscribeToForegroundMessages,
   syncPushDeviceRegistration,
 } from '@/lib/services/messagingService'
+import { subscribeToEmployeeNotifications } from '@/lib/services/notificationService'
 
 interface ForegroundNotice {
   title: string
@@ -17,12 +18,26 @@ export function ForegroundNotificationListener() {
   const { authUser, isPreviewMode } = useAuth()
   const [notice, setNotice] = useState<ForegroundNotice | null>(null)
   const dismissTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const lastNotice = useRef<{ key: string; at: number } | null>(null)
 
   useEffect(() => {
     if (!authUser || isPreviewMode) return
 
     let unsubscribe: () => void = () => undefined
+    let unsubscribeFirestore: () => void = () => undefined
     let cancelled = false
+    let initialized = false
+    const knownNotificationIds = new Set<string>()
+
+    const showNotice = (title: string, body: string) => {
+      const key = `${title}\n${body}`
+      const now = Date.now()
+      if (lastNotice.current?.key === key && now - lastNotice.current.at < 3000) return
+      lastNotice.current = { key, at: now }
+      setNotice({ title, body })
+      if (dismissTimer.current) clearTimeout(dismissTimer.current)
+      dismissTimer.current = setTimeout(() => setNotice(null), 7000)
+    }
 
     void syncPushDeviceRegistration(authUser.uid).catch((error) => {
       console.error('Không thể đồng bộ thiết bị nhận thông báo:', error)
@@ -31,19 +46,15 @@ export function ForegroundNotificationListener() {
     void subscribeToForegroundMessages((payload) => {
       if (cancelled) return
 
-      setNotice({
-        title:
+      showNotice(
           payload.notification?.title ||
           payload.data?.title ||
           'Trí Candy',
-        body:
           payload.notification?.body ||
           payload.data?.body ||
           payload.data?.message ||
-          'Bạn có một thông báo mới.',
-      })
-      if (dismissTimer.current) clearTimeout(dismissTimer.current)
-      dismissTimer.current = setTimeout(() => setNotice(null), 7000)
+          'Bạn có một thông báo mới.'
+      )
     }).then((stopListening) => {
       if (cancelled) {
         stopListening()
@@ -52,9 +63,23 @@ export function ForegroundNotificationListener() {
       unsubscribe = stopListening
     })
 
+    // Firestore is the reliable foreground fallback when the browser suppresses
+    // an FCM notification while the PWA is already visible.
+    unsubscribeFirestore = subscribeToEmployeeNotifications(authUser.uid, (items) => {
+      if (!initialized) {
+        items.forEach((item) => item.id && knownNotificationIds.add(item.id))
+        initialized = true
+        return
+      }
+      const newest = items.find((item) => item.id && !knownNotificationIds.has(item.id))
+      items.forEach((item) => item.id && knownNotificationIds.add(item.id))
+      if (newest && !newest.isRead) showNotice(newest.title, newest.message)
+    })
+
     return () => {
       cancelled = true
       unsubscribe()
+      unsubscribeFirestore()
       if (dismissTimer.current) clearTimeout(dismissTimer.current)
     }
   }, [authUser, isPreviewMode])

@@ -52,6 +52,61 @@ function requestId(body: Record<string, unknown>): string {
   return id
 }
 
+function weekKey(value: unknown): string {
+  const result = text(value, 'Tuần áp dụng', 10)
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(result)) {
+    throw new ApiError(400, 'Tuần áp dụng không hợp lệ.')
+  }
+  return result
+}
+
+export async function getWeeklyScheduleTarget(actor: RequestActor, raw: unknown) {
+  requireManager(actor)
+  const body = objectBody(raw)
+  const weekStart = weekKey(body.weekStart)
+  const snapshot = await adminDb.collection('weeklyScheduleTargets').doc(weekStart).get()
+  return {
+    weekStart,
+    expectedEmployees: snapshot.exists ? Number(snapshot.get('expectedEmployees') || 0) : 0,
+  }
+}
+
+export async function updateWeeklyScheduleTarget(actor: RequestActor, raw: unknown) {
+  requireManager(actor)
+  const body = objectBody(raw)
+  const weekStart = weekKey(body.weekStart)
+  const expectedEmployees = numberValue(body.expectedEmployees, 'Số nhân viên', 1, 1000)
+  if (!Number.isInteger(expectedEmployees)) {
+    throw new ApiError(400, 'Số nhân viên phải là số nguyên.')
+  }
+  const ref = adminDb.collection('weeklyScheduleTargets').doc(weekStart)
+  const current = await ref.get()
+  await ref.set({
+    weekStart,
+    expectedEmployees,
+    updatedBy: actor.uid,
+    updatedAt: FieldValue.serverTimestamp(),
+    createdAt: current.exists ? current.get('createdAt') : FieldValue.serverTimestamp(),
+  }, { merge: true })
+  return { weekStart, expectedEmployees }
+}
+
+export async function getManagementContact(actor: RequestActor) {
+  requireStaff(actor)
+  const snapshot = await adminDb.collection('employees').where('status', '==', 'active').get()
+  const managers = snapshot.docs
+    .map((document) => document.data())
+    .filter((employee) => ['manager', 'admin'].includes(String(employee.role)))
+    .sort((left, right) => Number(right.role === 'manager') - Number(left.role === 'manager'))
+  const contact = managers.find((employee) =>
+    typeof employee.facebookUrl === 'string' && /^https?:\/\//i.test(employee.facebookUrl)
+  )
+  return {
+    fullName: contact && typeof contact.fullName === 'string' ? contact.fullName : 'Quản lý',
+    facebookUrl: contact && typeof contact.facebookUrl === 'string' ? contact.facebookUrl : '',
+  }
+}
+
 function workflowRef(actor: RequestActor, id: string) {
   return adminDb.collection('workflowRequests').doc(`${actor.uid}-${id}`)
 }
@@ -198,13 +253,13 @@ function mondayFor(date: Date): Date {
 
 function scheduleDeadline(firstShift: Date): Date {
   const monday = mondayFor(firstShift)
-  // Sunday before the work week at the configured hour in Vietnam (UTC+7).
+  // Hết Thứ Bảy là hạn cuối: từ 00:00 Chủ Nhật (giờ Việt Nam) được tính là trễ.
   return new Date(
     Date.UTC(
       monday.getUTCFullYear(),
       monday.getUTCMonth(),
       monday.getUTCDate() - 1,
-      workflowPolicy.scheduleDeadlineHour - 7,
+      -7,
       0,
       0
     )
@@ -294,7 +349,7 @@ export async function submitSchedules(actor: RequestActor, raw: unknown) {
       transaction.create(penaltyRef, penaltyData({
         employeeId: actor.uid,
         title: 'Đăng ký lịch trễ hạn',
-        description: `Gửi lịch sau hạn Chủ nhật ${workflowPolicy.scheduleDeadlineHour}:00. Khấu trừ 1.000đ vào tiền công của 1 giờ làm.`,
+        description: 'Gửi lịch sau hạn Thứ Bảy. Khấu trừ 1.000đ vào tiền công của 1 giờ làm.',
         category: 'Late',
         amount: workflowPolicy.scheduleLatePenalty,
         sourceType: 'scheduleSubmission',

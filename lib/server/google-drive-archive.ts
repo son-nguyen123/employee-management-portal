@@ -4,13 +4,25 @@ const DRIVE_API = 'https://www.googleapis.com/drive/v3'
 const DRIVE_UPLOAD_API = 'https://www.googleapis.com/upload/drive/v3'
 const ARCHIVE_FOLDER_NAME = 'Employee Portal - Weekly Archives'
 
-interface DriveFile {
+export interface DriveFile {
   id: string
   name: string
   size?: string
   md5Checksum?: string
   webViewLink?: string
+  createdTime?: string
+  modifiedTime?: string
   appProperties?: Record<string, string>
+}
+
+export interface WeeklyArchiveFile {
+  id: string
+  name: string
+  archiveKey: string
+  size: number
+  createdTime?: string
+  modifiedTime?: string
+  webViewLink?: string
 }
 
 function requiredEnv(name: string): string {
@@ -184,6 +196,57 @@ export async function storeWeeklyArchive(params: {
     throw new Error('Google Drive returned an empty archive file.')
   }
   return verified
+}
+
+export async function listWeeklyArchives(): Promise<WeeklyArchiveFile[]> {
+  const accessToken = await googleAccessToken()
+  const folderId = await ensureArchiveFolder(accessToken)
+  const params = new URLSearchParams({
+    q: `'${escapeDriveQuery(folderId)}' in parents and appProperties has { key='application' and value='employee-management-portal' } and trashed = false`,
+    spaces: 'drive',
+    pageSize: '100',
+    orderBy: 'createdTime desc',
+    fields: 'files(id,name,size,createdTime,modifiedTime,webViewLink,appProperties)',
+  })
+  const result = await driveRequest<{ files?: DriveFile[] }>(
+    accessToken,
+    `/files?${params.toString()}`,
+  )
+  return (result.files || [])
+    .filter((file) => Boolean(file.appProperties?.archiveKey) && !file.name.startsWith('_connection-test-'))
+    .map((file) => ({
+      id: file.id,
+      name: file.name,
+      archiveKey: file.appProperties!.archiveKey,
+      size: Number(file.size || 0),
+      createdTime: file.createdTime,
+      modifiedTime: file.modifiedTime,
+      webViewLink: file.webViewLink,
+    }))
+}
+
+export async function readWeeklyArchive(fileId: string): Promise<unknown> {
+  if (!/^[a-zA-Z0-9_-]{10,200}$/.test(fileId)) {
+    throw new Error('Invalid Google Drive archive file ID.')
+  }
+  const accessToken = await googleAccessToken()
+  const metadata = await driveRequest<DriveFile>(
+    accessToken,
+    `/files/${encodeURIComponent(fileId)}?fields=id,name,size,appProperties`,
+  )
+  if (
+    metadata.appProperties?.application !== 'employee-management-portal' ||
+    !metadata.appProperties.archiveKey
+  ) {
+    throw new Error('The requested file is not an Employee Portal archive.')
+  }
+  if (Number(metadata.size || 0) > 20 * 1024 * 1024) {
+    throw new Error('Archive file is too large to display safely.')
+  }
+  return driveRequest<unknown>(
+    accessToken,
+    `/files/${encodeURIComponent(fileId)}?alt=media`,
+  )
 }
 
 export async function testGoogleDriveArchiveConnection(): Promise<{

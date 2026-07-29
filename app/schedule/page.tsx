@@ -11,6 +11,8 @@ import {
   RotateCcw,
   Save,
   Send,
+  MessageSquareText,
+  ExternalLink,
   SlidersHorizontal,
   Sparkles,
   Trash2,
@@ -28,6 +30,7 @@ import { addPreviewSchedules, getPreviewSchedules, updatePreviewSchedule } from 
 import type { WorkSchedule } from '@/lib/models/types'
 import { Header } from '@/components/layout/header'
 import { Badge } from '@/components/ui/badge'
+import { getManagementContact } from '@/lib/services/managementSettingsService'
 
 type Shift = 'Morning' | 'Afternoon' | 'Evening' | 'Custom'
 type DayItem = { key: string; name: string; shortName: string; date: Date }
@@ -47,8 +50,13 @@ const cloneSelection = (value: Selection): Selection =>
 const scheduleDate = (value: WorkSchedule['date']) =>
   value instanceof Date ? value : value.toDate()
 
+const localDateKey = (date: Date) =>
+  `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
+
 export default function SchedulePage() {
   const { authUser, isPreviewMode } = useAuth()
+  const [managerFacebookUrl, setManagerFacebookUrl] = useState(process.env.NEXT_PUBLIC_MANAGER_FACEBOOK_URL?.trim() || '')
+  const [managerName, setManagerName] = useState('quản lý')
   const [selected, setSelected] = useState<Selection>({})
   const [original, setOriginal] = useState<Selection>({})
   const [customFor, setCustomFor] = useState<string | null>(null)
@@ -64,6 +72,16 @@ export default function SchedulePage() {
   const [submitting, setSubmitting] = useState(false)
   const [celebrating, setCelebrating] = useState(false)
   const [message, setMessage] = useState<string | null>(null)
+  const [weekNote, setWeekNote] = useState('')
+  const [confirmationOpen, setConfirmationOpen] = useState(false)
+
+  useEffect(() => {
+    if (!authUser || isPreviewMode) return
+    void getManagementContact().then((contact) => {
+      if (contact.facebookUrl) setManagerFacebookUrl(contact.facebookUrl)
+      if (contact.fullName) setManagerName(contact.fullName)
+    }).catch(() => undefined)
+  }, [authUser, isPreviewMode])
 
   const days = useMemo<DayItem[]>(() => {
     const now = new Date()
@@ -77,7 +95,7 @@ export default function SchedulePage() {
     return names.map((name, index) => {
       const date = new Date(monday)
       date.setDate(monday.getDate() + index)
-      return { key: date.toISOString().slice(0, 10), name, shortName: shortNames[index], date }
+      return { key: localDateKey(date), name, shortName: shortNames[index], date }
     })
   }, [])
 
@@ -92,7 +110,10 @@ export default function SchedulePage() {
           const custom: Record<string, CustomShift> = {}
           let loadedDuty: string | null = null
           current.forEach((item) => {
-            const key = scheduleDate(item.date).toISOString().slice(0, 10)
+            const key = localDateKey(scheduleDate(item.date))
+            const weekNoteMatch = item.note?.match(/\[WEEK_NOTE\]\s*([^\[]+)/)
+            if (weekNoteMatch) setWeekNote(weekNoteMatch[1].trim())
+            if (item.note?.includes('[NO_SHIFTS]')) return
             const dutyOnly = item.note?.includes('[DUTY_ONLY]')
             if (item.note?.includes('[DUTY')) loadedDuty = key
             if (dutyOnly) return
@@ -229,11 +250,26 @@ export default function SchedulePage() {
         note: '[DUTY_ONLY] Trực 17:00–17:30',
       })
     }
+    if (!rows.length) {
+      rows.push({
+        employeeId: authUser!.uid,
+        date: new Date(`${days[0].key}T12:00:00`),
+        shift: 'Morning',
+        status: 'Pending',
+        note: '[NO_SHIFTS]',
+      })
+    }
+    if (weekNote.trim()) rows[0].note = `${rows[0].note} [WEEK_NOTE] ${weekNote.trim()}`.trim()
     return rows
   }
 
-  const submitSchedule = async () => {
-    if (!authUser || !Object.keys(selected).length) return
+  const submitSchedule = async (confirmed = false) => {
+    if (!authUser) return
+    if (!confirmed && missingDays.length) {
+      setConfirmationOpen(true)
+      return
+    }
+    setConfirmationOpen(false)
     setSubmitting(true)
     setMessage(null)
     try {
@@ -360,6 +396,7 @@ export default function SchedulePage() {
 
   const customDay = days.find((day) => day.key === customFor)
   const selectedCount = Object.values(selected).reduce((total, shifts) => total + shifts.length, 0)
+  const missingDays = days.filter((day) => !selected[day.key]?.length && dutyDay !== day.key)
   const compactMode = submittedIds.length > 0 && !editing
   const canEdit = ['Pending', 'Rejected', 'Approved'].includes(submittedStatus || '')
 
@@ -419,6 +456,12 @@ export default function SchedulePage() {
               </div>
             </div>
             <div className="divide-y divide-slate-100 p-2 dark:divide-white/10">
+              {!selectedCount && (
+                <div className="rounded-2xl bg-slate-50 px-4 py-5 text-center dark:bg-slate-800">
+                  <p className="font-extrabold">Tuần này bạn không đăng ký ca nào</p>
+                  <p className="mt-1 text-xs text-muted-foreground">Bảng nghỉ cả tuần đã được gửi cho quản lý xác nhận.</p>
+                </div>
+              )}
               {days.filter((day) => selected[day.key]?.length || dutyDay === day.key).map((day) => (
                 <div key={day.key} className="flex gap-3 px-3 py-3">
                   <div className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-indigo-50 text-xs font-black text-indigo-600 dark:bg-indigo-500/10">{day.shortName}</div>
@@ -465,6 +508,20 @@ export default function SchedulePage() {
               </div>
               <ChevronDown className="h-5 w-5 text-rose-500" />
             </button>
+
+            <div className="mb-4 grid gap-3 rounded-3xl border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-900">
+              <label className="text-sm font-extrabold">
+                <span className="flex items-center gap-2"><MessageSquareText className="h-4 w-4 text-indigo-600" /> Ghi chú cho quản lý</span>
+                <textarea value={weekNote} onChange={(event) => setWeekNote(event.target.value)} maxLength={400} className="mobile-field mt-2 min-h-24 py-3" placeholder="Ví dụ: tuần này em nghỉ 3 buổi, em xin làm tăng ca..." />
+              </label>
+              {managerFacebookUrl ? (
+                <a href={managerFacebookUrl} target="_blank" rel="noreferrer" className="flex min-h-12 items-center justify-center gap-2 rounded-2xl bg-blue-600 px-4 font-bold text-white">
+                  <ExternalLink className="h-4 w-4" /> Nhắn {managerName} qua Facebook
+                </a>
+              ) : (
+                <p className="rounded-2xl bg-amber-50 p-3 text-center text-xs font-semibold text-amber-800">Quản lý chưa cấu hình đường dẫn Facebook liên hệ.</p>
+              )}
+            </div>
 
             {editing && (
               <div className="mb-4 flex items-start gap-2 rounded-2xl bg-slate-100 p-3 text-xs leading-5 dark:bg-slate-800">
@@ -525,11 +582,32 @@ export default function SchedulePage() {
             <button type="button" onClick={editing ? () => void cancelEditing() : saveDraft} disabled={submitting} className="flex min-h-12 items-center justify-center gap-2 rounded-2xl border border-slate-200 font-bold disabled:opacity-60 dark:border-slate-700">
               {editing ? <RotateCcw className="h-4 w-4" /> : <Save className="h-4 w-4" />} {editing ? 'Hủy sửa' : 'Lưu nháp'}
             </button>
-            <button type="button" onClick={submitSchedule} disabled={!selectedCount || submitting} className="mobile-primary-button">
+            <button type="button" onClick={() => void submitSchedule()} disabled={submitting} className="mobile-primary-button">
               {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
               {submitting ? 'Đang gửi...' : editing ? 'Gửi điều chỉnh' : 'Gửi lịch'}
             </button>
           </div>
+        </div>
+      )}
+
+      {confirmationOpen && (
+        <div className="fixed inset-0 z-[75] flex items-end justify-center bg-slate-950/55 backdrop-blur-sm sm:items-center sm:p-4" onClick={() => setConfirmationOpen(false)}>
+          <section className="w-full max-w-lg rounded-t-[2rem] bg-white p-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] shadow-2xl dark:bg-slate-900 sm:rounded-[2rem]" onClick={(event) => event.stopPropagation()}>
+            <div className="mx-auto mb-4 h-1.5 w-12 rounded-full bg-slate-200 sm:hidden" />
+            <h2 className="text-xl font-black">Xác nhận lịch tuần</h2>
+            <p className="mt-2 text-sm leading-6 text-muted-foreground">
+              {missingDays.length === 7
+                ? 'Tuần này bạn không làm ca nào, đúng không?'
+                : missingDays.length === 1
+                  ? `${missingDays[0].name} bạn nghỉ, đúng không?`
+                  : `Bạn nghỉ ${missingDays.length} ngày: ${missingDays.map((day) => day.name).join(', ')}, đúng không?`}
+            </p>
+            {weekNote.trim() && <p className="mt-3 rounded-2xl bg-indigo-50 p-3 text-sm text-indigo-900 dark:bg-indigo-500/10 dark:text-indigo-100"><strong>Ghi chú:</strong> {weekNote.trim()}</p>}
+            <div className="mt-5 grid grid-cols-2 gap-2">
+              <button type="button" onClick={() => setConfirmationOpen(false)} className="min-h-12 rounded-2xl border border-slate-200 font-bold dark:border-slate-700">Xem lại</button>
+              <button type="button" onClick={() => void submitSchedule(true)} className="mobile-primary-button">Xác nhận gửi</button>
+            </div>
+          </section>
         </div>
       )}
 

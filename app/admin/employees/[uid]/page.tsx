@@ -2,11 +2,11 @@
 
 import { useEffect, useState } from 'react'
 import { useParams } from 'next/navigation'
-import { CalendarDays, Check, Clock3, ExternalLink, Loader2, MessageSquareText, Phone, UserRound, X } from 'lucide-react'
+import { CalendarDays, Clock3, ExternalLink, Loader2, Phone, UserRound } from 'lucide-react'
 import { useAuth } from '@/lib/hooks/useAuth'
 import { getEmployeeByUID } from '@/lib/services/employeeService'
-import { getEmployeeSchedules, reviewWorkSchedule } from '@/lib/services/scheduleService'
-import { getPreviewSchedules, updatePreviewSchedule } from '@/lib/services/previewWorkflow'
+import { getEmployeeSchedules } from '@/lib/services/scheduleService'
+import { getPreviewSchedules } from '@/lib/services/previewWorkflow'
 import type { Employee, WorkSchedule } from '@/lib/models/types'
 import { Header } from '@/components/layout/header'
 import { PageContainer } from '@/components/layout/page-container'
@@ -72,21 +72,6 @@ export default function EmployeeDetailPage() {
     load()
   }, [authUser, isPreviewMode, params.uid])
 
-  const review = async (schedule: DetailSchedule, status: 'Approved' | 'Rejected' | 'ChangesRequested') => {
-    const note = status === 'Approved'
-      ? ''
-      : window.prompt(status === 'Rejected' ? 'Lý do từ chối:' : 'Nội dung cần chỉnh sửa:')?.trim() || ''
-    if (status !== 'Approved' && !note) return
-    try {
-      if (isPreviewMode) updatePreviewSchedule(schedule.id, { status, reviewNote: note })
-      else await reviewWorkSchedule(schedule.id, status, note)
-      setSchedules((prev) => prev.map((item) => item.id === schedule.id ? { ...item, status, reviewNote: note } : item))
-      setMessage('Đã cập nhật trạng thái ca làm.')
-    } catch {
-      setMessage('Không thể cập nhật. Vui lòng kiểm tra quyền quản lý.')
-    }
-  }
-
   return (
     <main className="min-h-screen pb-8">
       <Header title="Chi tiết nhân viên" subtitle="Hồ sơ và lịch làm việc" />
@@ -109,7 +94,7 @@ export default function EmployeeDetailPage() {
                 </div>
                 <div className="mt-5 grid grid-cols-2 gap-2">
                   <a href={`tel:${employee.phone}`} className="flex min-h-11 items-center justify-center gap-2 rounded-2xl bg-white/10 text-sm font-bold"><Phone className="h-4 w-4" /> Gọi điện</a>
-                  <a href="https://facebook.com/" target="_blank" rel="noreferrer" className="flex min-h-11 items-center justify-center gap-2 rounded-2xl bg-blue-600 text-sm font-bold"><ExternalLink className="h-4 w-4" /> Mở Facebook</a>
+                  <a href={employee.facebookUrl || 'https://facebook.com/'} target="_blank" rel="noreferrer" className="flex min-h-11 items-center justify-center gap-2 rounded-2xl bg-blue-600 text-sm font-bold"><ExternalLink className="h-4 w-4" /> Mở Facebook</a>
                 </div>
               </div>
             </section>
@@ -118,7 +103,7 @@ export default function EmployeeDetailPage() {
 
             <section className="mt-6">
               <div className="mb-3 flex items-center justify-between">
-                <h2 className="text-xl font-black">Lịch làm đã gửi</h2>
+                <h2 className="text-xl font-black">Lịch sử hoạt động</h2>
                 <Badge variant="outline">{schedules.length} ca</Badge>
               </div>
               <div className="space-y-3">
@@ -126,27 +111,25 @@ export default function EmployeeDetailPage() {
                   const date = schedule.date instanceof Date ? schedule.date : schedule.date.toDate()
                   const pending = ['Registered', 'Pending'].includes(schedule.status)
                   return (
-                    <article key={schedule.id} className="mobile-card p-4">
+                    <details key={schedule.id} className="mobile-card group p-4">
+                      <summary className="cursor-pointer list-none">
                       <div className="flex items-start gap-3">
                         <div className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-indigo-50 text-indigo-600 dark:bg-indigo-500/10"><Clock3 className="h-5 w-5" /></div>
                         <div className="min-w-0 flex-1">
                           <h3 className="font-extrabold">{shiftLabel[schedule.shift]}</h3>
                           <p className="text-xs text-muted-foreground">{date.toLocaleDateString('vi-VN', { weekday: 'long', day: '2-digit', month: '2-digit', year: 'numeric' })}</p>
-                          {schedule.note && <p className="mt-2 text-xs text-muted-foreground">{schedule.note}</p>}
                         </div>
                         <Badge variant={schedule.status === 'Approved' ? 'success' : schedule.status === 'Rejected' ? 'destructive' : 'warning'}>
                           {schedule.status === 'Approved' ? 'Đã duyệt' : schedule.status === 'Rejected' ? 'Từ chối' : schedule.status === 'ChangesRequested' ? 'Cần sửa' : 'Chờ duyệt'}
                         </Badge>
                       </div>
+                      </summary>
                       {schedule.reviewNote && <p className="mt-3 rounded-xl bg-amber-50 p-2 text-xs text-amber-800">Phản hồi: {schedule.reviewNote}</p>}
-                      {pending && (
-                        <div className="mt-4 grid grid-cols-3 gap-2 border-t border-slate-100 pt-3 dark:border-white/10">
-                          <button onClick={() => review(schedule, 'Rejected')} className="flex min-h-10 items-center justify-center gap-1 rounded-xl border border-rose-200 text-xs font-bold text-rose-600"><X className="h-3.5 w-3.5" /> Từ chối</button>
-                          <button onClick={() => review(schedule, 'ChangesRequested')} className="flex min-h-10 items-center justify-center gap-1 rounded-xl border border-amber-200 text-xs font-bold text-amber-700"><MessageSquareText className="h-3.5 w-3.5" /> Yêu cầu sửa</button>
-                          <button onClick={() => review(schedule, 'Approved')} className="flex min-h-10 items-center justify-center gap-1 rounded-xl bg-emerald-600 text-xs font-bold text-white"><Check className="h-3.5 w-3.5" /> Duyệt</button>
-                        </div>
-                      )}
-                    </article>
+                      <div className="mt-3 border-t border-slate-100 pt-3 text-xs leading-5 text-muted-foreground dark:border-white/10">
+                        <p>Ghi chú: {schedule.note?.replace(/\[[^\]]+\]/g, '').trim() || 'Không có'}</p>
+                        {pending && <p className="mt-2 font-semibold text-amber-700">Đang xử lý · thao tác duyệt nằm tại Trung tâm quản lý.</p>}
+                      </div>
+                    </details>
                   )
                 })}
                 {!schedules.length && <div className="mobile-card p-8 text-center"><CalendarDays className="mx-auto h-8 w-8 text-slate-400" /><p className="mt-3 font-bold">Nhân viên chưa gửi lịch.</p></div>}

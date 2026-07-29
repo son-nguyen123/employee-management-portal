@@ -12,6 +12,9 @@ import {
   ClipboardList,
   Clock3,
   Factory,
+  CalendarPlus,
+  StickyNote,
+  Archive,
   LayoutDashboard,
   LogOut,
   Moon,
@@ -26,6 +29,7 @@ import { useAuth, useUserRole } from '@/lib/hooks/useAuth'
 import { getAllEmployees } from '@/lib/services/employeeService'
 import { getAllSchedules, getSchedulesByDateRange } from '@/lib/services/scheduleService'
 import { getPreviewSchedules } from '@/lib/services/previewWorkflow'
+import { getWeeklyScheduleTarget } from '@/lib/services/managementSettingsService'
 import { SkeletonLoader } from '@/components/ui/skeleton-loader'
 
 const staffFeatures = [
@@ -34,6 +38,8 @@ const staffFeatures = [
   { title: 'Xin nghỉ', note: 'Chọn ngày, ca và lý do nghỉ', href: '/leave-request', icon: ClipboardList, tone: 'bg-emerald-600' },
   { title: 'Ứng lương', note: 'Theo dõi yêu cầu trong tháng', href: '/salary-advance', icon: CircleDollarSign, tone: 'bg-sky-600' },
   { title: 'Khoản phạt', note: 'Xem lịch sử và nguồn phát sinh', href: '/penalties', icon: AlertTriangle, tone: 'bg-rose-600' },
+  { title: 'Xin làm thêm', note: 'Gửi mong muốn tăng ca cho quản lý', href: '/schedule', icon: CalendarPlus, tone: 'bg-fuchsia-600' },
+  { title: 'Ghi chú', note: 'Gửi lời nhắn kèm bảng lịch tuần', href: '/schedule', icon: StickyNote, tone: 'bg-cyan-600' },
   { title: 'Điều khoản công ty', note: 'Quy định và hướng dẫn chung', href: '/rules', icon: BookOpenText, tone: 'bg-violet-600' },
   { title: 'Công việc trong xưởng', note: 'Danh sách công việc được giao', href: '/workshop', icon: Factory, tone: 'bg-slate-700' },
 ]
@@ -86,10 +92,15 @@ export default function Page() {
           })
           return
         }
-        const [employees, schedules] = await Promise.all([getAllEmployees(), getAllSchedules()])
+        const weekKey = `${nextMonday.getFullYear()}-${String(nextMonday.getMonth() + 1).padStart(2, '0')}-${String(nextMonday.getDate()).padStart(2, '0')}`
+        const [employees, schedules, target] = await Promise.all([
+          getAllEmployees(),
+          getAllSchedules(),
+          getWeeklyScheduleTarget(weekKey),
+        ])
         setAdminStats({
-          confirmed: new Set(schedules.filter((item) => item.status === 'Approved' && inRegistrationWeek(item.date)).map((item) => item.employeeId)).size,
-          total: employees.filter((item) => item.status === 'active').length,
+          confirmed: new Set(schedules.filter((item) => item.status !== 'Cancelled' && inRegistrationWeek(item.date)).map((item) => item.employeeId)).size,
+          total: target.expectedEmployees || employees.filter((item) => item.status === 'active').length,
           pending: new Set(schedules.filter((item) => ['Pending', 'Registered', 'Editing'].includes(item.status) && inRegistrationWeek(item.date)).map((item) => item.employeeId)).size,
         })
       } catch {
@@ -144,6 +155,7 @@ export default function Page() {
     { title: 'Đăng ký lịch', note: `${adminStats.pending} nhân viên đang chờ xác nhận`, href: '/admin/dashboard#schedules', icon: ShieldCheck },
     { title: 'Điều hành', note: 'Phạt · xin nghỉ · đi trễ · ứng lương', href: '/admin/requests', icon: LayoutDashboard },
     { title: 'Danh sách nhân viên', note: 'Tài khoản đang hoạt động trong tháng', href: '/admin/dashboard#employees', icon: UsersRound },
+    { title: 'Kho dữ liệu', note: 'Xem lịch sử đã lưu trên Google Drive', href: '/admin/archive', icon: Archive },
   ]
 
   return (
@@ -181,12 +193,12 @@ export default function Page() {
           <div className="mt-6 rounded-3xl bg-gradient-to-br from-indigo-500 to-violet-600 p-5 shadow-xl shadow-indigo-950/30">
             <div className="flex items-start justify-between gap-4">
               <div>
-                <p className="text-xs font-semibold text-indigo-100">{isAdmin ? 'Xác nhận lịch tuần này' : 'Lịch làm việc tuần này'}</p>
+                <p className="text-xs font-semibold text-indigo-100">{isAdmin ? 'Tiến độ gửi lịch tuần này' : 'Lịch làm việc tuần này'}</p>
                 <p className="mt-1 text-2xl font-extrabold">
                   {isAdmin ? `${adminStats.confirmed}/${adminStats.total} nhân viên` : '4 ca đã đăng ký'}
                 </p>
                 <p className="mt-1 text-sm text-indigo-100">
-                  {isAdmin ? 'đã được quản lý xác nhận' : 'Đang chờ quản lý xác nhận'}
+                  {isAdmin ? 'nhân viên đã gửi bảng lịch' : 'Đang chờ quản lý xác nhận'}
                 </p>
               </div>
               <div className="rounded-2xl bg-white/15 px-3 py-2 text-center">

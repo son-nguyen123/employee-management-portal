@@ -5,7 +5,7 @@ import {
   FieldValue,
   Timestamp,
   type DocumentData,
-  type QueryDocumentSnapshot,
+  type DocumentSnapshot,
 } from 'firebase-admin/firestore'
 import { adminDb } from '@/lib/server/firebase-admin'
 import { storeWeeklyArchive } from '@/lib/server/google-drive-archive'
@@ -83,7 +83,7 @@ function normalizeForJson(value: unknown): unknown {
   return value
 }
 
-function archiveDocument(snapshot: QueryDocumentSnapshot<DocumentData>): ArchivedDocument {
+function archiveDocument(snapshot: DocumentSnapshot<DocumentData>): ArchivedDocument {
   return {
     path: snapshot.ref.path,
     id: snapshot.id,
@@ -107,7 +107,7 @@ async function collectDocuments(window: ArchiveWindow): Promise<{
 }> {
   const start = Timestamp.fromDate(window.start)
   const end = Timestamp.fromDate(window.end)
-  const [schedules, leaveCandidates, lateRequests] = await Promise.all([
+  const [schedules, leaveCandidates, lateRequests, salaryAdvances, penalties] = await Promise.all([
     adminDb.collection('workSchedules')
       .where('date', '>=', start)
       .where('date', '<', end)
@@ -119,9 +119,16 @@ async function collectDocuments(window: ArchiveWindow): Promise<{
       .where('date', '>=', start)
       .where('date', '<', end)
       .get(),
+    adminDb.collection('salaryAdvances')
+      .where('createdAt', '<', end)
+      .get(),
+    adminDb.collection('penalties')
+      .where('penaltyDate', '>=', start)
+      .where('penaltyDate', '<', end)
+      .get(),
   ])
 
-  const records = {
+  const domainRecords = {
     workSchedules: schedules.docs
       .filter((doc) => FINAL_SCHEDULE_STATUSES.has(String(doc.get('status'))))
       .map(archiveDocument),
@@ -134,11 +141,34 @@ async function collectDocuments(window: ArchiveWindow): Promise<{
     lateRequests: lateRequests.docs
       .filter((doc) => FINAL_REQUEST_STATUSES.has(String(doc.get('status'))))
       .map(archiveDocument),
+    salaryAdvances: salaryAdvances.docs
+      .filter((doc) =>
+        FINAL_REQUEST_STATUSES.has(String(doc.get('status'))) &&
+        timestampWithin(doc.get('reviewedAt') ?? doc.get('updatedAt') ?? doc.get('createdAt'), window)
+      )
+      .map(archiveDocument),
+    penalties: penalties.docs.map(archiveDocument),
+  }
+  const employeeIds = new Set<string>()
+  for (const documents of Object.values(domainRecords)) {
+    for (const document of documents) {
+      const data = document.data as Record<string, unknown>
+      if (typeof data.employeeId === 'string') employeeIds.add(data.employeeId)
+    }
+  }
+  const employeeSnapshots = await Promise.all(
+    Array.from(employeeIds).map((uid) => adminDb.collection('employees').doc(uid).get()),
+  )
+  const records = {
+    ...domainRecords,
+    employeeProfiles: employeeSnapshots.filter((snapshot) => snapshot.exists).map(archiveDocument),
   }
   const counts = Object.fromEntries(
     Object.entries(records).map(([collection, documents]) => [collection, documents.length]),
   )
-  const paths = Object.values(records).flat().map((record) => record.path)
+  // Employee profiles are copied only to make the archive human-readable;
+  // they remain active in Firestore and must never be deleted by this job.
+  const paths = Object.values(domainRecords).flat().map((record) => record.path)
 
   if (paths.length > MAX_ARCHIVE_DOCUMENTS) {
     throw new Error(
