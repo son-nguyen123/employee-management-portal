@@ -549,7 +549,7 @@ export default function SchedulePage() {
               </div>
             )}
             {canEdit && (
-              <div className="m-4 mt-2 grid grid-cols-2 gap-2">
+              <div className={`m-4 mt-2 grid gap-2 ${submittedStatus === 'Pending' ? 'grid-cols-2' : 'grid-cols-1'}`}>
                 <button type="button" onClick={() => void startEditing()} disabled={submitting} className="flex min-h-12 items-center justify-center gap-2 rounded-2xl border border-indigo-200 bg-indigo-50 font-bold text-indigo-700 disabled:opacity-60 dark:border-indigo-500/30 dark:bg-indigo-500/10 dark:text-indigo-200">
                   {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <SlidersHorizontal className="h-4 w-4" />} Điều chỉnh
                 </button>
