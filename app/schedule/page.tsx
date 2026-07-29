@@ -502,8 +502,8 @@ export default function SchedulePage() {
                 </Badge>
               </div>
             </div>
-            <details className="group border-b border-slate-100 dark:border-white/10">
-              <summary className="flex cursor-pointer list-none items-center gap-3 px-4 py-4 transition active:bg-slate-50 dark:active:bg-white/5">
+            <div className="border-b border-slate-100 dark:border-white/10">
+              <div className="flex items-center gap-3 px-4 py-4">
                 <div className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-indigo-50 text-indigo-600 dark:bg-indigo-500/10">
                   <CalendarDays className="h-5 w-5" />
                 </div>
@@ -517,8 +517,7 @@ export default function SchedulePage() {
                       : 'Không đăng ký ca làm nào trong tuần này'}
                   </p>
                 </div>
-                <ChevronDown className="h-5 w-5 shrink-0 text-slate-400 transition-transform duration-200 group-open:rotate-180" />
-              </summary>
+              </div>
               <div className="divide-y divide-slate-100 border-t border-slate-100 px-2 dark:divide-white/10 dark:border-white/10">
                 {!selectedCount && (
                   <div className="m-2 rounded-2xl bg-slate-50 px-4 py-4 text-center dark:bg-slate-800">
@@ -543,7 +542,7 @@ export default function SchedulePage() {
                   </div>
                 ))}
               </div>
-            </details>
+            </div>
             {weekNote.trim() && (
               <div className="mx-4 mb-3 rounded-2xl border border-slate-100 bg-white px-3 py-3 text-sm leading-6 text-slate-700 shadow-sm dark:border-white/10 dark:bg-slate-900 dark:text-slate-200">
                 <strong>Ghi chú:</strong> {weekNote.trim()}
