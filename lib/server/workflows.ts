@@ -1351,8 +1351,11 @@ export async function reviewRequest(actor: RequestActor, raw: unknown) {
     const target = await transaction.get(targetRef)
     if (!target.exists) throw new ApiError(404, 'Không tìm thấy yêu cầu.')
     const data = target.data()!
-    if (!['Pending', 'Registered'].includes(data.status)) {
-      throw new ApiError(409, 'Yêu cầu này đã được xử lý hoặc đang bị khóa.')
+    if (!['Pending', 'Registered', 'Approved', 'Rejected'].includes(data.status)) {
+      throw new ApiError(409, 'Yêu cầu này đang bị khóa hoặc đã bị hủy.')
+    }
+    if (data.status === status) {
+      throw new ApiError(409, 'Yêu cầu đã ở trạng thái này.')
     }
     employeeId = data.employeeId
     const now = FieldValue.serverTimestamp()
@@ -1373,7 +1376,7 @@ export async function reviewRequest(actor: RequestActor, raw: unknown) {
       overtimeShifts.forEach((item, index) => {
         const key = `${item.date.toDate().toISOString().slice(0, 10)}-${item.shift}`
         if (existingKeys.has(key) || !firstDate) return
-        transaction.create(adminDb.collection('workSchedules').doc(`overtime-${id}-${index}`), {
+        transaction.set(adminDb.collection('workSchedules').doc(`overtime-${id}-${index}`), {
           employeeId,
           date: item.date,
           shift: item.shift,
@@ -1387,8 +1390,24 @@ export async function reviewRequest(actor: RequestActor, raw: unknown) {
           lockedAt: now,
           reviewedBy: actor.uid,
           reviewedAt: now,
-        })
+        }, { merge: true })
         existingKeys.add(key)
+      })
+    }
+    if (resource === 'staff' && status === 'Rejected' && data.type === 'overtime' && Array.isArray(data.shifts)) {
+      const generatedRefs = data.shifts.map((_: unknown, index: number) =>
+        adminDb.collection('workSchedules').doc(`overtime-${id}-${index}`)
+      )
+      const generatedSnapshots = await Promise.all(generatedRefs.map((ref) => transaction.get(ref)))
+      generatedSnapshots.forEach((snapshot, index) => {
+        if (!snapshot.exists) return
+        transaction.set(generatedRefs[index], {
+          status: 'Cancelled',
+          lockedAt: null,
+          reviewedBy: actor.uid,
+          reviewedAt: now,
+          updatedAt: now,
+        }, { merge: true })
       })
     }
     const updates: Record<string, unknown> = {
@@ -1481,9 +1500,12 @@ export async function reviewScheduleBatch(actor: RequestActor, raw: unknown) {
     if (schedules.some((schedule) =>
       schedule.employeeId !== employeeId ||
       mondayFor((schedule.date as Timestamp).toDate()).toISOString() !== week ||
-      !['Pending', 'Registered'].includes(schedule.status)
+      !['Pending', 'Registered', 'Approved', 'Rejected'].includes(schedule.status)
     )) {
       throw new ApiError(409, 'Bảng lịch không đồng nhất hoặc đã được xử lý.')
+    }
+    if (schedules.every((schedule) => schedule.status === status)) {
+      throw new ApiError(409, 'Bảng lịch đã ở trạng thái này.')
     }
 
     const now = FieldValue.serverTimestamp()

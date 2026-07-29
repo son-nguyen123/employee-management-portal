@@ -17,6 +17,7 @@ import {
   StickyNote,
   Archive,
   LayoutDashboard,
+  History,
   LogOut,
   Moon,
   ShieldCheck,
@@ -159,6 +160,7 @@ export default function Page() {
   const adminFeatures = [
     { title: 'Đăng ký lịch', note: `${adminStats.pending} nhân viên đang chờ xác nhận`, href: '/admin/dashboard#schedules', icon: ShieldCheck },
     { title: 'Điều hành', note: 'Yêu cầu nhân viên · khoản phạt', href: '/admin/requests', icon: LayoutDashboard },
+    { title: 'Lịch sử xử lý', note: 'Xem và sửa quyết định trong tuần', href: '/admin/history', icon: History },
     { title: 'Danh sách nhân viên', note: 'Tài khoản đang hoạt động trong tháng', href: '/admin/dashboard#employees', icon: UsersRound },
     { title: 'Kho dữ liệu', note: 'Xem lịch sử đã lưu trên Google Drive', href: '/admin/archive', icon: Archive },
   ]
