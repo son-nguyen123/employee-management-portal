@@ -125,7 +125,7 @@ async function collectDocuments(window: ArchiveWindow): Promise<{
 }> {
   const start = Timestamp.fromDate(window.start)
   const end = Timestamp.fromDate(window.end)
-  const [schedules, leaveCandidates, lateRequests, salaryAdvances, staffRequests, penalties] = await Promise.all([
+  const [schedules, leaveCandidates, lateRequests, salaryAdvances, staffRequests, penalties, auditEvents] = await Promise.all([
     adminDb.collection('workSchedules')
       .where('date', '>=', start)
       .where('date', '<', end)
@@ -146,6 +146,10 @@ async function collectDocuments(window: ArchiveWindow): Promise<{
     adminDb.collection('penalties')
       .where('penaltyDate', '>=', start)
       .where('penaltyDate', '<', end)
+      .get(),
+    adminDb.collection('auditEvents')
+      .where('occurredAt', '>=', start)
+      .where('occurredAt', '<', end)
       .get(),
   ])
 
@@ -175,6 +179,7 @@ async function collectDocuments(window: ArchiveWindow): Promise<{
       )
       .map(archiveDocument),
     penalties: penalties.docs.map(archiveDocument),
+    auditEvents: auditEvents.docs.map(archiveDocument),
   }
   const employeeIds = new Set<string>()
   for (const documents of Object.values(domainRecords)) {
@@ -195,11 +200,16 @@ async function collectDocuments(window: ArchiveWindow): Promise<{
   )
   // Employee profiles are copied only to make the archive human-readable;
   // they remain active in Firestore and must never be deleted by this job.
-  const paths = Object.values(domainRecords).flat().map((record) => record.path)
+  // Audit events remain in Firestore as the tamper-evident chain. They are
+  // copied to the weekly archive but are never part of the reset/delete list.
+  const paths = Object.entries(domainRecords)
+    .filter(([collection]) => collection !== 'auditEvents')
+    .flatMap(([, documents]) => documents.map((record) => record.path))
 
-  if (paths.length > MAX_ARCHIVE_DOCUMENTS) {
+  const archivedDocumentCount = Object.values(records).flat().length
+  if (archivedDocumentCount > MAX_ARCHIVE_DOCUMENTS) {
     throw new Error(
-      `Archive contains ${paths.length} documents; maximum safe batch is ${MAX_ARCHIVE_DOCUMENTS}.`,
+      `Archive contains ${archivedDocumentCount} documents; maximum safe batch is ${MAX_ARCHIVE_DOCUMENTS}.`,
     )
   }
   return { records, paths, counts }
@@ -268,7 +278,8 @@ export async function runWeeklyArchive(now = new Date()): Promise<WeeklyArchiveR
   }
 
   const { records, paths, counts } = await collectDocuments(window)
-  if (paths.length === 0) {
+  const archivedDocumentCount = Object.values(records).flat().length
+  if (archivedDocumentCount === 0) {
     await manifestRef.set({
       state: 'completed',
       archiveKey: window.key,
@@ -322,7 +333,7 @@ export async function runWeeklyArchive(now = new Date()): Promise<WeeklyArchiveR
       archiveKey: window.key,
       weekStart: Timestamp.fromDate(window.start),
       weekEndExclusive: Timestamp.fromDate(window.end),
-      documentCount: paths.length,
+      documentCount: archivedDocumentCount,
       documentPaths: paths,
       counts,
       checksum,
@@ -358,7 +369,7 @@ export async function runWeeklyArchive(now = new Date()): Promise<WeeklyArchiveR
       return {
         state: 'verified',
         archiveKey: window.key,
-        documentCount: paths.length,
+        documentCount: archivedDocumentCount,
         counts,
         driveFileId: driveFile.id,
         driveWebViewLink: driveFile.webViewLink,
@@ -375,7 +386,7 @@ export async function runWeeklyArchive(now = new Date()): Promise<WeeklyArchiveR
     return {
       state: 'completed',
       archiveKey: window.key,
-      documentCount: paths.length,
+      documentCount: archivedDocumentCount,
       counts,
       driveFileId: driveFile.id,
       driveWebViewLink: driveFile.webViewLink,
@@ -415,9 +426,9 @@ export async function runArchivePreview(referenceDate: Date): Promise<WeeklyArch
   const checksum = createHash('sha256').update(json).digest('hex')
   const driveFile = await storeWeeklyArchive({ archiveKey, checksum, json })
   return {
-    state: paths.length ? 'verified' : 'empty',
+    state: Object.values(records).flat().length ? 'verified' : 'empty',
     archiveKey,
-    documentCount: paths.length,
+    documentCount: Object.values(records).flat().length,
     counts,
     driveFileId: driveFile.id,
     driveWebViewLink: driveFile.webViewLink,

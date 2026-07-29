@@ -19,3 +19,19 @@ export function updateWeeklyScheduleTarget(
 export function getManagementContact(): Promise<{ fullName: string; facebookUrl: string }> {
   return callWorkflowApi('getManagementContact', {})
 }
+
+export interface AuditReceiptSettings {
+  emailEnabled: boolean
+  auditTrailEnabled: boolean
+  emailEnvironmentEnabled: boolean
+  emailConfigured: boolean
+  cancelledQueuedEmails?: number
+}
+
+export function getAuditReceiptSettings(): Promise<AuditReceiptSettings> {
+  return callWorkflowApi('getAuditReceiptSettings', {})
+}
+
+export function updateAuditReceiptSettings(emailEnabled: boolean): Promise<AuditReceiptSettings> {
+  return callWorkflowApi('updateAuditReceiptSettings', { emailEnabled })
+}

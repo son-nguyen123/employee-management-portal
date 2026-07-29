@@ -25,6 +25,8 @@ service cloud.firestore {
     // employees/{uid}/notificationDevices/{fid}: employeeId, fid, platform,
     //   permission, createdAt, updatedAt, lastSeenAt
     // workflowRequests/{id}, pushDispatches/{id}: server-only idempotency/outbox docs
+    // auditEvents/{id}: append-only server audit records, readable by the
+    //   affected employee and management; auditHeads/auditEmailOutbox are server-only
 
     // ===============================================================
     // Authentication and authorization helpers
@@ -296,6 +298,23 @@ service cloud.firestore {
     }
 
     match /pushDispatches/{dispatchId} {
+      allow read, write: if false;
+    }
+
+    match /auditEvents/{eventId} {
+      allow read: if ownsResource('subjectEmployeeId') || isManagerOrAdmin();
+      allow create, update, delete: if false;
+    }
+
+    match /auditHeads/{employeeId} {
+      allow read, write: if false;
+    }
+
+    match /auditEmailOutbox/{messageId} {
+      allow read, write: if false;
+    }
+
+    match /managementSettings/{settingId} {
       allow read, write: if false;
     }
 

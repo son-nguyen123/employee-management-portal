@@ -10,6 +10,8 @@ import {
   getWeeklyScheduleTarget,
   updateWeeklyScheduleTarget,
   getManagementContact,
+  getAuditReceiptSettings,
+  updateAuditReceiptSettings,
   replaceSchedules,
   reviseRequest,
   setScheduleBatchEditing,
@@ -19,6 +21,8 @@ import {
   submitStaffRequest,
   submitSchedules,
 } from '@/lib/server/workflows'
+import { recordCompletedWorkflowAudit } from '@/lib/server/audit-trail'
+import { dispatchQueuedAuditEmails } from '@/lib/server/audit-email'
 
 export const runtime = 'nodejs'
 
@@ -40,6 +44,8 @@ const handlers = {
   getWeeklyScheduleTarget,
   updateWeeklyScheduleTarget,
   getManagementContact,
+  getAuditReceiptSettings,
+  updateAuditReceiptSettings,
 } as const
 
 function safeServerError(error: unknown): { status: number; message: string } {
@@ -117,6 +123,14 @@ export async function POST(request: Request) {
       throw new ApiError(400, 'Nghiệp vụ không hợp lệ.')
     }
     const result = await handlers[action as keyof typeof handlers](actor, payload)
+    try {
+      await recordCompletedWorkflowAudit({ actor, action, payload, result })
+      await dispatchQueuedAuditEmails()
+    } catch (auditError) {
+      // Audit/email is isolated so an integration outage never rolls back a
+      // successfully completed employee request.
+      console.error('Workflow audit/email error:', auditError)
+    }
     return NextResponse.json({ ok: true, result })
   } catch (error) {
     const { status, message } = safeServerError(error)

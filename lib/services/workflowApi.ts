@@ -18,6 +18,8 @@ type WorkflowAction =
   | 'getWeeklyScheduleTarget'
   | 'updateWeeklyScheduleTarget'
   | 'getManagementContact'
+  | 'getAuditReceiptSettings'
+  | 'updateAuditReceiptSettings'
 
 export async function callWorkflowApi<T>(
   action: WorkflowAction,

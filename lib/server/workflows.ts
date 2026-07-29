@@ -4,6 +4,8 @@ import { FieldValue, Timestamp } from 'firebase-admin/firestore'
 import { adminDb, adminMessaging } from '@/lib/server/firebase-admin'
 import { ApiError, type RequestActor, requireManager, requireStaff } from '@/lib/server/api-auth'
 import { workflowPolicy } from '@/lib/server/workflow-policy'
+import { auditReceiptCapability } from '@/lib/server/audit-trail'
+import { cancelQueuedAuditEmails } from '@/lib/server/audit-email'
 
 type Shift = 'Morning' | 'Afternoon' | 'Evening'
 type ReviewStatus = 'Approved' | 'Rejected' | 'ChangesRequested'
@@ -104,6 +106,40 @@ export async function getManagementContact(actor: RequestActor) {
   return {
     fullName: contact && typeof contact.fullName === 'string' ? contact.fullName : 'Quản lý',
     facebookUrl: contact && typeof contact.facebookUrl === 'string' ? contact.facebookUrl : '',
+  }
+}
+
+export async function getAuditReceiptSettings(actor: RequestActor) {
+  requireManager(actor)
+  const snapshot = await adminDb.collection('managementSettings').doc('auditReceipts').get()
+  return {
+    emailEnabled: snapshot.get('emailEnabled') === true,
+    ...auditReceiptCapability(),
+  }
+}
+
+export async function updateAuditReceiptSettings(actor: RequestActor, raw: unknown) {
+  requireManager(actor)
+  const body = objectBody(raw)
+  if (typeof body.emailEnabled !== 'boolean') {
+    throw new ApiError(400, 'Trạng thái gửi email không hợp lệ.')
+  }
+  const capability = auditReceiptCapability()
+  if (body.emailEnabled && !capability.emailConfigured) {
+    throw new ApiError(503, 'Gmail chưa được cấu hình đầy đủ hoặc công tắc môi trường đang tắt.')
+  }
+
+  await adminDb.collection('managementSettings').doc('auditReceipts').set({
+    emailEnabled: body.emailEnabled,
+    updatedBy: actor.uid,
+    updatedAt: FieldValue.serverTimestamp(),
+  }, { merge: true })
+
+  const cancelledQueuedEmails = body.emailEnabled ? 0 : await cancelQueuedAuditEmails()
+  return {
+    emailEnabled: body.emailEnabled,
+    cancelledQueuedEmails,
+    ...capability,
   }
 }
 
