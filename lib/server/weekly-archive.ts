@@ -125,7 +125,7 @@ async function collectDocuments(window: ArchiveWindow): Promise<{
 }> {
   const start = Timestamp.fromDate(window.start)
   const end = Timestamp.fromDate(window.end)
-  const [schedules, leaveCandidates, lateRequests, salaryAdvances, penalties] = await Promise.all([
+  const [schedules, leaveCandidates, lateRequests, salaryAdvances, staffRequests, penalties] = await Promise.all([
     adminDb.collection('workSchedules')
       .where('date', '>=', start)
       .where('date', '<', end)
@@ -138,6 +138,9 @@ async function collectDocuments(window: ArchiveWindow): Promise<{
       .where('date', '<', end)
       .get(),
     adminDb.collection('salaryAdvances')
+      .where('createdAt', '<', end)
+      .get(),
+    adminDb.collection('staffRequests')
       .where('createdAt', '<', end)
       .get(),
     adminDb.collection('penalties')
@@ -160,6 +163,12 @@ async function collectDocuments(window: ArchiveWindow): Promise<{
       .filter((doc) => FINAL_REQUEST_STATUSES.has(String(doc.get('status'))))
       .map(archiveDocument),
     salaryAdvances: salaryAdvances.docs
+      .filter((doc) =>
+        FINAL_REQUEST_STATUSES.has(String(doc.get('status'))) &&
+        timestampWithin(doc.get('reviewedAt') ?? doc.get('updatedAt') ?? doc.get('createdAt'), window)
+      )
+      .map(archiveDocument),
+    staffRequests: staffRequests.docs
       .filter((doc) =>
         FINAL_REQUEST_STATUSES.has(String(doc.get('status'))) &&
         timestampWithin(doc.get('reviewedAt') ?? doc.get('updatedAt') ?? doc.get('createdAt'), window)

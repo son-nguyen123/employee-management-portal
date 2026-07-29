@@ -6,6 +6,7 @@ type WorkflowAction =
   | 'submitLeave'
   | 'submitLate'
   | 'submitSalaryAdvance'
+  | 'submitStaffRequest'
   | 'reviseRequest'
   | 'cancelRequest'
   | 'cancelScheduleBatch'

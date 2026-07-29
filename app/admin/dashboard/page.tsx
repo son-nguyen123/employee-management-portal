@@ -259,7 +259,7 @@ export default function AdminDashboardPage() {
           <ClipboardCheck className="h-5 w-5" />
           <div className="min-w-0 flex-1">
             <p className="font-extrabold">Duyệt yêu cầu khác</p>
-            <p className="truncate text-xs text-indigo-100">Xin nghỉ · Đi trễ · Ứng lương</p>
+            <p className="truncate text-xs text-indigo-100">Xin nghỉ · Đi trễ · Ứng lương · Làm thêm · Ghi chú</p>
           </div>
           <ChevronRight className="h-5 w-5" />
         </Link>

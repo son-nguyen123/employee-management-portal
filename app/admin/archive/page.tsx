@@ -33,6 +33,7 @@ const collectionLabels: Record<string, string> = {
   leaveRequests: 'Xin nghỉ',
   lateRequests: 'Đi trễ',
   salaryAdvances: 'Ứng lương',
+  staffRequests: 'Làm thêm và ghi chú',
   penalties: 'Khoản phạt',
   employeeProfiles: 'Hồ sơ tham chiếu',
 }
@@ -43,6 +44,7 @@ const filterCollections = [
   ['leaveRequests', 'Xin nghỉ'],
   ['lateRequests', 'Đi trễ'],
   ['salaryAdvances', 'Ứng lương'],
+  ['staffRequests', 'Làm thêm · Ghi chú'],
   ['penalties', 'Khoản phạt'],
 ] as const
 

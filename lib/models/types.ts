@@ -47,6 +47,29 @@ export interface WorkSchedule {
   updatedAt: Timestamp | Date
 }
 
+export type StaffRequestType = 'overtime' | 'note'
+export type StaffRequestStatus = 'Pending' | 'Approved' | 'Rejected'
+
+export interface StaffRequestShift {
+  date: Timestamp | Date
+  shift: 'Morning' | 'Afternoon' | 'Evening'
+}
+
+export interface StaffRequest {
+  id?: string
+  employeeId: string
+  type: StaffRequestType
+  content: string
+  weekStart?: Timestamp | Date
+  shifts?: StaffRequestShift[]
+  status: StaffRequestStatus
+  reviewNote?: string
+  reviewedBy?: string
+  reviewedAt?: Timestamp | Date
+  createdAt: Timestamp | Date
+  updatedAt: Timestamp | Date
+}
+
 // Leave Request Document
 export type LeaveStatus = 'Pending' | 'Approved' | 'Rejected' | 'Cancelled'
 export type LeaveType = 'sick' | 'casual' | 'earned' | 'personal'

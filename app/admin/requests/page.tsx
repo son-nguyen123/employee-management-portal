@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { AlertTriangle, Check, CircleDollarSign, Clock3, ExternalLink, FileText, Loader2, Phone, X } from 'lucide-react'
+import { AlertTriangle, CalendarPlus, Check, ChevronDown, CircleDollarSign, Clock3, ExternalLink, FileText, Loader2, MessageSquareText, Phone, X } from 'lucide-react'
 import { useAuth } from '@/lib/hooks/useAuth'
 import { subscribeToPendingLeaveRequests, updateLeaveStatus } from '@/lib/services/leaveService'
 import { subscribeToPendingLateRequests, updateLateStatus } from '@/lib/services/lateService'
@@ -12,9 +12,10 @@ import { PageContainer } from '@/components/layout/page-container'
 import { Badge } from '@/components/ui/badge'
 import { subscribeToActiveEmployees } from '@/lib/services/employeeService'
 import { adjustPenalty, cancelPenalty, createForgottenDutyPenalty, getAllPenalties } from '@/lib/services/penaltyService'
-import type { Employee, Penalty } from '@/lib/models/types'
+import { subscribeToPendingStaffRequests, updateStaffRequestStatus } from '@/lib/services/staffRequestService'
+import type { Employee, Penalty, StaffRequest } from '@/lib/models/types'
 
-type RequestType = 'leave' | 'late' | 'salary'
+type RequestType = 'leave' | 'late' | 'salary' | 'overtime' | 'note'
 type RequestRow = {
   id: string
   type: RequestType
@@ -23,12 +24,14 @@ type RequestRow = {
   title: string
   detail: string
   status: string
+  shifts?: StaffRequest['shifts']
 }
 
 function buildRequestRows(
   leaves: any[],
   lates: any[],
   salaries: any[],
+  staffRequests: StaffRequest[],
   employees: Employee[],
   preview = false
 ): RequestRow[] {
@@ -62,6 +65,18 @@ function buildRequestRows(
       detail: `${Number(item.amount || 0).toLocaleString('vi-VN')} VND · ${item.reason || 'Không có ghi chú'}`,
       status: item.status || 'Pending',
     })),
+    ...staffRequests.map((item, index) => ({
+      id: item.id || `staff-${index}`,
+      type: item.type,
+      employeeId: item.employeeId,
+      employeeName: employeeNames.get(item.employeeId) || fallbackName,
+      title: item.type === 'overtime' ? 'Yêu cầu làm thêm' : 'Ghi chú từ nhân viên',
+      detail: item.type === 'overtime'
+        ? `${item.shifts?.length || 0} ca muốn làm thêm${item.content ? ` · ${item.content}` : ''}`
+        : item.content,
+      status: item.status,
+      shifts: item.shifts,
+    })),
   ].filter((item) => item.status === 'Pending')
 }
 
@@ -83,6 +98,8 @@ export default function AdminRequestsPage() {
   const [managingPenalty, setManagingPenalty] = useState(false)
   const [rejectingRow, setRejectingRow] = useState<RequestRow | null>(null)
   const [rejectReason, setRejectReason] = useState('')
+  const [penaltiesOpen, setPenaltiesOpen] = useState(false)
+  const [manualPenaltyOpen, setManualPenaltyOpen] = useState(false)
 
   useEffect(() => {
     if (!authUser) return
@@ -100,7 +117,7 @@ export default function AdminRequestsPage() {
         updatedAt: new Date(),
       } as Employee]
       setEmployees(employeeList)
-      setRows(buildRequestRows(mockLeaveRequests, mockLateRequests, mockSalaryAdvances, employeeList, true))
+      setRows(buildRequestRows(mockLeaveRequests, mockLateRequests, mockSalaryAdvances, [], employeeList, true))
       setPenaltyEmployeeId(employeeList[0].uid)
       setLoading(false)
       return
@@ -109,13 +126,14 @@ export default function AdminRequestsPage() {
     let leaves: any[] = []
     let lates: any[] = []
     let salaries: any[] = []
+    let staffRequests: StaffRequest[] = []
     let employeeList: Employee[] = []
     const ready = new Set<string>()
     const publish = () => {
       setEmployees(employeeList)
       setPenaltyEmployeeId((current) => current || employeeList[0]?.uid || '')
-      setRows(buildRequestRows(leaves, lates, salaries, employeeList))
-      if (ready.size === 4) {
+      setRows(buildRequestRows(leaves, lates, salaries, staffRequests, employeeList))
+      if (ready.size === 5) {
         setLoading(false)
         setMessage('')
       }
@@ -141,6 +159,11 @@ export default function AdminRequestsPage() {
         ready.add('salary')
         publish()
       }, handleError),
+      subscribeToPendingStaffRequests((items) => {
+        staffRequests = items
+        ready.add('staff')
+        publish()
+      }, handleError),
       subscribeToActiveEmployees((items) => {
         employeeList = items
         ready.add('employees')
@@ -164,6 +187,7 @@ export default function AdminRequestsPage() {
         if (row.type === 'leave') await updateLeaveStatus(row.id, status, authUser.uid, reviewNote)
         if (row.type === 'late') await updateLateStatus(row.id, status, authUser.uid, reviewNote)
         if (row.type === 'salary') await updateSalaryAdvanceStatus(row.id, status, authUser.uid, reviewNote)
+        if (row.type === 'overtime' || row.type === 'note') await updateStaffRequestStatus(row.id, status, reviewNote)
       }
       setRows((prev) => prev.filter((item) => item.id !== row.id))
       setMessage(status === 'Approved' ? 'Đã duyệt yêu cầu.' : 'Đã từ chối yêu cầu.')
@@ -236,18 +260,22 @@ export default function AdminRequestsPage() {
     leave: { icon: FileText, color: 'bg-emerald-600', label: 'Xin nghỉ' },
     late: { icon: Clock3, color: 'bg-amber-500', label: 'Đi trễ' },
     salary: { icon: CircleDollarSign, color: 'bg-sky-600', label: 'Ứng lương' },
+    overtime: { icon: CalendarPlus, color: 'bg-blue-600', label: 'Làm thêm' },
+    note: { icon: MessageSquareText, color: 'bg-cyan-600', label: 'Ghi chú' },
   }
 
   return (
     <main className="min-h-screen pb-8">
-      <Header title="Duyệt yêu cầu" subtitle="Xin nghỉ, đi trễ và ứng lương" />
+      <Header title="Duyệt yêu cầu" subtitle="Xử lý yêu cầu trước, theo dõi khoản phạt sau" />
       <PageContainer>
-        <form onSubmit={addForgottenDutyPenalty} className="mb-5 overflow-hidden rounded-3xl border border-rose-200 bg-white shadow-sm dark:border-rose-500/20 dark:bg-slate-900">
-          <div className="flex items-center gap-3 bg-gradient-to-r from-rose-600 to-fuchsia-600 p-4 text-white">
+        <div className="flex flex-col">
+        <form onSubmit={addForgottenDutyPenalty} className="order-3 mt-5 overflow-hidden rounded-3xl border border-rose-200 bg-white shadow-sm dark:border-rose-500/20 dark:bg-slate-900">
+          <button type="button" onClick={() => setManualPenaltyOpen((current) => !current)} className="flex w-full items-center gap-3 bg-gradient-to-r from-rose-600 to-fuchsia-600 p-4 text-left text-white" aria-expanded={manualPenaltyOpen}>
             <div className="grid h-11 w-11 place-items-center rounded-2xl bg-white/15"><AlertTriangle className="h-5 w-5" /></div>
-            <div><p className="text-xs font-bold uppercase tracking-wider text-rose-100">Ghi phạt thủ công</p><h2 className="font-black">Quên trực · 1.000đ</h2></div>
-          </div>
-          <div className="grid gap-3 p-4 sm:grid-cols-2">
+            <div className="min-w-0 flex-1"><p className="text-xs font-bold uppercase tracking-wider text-rose-100">Ghi phạt thủ công</p><h2 className="font-black">Quên trực · 1.000đ</h2></div>
+            <ChevronDown className={`h-5 w-5 transition-transform ${manualPenaltyOpen ? 'rotate-180' : ''}`} />
+          </button>
+          {manualPenaltyOpen && <div className="grid gap-3 p-4 sm:grid-cols-2">
             <label className="text-sm font-bold">Nhân viên
               <select value={penaltyEmployeeId} onChange={(event) => setPenaltyEmployeeId(event.target.value)} className="mobile-field mt-2" required>
                 <option value="">Chọn nhân viên</option>
@@ -263,19 +291,19 @@ export default function AdminRequestsPage() {
             <button type="submit" disabled={penaltySubmitting || (!isPreviewMode && !employees.length)} className="mobile-primary-button bg-rose-600 sm:col-span-2">
               {penaltySubmitting && <Loader2 className="h-4 w-4 animate-spin" />} Ghi nhận phạt 1.000đ
             </button>
-          </div>
+          </div>}
         </form>
-        <section className="mb-5">
-          <div className="mb-3 flex items-end justify-between gap-3">
+        <section className="order-2 mt-5 overflow-hidden rounded-3xl border border-rose-100 bg-white shadow-sm dark:border-rose-500/20 dark:bg-slate-900">
+          <button type="button" onClick={() => setPenaltiesOpen((current) => !current)} className="flex w-full items-center justify-between gap-3 p-4 text-left" aria-expanded={penaltiesOpen}>
             <div>
               <p className="text-xs font-bold uppercase tracking-wider text-rose-600">Khoản phạt đang áp dụng</p>
               <h2 className="text-xl font-black">Điều chỉnh hoặc hủy</h2>
             </div>
-            <span className="rounded-full bg-rose-50 px-3 py-1 text-xs font-bold text-rose-700">
+            <div className="flex items-center gap-2"><span className="rounded-full bg-rose-50 px-3 py-1 text-xs font-bold text-rose-700">
               {penalties.filter((item) => item.status !== 'Cancelled').length} khoản
-            </span>
-          </div>
-          <div className="space-y-3">
+            </span><ChevronDown className={`h-5 w-5 text-slate-400 transition-transform ${penaltiesOpen ? 'rotate-180' : ''}`} /></div>
+          </button>
+          {penaltiesOpen && <div className="space-y-3 border-t border-slate-100 p-3 dark:border-white/10">
             {penalties.filter((item) => item.status !== 'Cancelled').slice(0, 20).map((penalty) => {
               const employee = employees.find((item) => item.uid === penalty.employeeId)
               return (
@@ -306,14 +334,21 @@ export default function AdminRequestsPage() {
             {!loading && !penalties.some((item) => item.status !== 'Cancelled') && (
               <div className="mobile-card p-5 text-center text-sm font-semibold text-muted-foreground">Chưa có khoản phạt đang áp dụng.</div>
             )}
-          </div>
+          </div>}
         </section>
+        <section className="order-1">
+        <div className="mb-3 flex items-end justify-between gap-3">
+          <div><p className="text-xs font-bold uppercase tracking-wider text-indigo-600">Yêu cầu chờ xử lý</p><h2 className="text-xl font-black">Nhân viên vừa gửi</h2></div>
+          <span className="rounded-full bg-indigo-50 px-3 py-1 text-xs font-bold text-indigo-700">{rows.length} yêu cầu</span>
+        </div>
         <div className="flex gap-2 overflow-x-auto pb-2">
           {[
             { value: 'all' as const, label: 'Tất cả' },
             { value: 'leave' as const, label: 'Xin nghỉ' },
             { value: 'late' as const, label: 'Đi trễ' },
             { value: 'salary' as const, label: 'Ứng lương' },
+            { value: 'overtime' as const, label: 'Làm thêm' },
+            { value: 'note' as const, label: 'Ghi chú' },
           ].map((item) => (
             <button key={item.value} onClick={() => setFilter(item.value)} className={`min-h-10 shrink-0 rounded-full px-4 text-sm font-bold ${filter === item.value ? 'bg-indigo-600 text-white' : 'bg-white text-slate-600 shadow-sm dark:bg-slate-900 dark:text-slate-300'}`}>
               {item.label}
@@ -335,6 +370,15 @@ export default function AdminRequestsPage() {
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2"><h2 className="font-extrabold">{row.title}</h2><Badge variant="warning">Chờ duyệt</Badge></div>
                       <p className="mt-1 text-sm text-muted-foreground">{row.detail}</p>
+                      {!!row.shifts?.length && (
+                        <div className="mt-3 space-y-1.5 rounded-2xl bg-sky-50 p-3 text-xs text-sky-950 dark:bg-sky-500/10 dark:text-sky-100">
+                          {row.shifts.map((item, index) => {
+                            const date = item.date instanceof Date ? item.date : item.date.toDate()
+                            const shiftLabel = item.shift === 'Morning' ? 'Ca sáng' : item.shift === 'Afternoon' ? 'Ca chiều' : 'Ca tối'
+                            return <p key={`${date.toISOString()}-${item.shift}-${index}`}><strong>{date.toLocaleDateString('vi-VN', { weekday: 'long', day: '2-digit', month: '2-digit' })}</strong> · {shiftLabel}</p>
+                          })}
+                        </div>
+                      )}
                       <p className="mt-2 text-xs font-semibold text-indigo-600">{row.employeeName}</p>
                       {(() => {
                         const employee = employees.find((item) => item.uid === row.employeeId)
@@ -355,6 +399,8 @@ export default function AdminRequestsPage() {
             {!visibleRows.length && <div className="mobile-card p-8 text-center"><Check className="mx-auto h-8 w-8 text-emerald-600" /><h2 className="mt-3 font-extrabold">Không còn yêu cầu</h2><p className="text-sm text-muted-foreground">Danh sách đã được xử lý hết.</p></div>}
           </div>
         )}
+        </section>
+        </div>
       </PageContainer>
       {rejectingRow && (
         <div className="fixed inset-0 z-50 flex items-end bg-slate-950/50 p-3 backdrop-blur-sm sm:items-center sm:justify-center" onClick={() => setRejectingRow(null)}>

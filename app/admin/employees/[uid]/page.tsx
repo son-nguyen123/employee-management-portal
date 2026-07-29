@@ -2,24 +2,25 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import { useParams } from 'next/navigation'
-import { CalendarDays, CircleDollarSign, Clock3, ExternalLink, FileText, Loader2, Phone, UserRound } from 'lucide-react'
+import { CalendarDays, CalendarPlus, CircleDollarSign, Clock3, ExternalLink, FileText, Loader2, MessageSquareText, Phone, UserRound } from 'lucide-react'
 import { useAuth } from '@/lib/hooks/useAuth'
 import { getEmployeeByUID } from '@/lib/services/employeeService'
 import { getEmployeeSchedules } from '@/lib/services/scheduleService'
 import { getEmployeeLeaves } from '@/lib/services/leaveService'
 import { getEmployeeLateRequests } from '@/lib/services/lateService'
 import { getEmployeeSalaryAdvances } from '@/lib/services/salaryService'
+import { getEmployeeStaffRequests } from '@/lib/services/staffRequestService'
 import { getPreviewSchedules } from '@/lib/services/previewWorkflow'
-import type { Employee, LateRequest, LeaveRequest, SalaryAdvance, WorkSchedule } from '@/lib/models/types'
+import type { Employee, LateRequest, LeaveRequest, SalaryAdvance, StaffRequest, WorkSchedule } from '@/lib/models/types'
 import { Header } from '@/components/layout/header'
 import { PageContainer } from '@/components/layout/page-container'
 import { Badge } from '@/components/ui/badge'
 
 type DetailSchedule = WorkSchedule & { id: string }
-type ActivityStatus = WorkSchedule['status'] | LeaveRequest['status'] | LateRequest['status'] | SalaryAdvance['status']
+type ActivityStatus = WorkSchedule['status'] | LeaveRequest['status'] | LateRequest['status'] | SalaryAdvance['status'] | StaffRequest['status']
 type Activity = {
   id: string
-  type: 'schedule' | 'leave' | 'late' | 'salary'
+  type: 'schedule' | 'leave' | 'late' | 'salary' | 'overtime' | 'note'
   title: string
   summary: string
   status: ActivityStatus
@@ -129,12 +130,13 @@ export default function EmployeeDetailPage() {
           setSchedules(rows.map((item) => ({ id: item.id, employeeId: item.employeeId, date: new Date(item.date), shift: item.shift, status: item.status, note: item.note, reviewNote: item.reviewNote, createdAt: new Date(item.date), updatedAt: new Date(item.date) })))
           return
         }
-        const [employeeData, scheduleData, leaves, lates, salaries] = await Promise.all([
+        const [employeeData, scheduleData, leaves, lates, salaries, staffRequests] = await Promise.all([
           getEmployeeByUID(params.uid),
           getEmployeeSchedules(params.uid),
           getEmployeeLeaves(params.uid),
           getEmployeeLateRequests(params.uid),
           getEmployeeSalaryAdvances(params.uid),
+          getEmployeeStaffRequests(params.uid),
         ])
         setEmployee(employeeData)
         setSchedules(scheduleData.map((item) => ({ ...item, id: item.id! })))
@@ -142,6 +144,7 @@ export default function EmployeeDetailPage() {
           ...leaves.map((item): Activity => ({ id: `leave-${item.id}`, type: 'leave', title: 'Yêu cầu xin nghỉ', summary: `${toDate(item.leaveDate).toLocaleDateString('vi-VN')}${item.endDate ? `–${toDate(item.endDate).toLocaleDateString('vi-VN')}` : ''}`, status: item.status, sortAt: toDate(item.updatedAt), note: item.reason, reviewNote: item.reviewNote })),
           ...lates.map((item): Activity => ({ id: `late-${item.id}`, type: 'late', title: 'Thông báo đi trễ', summary: `${toDate(item.date).toLocaleDateString('vi-VN')} · ${item.lateMinutes} phút${item.expectedArrival ? ` · đến lúc ${item.expectedArrival}` : ''}`, status: item.status, sortAt: toDate(item.updatedAt), note: item.reason, reviewNote: item.reviewNote })),
           ...salaries.map((item): Activity => ({ id: `salary-${item.id}`, type: 'salary', title: 'Yêu cầu ứng lương', summary: `${Number(item.amount).toLocaleString('vi-VN')}đ`, status: item.status, sortAt: toDate(item.updatedAt), note: item.reason, reviewNote: item.reviewNote })),
+          ...staffRequests.map((item): Activity => ({ id: `staff-${item.id}`, type: item.type, title: item.type === 'overtime' ? 'Yêu cầu làm thêm' : 'Ghi chú cho quản lý', summary: item.type === 'overtime' ? `${item.shifts?.length || 0} ca muốn làm thêm` : 'Lời nhắn riêng', status: item.status, sortAt: toDate(item.updatedAt), note: item.content, reviewNote: item.reviewNote })),
         ])
       } catch {
         setMessage('Không thể tải đầy đủ lịch sử hoạt động của nhân viên.')
@@ -158,6 +161,8 @@ export default function EmployeeDetailPage() {
     leave: { icon: FileText, color: 'bg-emerald-50 text-emerald-600 dark:bg-emerald-500/10' },
     late: { icon: Clock3, color: 'bg-amber-50 text-amber-600 dark:bg-amber-500/10' },
     salary: { icon: CircleDollarSign, color: 'bg-sky-50 text-sky-600 dark:bg-sky-500/10' },
+    overtime: { icon: CalendarPlus, color: 'bg-blue-50 text-blue-600 dark:bg-blue-500/10' },
+    note: { icon: MessageSquareText, color: 'bg-cyan-50 text-cyan-600 dark:bg-cyan-500/10' },
   }
 
   return (

@@ -39,8 +39,8 @@ const staffFeatures = [
   { title: 'Xin nghỉ', note: 'Chọn ngày, ca và lý do nghỉ', href: '/leave-request', icon: ClipboardList, tone: 'bg-emerald-600' },
   { title: 'Ứng lương', note: 'Theo dõi yêu cầu trong tháng', href: '/salary-advance', icon: CircleDollarSign, tone: 'bg-sky-600' },
   { title: 'Khoản phạt', note: 'Xem lịch sử và nguồn phát sinh', href: '/penalties', icon: AlertTriangle, tone: 'bg-rose-600' },
-  { title: 'Xin làm thêm', note: 'Gửi mong muốn tăng ca cho quản lý', href: '/schedule', icon: CalendarPlus, tone: 'bg-fuchsia-600' },
-  { title: 'Ghi chú', note: 'Gửi lời nhắn kèm bảng lịch tuần', href: '/schedule', icon: StickyNote, tone: 'bg-cyan-600' },
+  { title: 'Xin làm thêm', note: 'Chọn ca muốn làm thêm từ lịch đã duyệt', href: '/schedule?mode=overtime', icon: CalendarPlus, tone: 'bg-fuchsia-600' },
+  { title: 'Ghi chú', note: 'Gửi lời nhắn riêng cho quản lý', href: '/staff-note', icon: StickyNote, tone: 'bg-cyan-600' },
   { title: 'Điều khoản công ty', note: 'Quy định và hướng dẫn chung', href: '/rules', icon: BookOpenText, tone: 'bg-violet-600' },
   { title: 'Công việc trong xưởng', note: 'Danh sách công việc được giao', href: '/workshop', icon: Factory, tone: 'bg-slate-700' },
 ]
@@ -51,7 +51,7 @@ export default function Page() {
   const role = useUserRole()
   const { theme, setTheme } = useTheme()
   const [adminStats, setAdminStats] = useState({ confirmed: 0, total: 0, pending: 0 })
-  const [showNewEmployeePrompt, setShowNewEmployeePrompt] = useState(false)
+  const [schedulePrompt, setSchedulePrompt] = useState<{ visible: boolean; isNew: boolean }>({ visible: false, isNew: false })
   const [employeeModeOpen, setEmployeeModeOpen] = useState(false)
 
   useEffect(() => {
@@ -113,16 +113,16 @@ export default function Page() {
   }, [authUser, isPreviewMode, role])
 
   useEffect(() => {
-    if (!authUser || !employee || role !== 'employee') {
-      setShowNewEmployeePrompt(false)
+    if (!authUser || !employee) {
+      setSchedulePrompt({ visible: false, isNew: false })
       return
     }
 
-    const loadCurrentWeek = async () => {
+    const loadRegistrationWeek = async () => {
       const now = new Date()
       const monday = new Date(now)
-      const offset = now.getDay() === 0 ? -6 : 1 - now.getDay()
-      monday.setDate(now.getDate() + offset)
+      const daysUntilNextMonday = ((8 - now.getDay()) % 7) || 7
+      monday.setDate(now.getDate() + daysUntilNextMonday)
       monday.setHours(0, 0, 0, 0)
       const sunday = new Date(monday)
       sunday.setDate(monday.getDate() + 6)
@@ -137,14 +137,17 @@ export default function Page() {
               return item.employeeId === authUser.uid && date >= monday && date <= sunday
             })
           : await getSchedulesByDateRange(authUser.uid, monday, sunday)
-        setShowNewEmployeePrompt(appearsNew && !schedules.some((item) => item.status !== 'Cancelled'))
+        setSchedulePrompt({
+          visible: !schedules.some((item) => item.status !== 'Cancelled'),
+          isNew: appearsNew,
+        })
       } catch {
-        setShowNewEmployeePrompt(false)
+        setSchedulePrompt({ visible: false, isNew: false })
       }
     }
 
-    void loadCurrentWeek()
-  }, [authUser, employee, isPreviewMode, role])
+    void loadRegistrationWeek()
+  }, [authUser, employee, isPreviewMode])
 
   if (isLoading) {
     return <div className="mx-auto min-h-screen max-w-2xl p-4"><SkeletonLoader variant="card" count={6} /></div>
@@ -155,7 +158,7 @@ export default function Page() {
   const isAdmin = role === 'admin' || role === 'manager'
   const adminFeatures = [
     { title: 'Đăng ký lịch', note: `${adminStats.pending} nhân viên đang chờ xác nhận`, href: '/admin/dashboard#schedules', icon: ShieldCheck },
-    { title: 'Điều hành', note: 'Phạt · xin nghỉ · đi trễ · ứng lương', href: '/admin/requests', icon: LayoutDashboard },
+    { title: 'Điều hành', note: 'Yêu cầu nhân viên · khoản phạt', href: '/admin/requests', icon: LayoutDashboard },
     { title: 'Danh sách nhân viên', note: 'Tài khoản đang hoạt động trong tháng', href: '/admin/dashboard#employees', icon: UsersRound },
     { title: 'Kho dữ liệu', note: 'Xem lịch sử đã lưu trên Google Drive', href: '/admin/archive', icon: Archive },
   ]
@@ -217,7 +220,7 @@ export default function Page() {
       </section>
 
       <div className="mx-auto max-w-2xl px-3 py-5 sm:px-6">
-        {showNewEmployeePrompt && (
+        {schedulePrompt.visible && (
           <Link
             href="/schedule"
             className="mb-5 flex items-center gap-3 rounded-3xl border border-indigo-200 bg-indigo-50 p-4 text-indigo-950 shadow-sm transition active:scale-[0.99] dark:border-indigo-500/30 dark:bg-indigo-500/10 dark:text-indigo-100"
@@ -226,8 +229,10 @@ export default function Page() {
               <UserPlus className="h-5 w-5" />
             </div>
             <div className="min-w-0 flex-1">
-              <p className="font-extrabold">Có vẻ bạn là nhân viên mới</p>
-              <p className="text-xs text-indigo-700 dark:text-indigo-200">Tuần này chưa có lịch · Đăng ký ngay</p>
+              <p className="font-extrabold">
+                {schedulePrompt.isNew ? 'Có vẻ bạn là thành viên mới' : 'Có vẻ bạn chưa có lịch'}
+              </p>
+              <p className="text-xs text-indigo-700 dark:text-indigo-200">Tuần kế tiếp chưa có lịch · Thêm lịch ngay</p>
             </div>
             <ChevronRight className="h-5 w-5 shrink-0" />
           </Link>

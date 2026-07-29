@@ -408,6 +408,99 @@ export async function submitSchedules(actor: RequestActor, raw: unknown) {
   }
 }
 
+export async function submitStaffRequest(actor: RequestActor, raw: unknown) {
+  requireStaff(actor)
+  const body = objectBody(raw)
+  const id = requestId(body)
+  const type = text(body.type, 'Loại yêu cầu', 20) as 'overtime' | 'note'
+  if (!['overtime', 'note'].includes(type)) throw new ApiError(400, 'Loại yêu cầu không hợp lệ.')
+  const content = text(body.content ?? '', 'Nội dung', 1000, type === 'overtime')
+  const managerIds = await activeManagerIds()
+  const requestRef = adminDb.collection('staffRequests').doc()
+  const workflow = workflowRef(actor, id)
+  let weekStart: Date | null = null
+  let requestedShifts: Array<{ date: Date; shift: Shift }> = []
+
+  if (type === 'overtime') {
+    if (!Array.isArray(body.shifts) || body.shifts.length < 1 || body.shifts.length > 21) {
+      throw new ApiError(400, 'Vui lòng chọn ít nhất một ca muốn làm thêm.')
+    }
+    requestedShifts = body.shifts.map((item, index) => {
+      const row = objectBody(item)
+      const date = dateValue(row.date, `Ngày làm thêm ${index + 1}`)
+      const shift = row.shift
+      if (!shifts.includes(shift as Shift)) throw new ApiError(400, `Ca làm thêm ${index + 1} không hợp lệ.`)
+      return { date, shift: shift as Shift }
+    })
+    weekStart = mondayFor(requestedShifts[0].date)
+    if (requestedShifts.some((item) => mondayFor(item.date).getTime() !== weekStart!.getTime())) {
+      throw new ApiError(400, 'Các ca làm thêm phải thuộc cùng một tuần.')
+    }
+    const [existing, existingStaffRequests] = await Promise.all([
+      adminDb.collection('workSchedules').where('employeeId', '==', actor.uid).get(),
+      adminDb.collection('staffRequests').where('employeeId', '==', actor.uid).get(),
+    ])
+    const duplicated = requestedShifts.some((requested) => existing.docs.some((snapshot) => {
+      const schedule = snapshot.data()
+      if (schedule.status === 'Cancelled') return false
+      return (schedule.date as Timestamp).toDate().toISOString().slice(0, 10) === requested.date.toISOString().slice(0, 10) &&
+        schedule.shift === requested.shift
+    }))
+    if (duplicated) throw new ApiError(409, 'Một ca làm thêm đã có trong lịch hiện tại. Vui lòng tải lại và chọn ca khác.')
+    const alreadyPending = existingStaffRequests.docs.some((snapshot) => {
+      const request = snapshot.data()
+      return request.type === 'overtime' && request.status === 'Pending' &&
+        request.weekStart instanceof Timestamp && request.weekStart.toDate().getTime() === weekStart!.getTime()
+    })
+    if (alreadyPending) throw new ApiError(409, 'Bạn đã có một yêu cầu làm thêm đang chờ xử lý cho tuần này.')
+  }
+
+  await adminDb.runTransaction(async (transaction) => {
+    if ((await transaction.get(workflow)).exists) throw new ApiError(409, 'Yêu cầu này đã được gửi trước đó.')
+    const now = FieldValue.serverTimestamp()
+    transaction.create(requestRef, {
+      employeeId: actor.uid,
+      type,
+      content,
+      ...(weekStart ? { weekStart: Timestamp.fromDate(weekStart) } : {}),
+      ...(requestedShifts.length ? {
+        shifts: requestedShifts.map((item) => ({ date: Timestamp.fromDate(item.date), shift: item.shift })),
+      } : {}),
+      status: 'Pending',
+      createdAt: now,
+      updatedAt: now,
+    })
+    managerIds.forEach((managerId) => {
+      transaction.set(
+        managerNotificationRef(managerId, `staff-${requestRef.id}`),
+        managerNotification(
+          managerId,
+          type === 'overtime' ? 'Yêu cầu làm thêm chờ xử lý' : 'Ghi chú mới từ nhân viên',
+          type === 'overtime' ? 'Một nhân viên vừa gửi các ca muốn làm thêm.' : 'Một nhân viên vừa gửi ghi chú cho quản lý.'
+        )
+      )
+    })
+    transaction.create(workflow, {
+      employeeId: actor.uid,
+      action: 'submitStaffRequest',
+      targetIds: [requestRef.id],
+      createdAt: now,
+    })
+  })
+
+  await sendManagerPushes({
+    managerIds,
+    sourceKey: `staff-${requestRef.id}`,
+    title: type === 'overtime' ? 'Yêu cầu làm thêm chờ xử lý' : 'Ghi chú mới từ nhân viên',
+    body: type === 'overtime' ? 'Một nhân viên vừa gửi các ca muốn làm thêm.' : 'Một nhân viên vừa gửi ghi chú cho quản lý.',
+    link: '/admin/requests',
+    source: 'staffRequests',
+    sourceId: requestRef.id,
+  })
+
+  return { id: requestRef.id }
+}
+
 export async function replaceSchedules(actor: RequestActor, raw: unknown) {
   requireStaff(actor)
   const body = objectBody(raw)
@@ -1217,6 +1310,13 @@ const reviewConfig = {
     label: 'Yêu cầu ứng lương',
     link: '/salary-advance',
   },
+  staff: {
+    collection: 'staffRequests',
+    statuses: ['Approved', 'Rejected'],
+    title: 'Yêu cầu gửi quản lý đã được xử lý',
+    label: 'Yêu cầu',
+    link: '/schedule',
+  },
 } as const
 
 function statusText(status: ReviewStatus): string {
@@ -1244,6 +1344,8 @@ export async function reviewRequest(actor: RequestActor, raw: unknown) {
   const dispatchRef = adminDb.collection('pushDispatches').doc(`${config.collection}-${id}-${status}`)
   const managerIds = await activeManagerIds()
   let employeeId = ''
+  let reviewedLabel: string = config.label
+  let reviewedLink: string = config.link
 
   await adminDb.runTransaction(async (transaction) => {
     const target = await transaction.get(targetRef)
@@ -1254,6 +1356,41 @@ export async function reviewRequest(actor: RequestActor, raw: unknown) {
     }
     employeeId = data.employeeId
     const now = FieldValue.serverTimestamp()
+    if (resource === 'staff' && status === 'Approved' && data.type === 'overtime' && Array.isArray(data.shifts)) {
+      const currentSchedules = await transaction.get(
+        adminDb.collection('workSchedules').where('employeeId', '==', employeeId)
+      )
+      const existingKeys = new Set(currentSchedules.docs
+        .filter((snapshot) => snapshot.get('status') !== 'Cancelled')
+        .map((snapshot) => {
+          const schedule = snapshot.data()
+          return `${(schedule.date as Timestamp).toDate().toISOString().slice(0, 10)}-${schedule.shift}`
+        }))
+      const overtimeShifts = (data.shifts as Array<{ date: Timestamp; shift: Shift }>).filter((item) =>
+        item?.date instanceof Timestamp && shifts.includes(item.shift)
+      )
+      const firstDate = overtimeShifts[0]?.date.toDate()
+      overtimeShifts.forEach((item, index) => {
+        const key = `${item.date.toDate().toISOString().slice(0, 10)}-${item.shift}`
+        if (existingKeys.has(key) || !firstDate) return
+        transaction.create(adminDb.collection('workSchedules').doc(`overtime-${id}-${index}`), {
+          employeeId,
+          date: item.date,
+          shift: item.shift,
+          status: 'Approved',
+          note: `[OVERTIME_APPROVED]${data.content ? ` ${String(data.content).slice(0, 450)}` : ''}`,
+          batchKey: scheduleBatchKey(employeeId, mondayFor(firstDate)),
+          requiresReapproval: false,
+          revisionCount: 0,
+          createdAt: now,
+          updatedAt: now,
+          lockedAt: now,
+          reviewedBy: actor.uid,
+          reviewedAt: now,
+        })
+        existingKeys.add(key)
+      })
+    }
     const updates: Record<string, unknown> = {
       status,
       updatedAt: now,
@@ -1268,10 +1405,15 @@ export async function reviewRequest(actor: RequestActor, raw: unknown) {
       updates.reviewNote = note
     }
     transaction.set(targetRef, updates, { merge: true })
+    const requestLabel = resource === 'staff'
+      ? data.type === 'overtime' ? 'Yêu cầu làm thêm' : 'Ghi chú'
+      : config.label
+    reviewedLabel = requestLabel
+    reviewedLink = resource === 'staff' && data.type === 'note' ? '/staff-note' : config.link
     transaction.set(notificationRef, {
       employeeId,
       title: config.title,
-      message: `${config.label} của bạn ${statusText(status)}.${note ? ` Phản hồi: ${note}` : ''}`,
+      message: `${requestLabel} của bạn ${statusText(status)}.${note ? ` Phản hồi: ${note}` : ''}`,
       type: status === 'Approved' ? 'success' : 'warning',
       isRead: false,
       createdAt: now,
@@ -1288,7 +1430,7 @@ export async function reviewRequest(actor: RequestActor, raw: unknown) {
     managerIds.forEach((managerId) => {
       transaction.set(
         managerNotificationRef(managerId, `${resource}-${id}`),
-        managerNotification(managerId, 'Yêu cầu đã được xử lý', `${config.label} đã ${status === 'Approved' ? 'được xác nhận' : 'bị từ chối'}.`, 'info', true)
+        managerNotification(managerId, 'Yêu cầu đã được xử lý', `${requestLabel} đã ${status === 'Approved' ? 'được xác nhận' : 'bị từ chối'}.`, 'info', true)
       )
     })
   })
@@ -1297,8 +1439,8 @@ export async function reviewRequest(actor: RequestActor, raw: unknown) {
     employeeId,
     dispatchId: dispatchRef.id,
     title: config.title,
-    body: `${config.label} của bạn ${statusText(status)}.`,
-    link: config.link,
+    body: `${reviewedLabel} của bạn ${statusText(status)}.`,
+    link: reviewedLink,
     source: config.collection,
     sourceId: id,
     status,

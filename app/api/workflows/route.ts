@@ -16,6 +16,7 @@ import {
   submitLate,
   submitLeave,
   submitSalaryAdvance,
+  submitStaffRequest,
   submitSchedules,
 } from '@/lib/server/workflows'
 
@@ -27,6 +28,7 @@ const handlers = {
   submitLeave,
   submitLate,
   submitSalaryAdvance,
+  submitStaffRequest,
   reviseRequest,
   cancelRequest,
   cancelScheduleBatch,
