@@ -36,6 +36,10 @@ function displayDate(value: unknown) {
   return Number.isNaN(date.getTime()) ? value : date.toLocaleDateString('vi-VN')
 }
 
+function sourceWeekKey(archiveKey: string) {
+  return archiveKey.split('-test-')[0]
+}
+
 function recordSummary(record: ArchivedRecord, employeeNames: Map<string, string>) {
   const data = record.data || {}
   const employeeId = typeof data.employeeId === 'string' ? data.employeeId : ''
@@ -103,6 +107,15 @@ export default function AdminArchivePage() {
     try {
       const result = await createArchivePreview(testDate)
       await loadFiles()
+      if (result.driveFileId) {
+        setFiles((current) => current.some((file) => file.id === result.driveFileId) ? current : [{
+          id: result.driveFileId!,
+          name: result.driveFileName || `employee-portal-week-${result.archiveKey}.json`,
+          archiveKey: result.archiveKey,
+          size: result.driveFileSize || 0,
+          webViewLink: result.driveWebViewLink,
+        }, ...current])
+      }
       setMessage(`Đã tạo bản lưu thử có ${result.documentCount} mục. Firestore không bị xóa.`)
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'Chưa thể tạo bản lưu thử.')
@@ -135,7 +148,7 @@ export default function AdminArchivePage() {
             <div className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-indigo-600"><Archive className="h-5 w-5" /></div>
             <div className="min-w-0 flex-1">
               <p className="text-xs font-bold uppercase tracking-wider text-indigo-300">Lưu trữ dài hạn</p>
-              <h1 className="mt-1 text-xl font-black">{files.length} tuần đã lưu</h1>
+              <h1 className="mt-1 text-xl font-black">{files.length} bản đã lưu</h1>
               <p className="mt-1 text-xs leading-5 text-slate-300">Dữ liệu được đọc từ Drive; việc xem kho không khôi phục hay thay đổi Firestore.</p>
             </div>
             <button type="button" onClick={() => void loadFiles()} disabled={loading} aria-label="Tải lại kho dữ liệu" className="grid h-11 w-11 place-items-center rounded-2xl bg-white/10 disabled:opacity-50"><RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} /></button>
@@ -144,14 +157,14 @@ export default function AdminArchivePage() {
 
         <section className="mt-4 rounded-3xl border border-indigo-100 bg-white p-4 shadow-sm dark:border-indigo-500/20 dark:bg-slate-900">
           <div className="flex items-start gap-3"><div className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-indigo-50 text-indigo-600 dark:bg-indigo-500/10"><FlaskConical className="h-5 w-5" /></div><div><h2 className="font-extrabold">Kiểm thử bằng ngày lùi</h2><p className="mt-1 text-xs leading-5 text-muted-foreground">Chọn một ngày thuộc tuần muốn kiểm tra. Hệ thống tạo file test thật trên Drive nhưng không xóa dữ liệu Firebase.</p></div></div>
-          <div className="mt-4 grid grid-cols-[1fr_auto] gap-2"><input type="date" value={testDate} onChange={(event) => setTestDate(event.target.value)} className="mobile-field" /><button type="button" onClick={() => void createTestArchive()} disabled={creatingTest || isPreviewMode} className="min-h-12 rounded-2xl bg-indigo-600 px-4 text-sm font-bold text-white disabled:opacity-50">{creatingTest ? 'Đang tạo...' : 'Tạo bản thử'}</button></div>
+          <div className="mt-4 grid min-w-0 grid-cols-[minmax(0,1fr)_auto] gap-2"><input type="date" value={testDate} onChange={(event) => setTestDate(event.target.value)} className="mobile-field min-w-0 !px-4 text-sm" /><button type="button" onClick={() => void createTestArchive()} disabled={creatingTest || isPreviewMode} className="min-h-12 shrink-0 whitespace-nowrap rounded-2xl bg-indigo-600 px-4 text-sm font-bold text-white disabled:opacity-50">{creatingTest ? 'Đang tạo...' : 'Tạo bản thử'}</button></div>
         </section>
 
         {message && <p className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 p-3 text-sm font-semibold text-amber-900 dark:border-amber-500/20 dark:bg-amber-500/10 dark:text-amber-100">{message}</p>}
 
-        <label className="relative mt-5 block">
-          <Search className="pointer-events-none absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
-          <input value={search} onChange={(event) => setSearch(event.target.value)} className="mobile-field pl-11" placeholder="Tìm theo tuần, ví dụ 2026-07-20" />
+        <label className="relative mx-1 mt-5 block">
+          <Search className="pointer-events-none absolute left-4 top-1/2 z-10 h-4 w-4 -translate-y-1/2 text-slate-400" />
+          <input value={search} onChange={(event) => setSearch(event.target.value)} className="mobile-field !pl-12 !pr-4 text-sm" placeholder="Tìm theo tuần, ví dụ 2026-07-20" />
         </label>
 
         {loading ? (
@@ -162,7 +175,7 @@ export default function AdminArchivePage() {
               <button key={file.id} type="button" onClick={() => void openArchive(file)} className={`mobile-card flex w-full items-center gap-3 p-4 text-left transition ${selected?.id === file.id ? 'ring-2 ring-indigo-500' : ''}`}>
                 <div className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-indigo-50 text-indigo-600 dark:bg-indigo-500/10"><CalendarDays className="h-5 w-5" /></div>
                 <div className="min-w-0 flex-1">
-                  <h2 className="font-extrabold">Tuần {new Date(`${file.archiveKey}T12:00:00`).toLocaleDateString('vi-VN')}</h2>
+                  <div className="flex flex-wrap items-center gap-2"><h2 className="font-extrabold">Tuần {new Date(`${sourceWeekKey(file.archiveKey)}T12:00:00`).toLocaleDateString('vi-VN')}</h2>{file.archiveKey.includes('-test-') && <Badge variant="outline">Bản thử</Badge>}</div>
                   <p className="mt-1 truncate text-xs text-muted-foreground">{file.name} · {bytes(file.size)}</p>
                 </div>
                 {selected?.id === file.id && loadingFile ? <Loader2 className="h-5 w-5 animate-spin text-indigo-600" /> : <ChevronDown className="h-5 w-5 text-slate-400" />}

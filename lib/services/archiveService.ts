@@ -54,7 +54,17 @@ export function readArchiveFile(fileId: string): Promise<WeeklyArchivePayload> {
   return archiveRequest<WeeklyArchivePayload>(fileId)
 }
 
-export async function createArchivePreview(referenceDate: string): Promise<{ archiveKey: string; documentCount: number; deleted: false }> {
+export interface ArchivePreviewResult {
+  archiveKey: string
+  documentCount: number
+  deleted: false
+  driveFileId?: string
+  driveWebViewLink?: string
+  driveFileName?: string
+  driveFileSize?: number
+}
+
+export async function createArchivePreview(referenceDate: string): Promise<ArchivePreviewResult> {
   const user = auth.currentUser
   if (!user) throw new Error('Bạn cần đăng nhập để tạo bản lưu thử.')
   const token = await user.getIdToken()
@@ -63,7 +73,7 @@ export async function createArchivePreview(referenceDate: string): Promise<{ arc
     headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
     body: JSON.stringify({ referenceDate }),
   })
-  const body = await response.json().catch(() => null) as { ok: boolean; result?: { archiveKey: string; documentCount: number; deleted: false }; error?: string } | null
+  const body = await response.json().catch(() => null) as { ok: boolean; result?: ArchivePreviewResult; error?: string } | null
   if (!response.ok || !body?.ok || !body.result) throw new Error(body?.error || 'Chưa thể tạo bản lưu thử.')
   return body.result
 }

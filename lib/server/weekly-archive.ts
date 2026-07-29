@@ -35,6 +35,8 @@ export interface WeeklyArchiveResult {
   counts: Record<string, number>
   driveFileId?: string
   driveWebViewLink?: string
+  driveFileName?: string
+  driveFileSize?: number
   deleted: boolean
 }
 
@@ -410,6 +412,8 @@ export async function runArchivePreview(referenceDate: Date): Promise<WeeklyArch
     counts,
     driveFileId: driveFile.id,
     driveWebViewLink: driveFile.webViewLink,
+    driveFileName: driveFile.name,
+    driveFileSize: Number(driveFile.size || 0),
     deleted: false,
   }
 }
