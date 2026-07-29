@@ -5,6 +5,8 @@ import {
   Archive,
   CalendarDays,
   ChevronDown,
+  ChevronLeft,
+  ChevronRight,
   Database,
   ExternalLink,
   FlaskConical,
@@ -173,6 +175,8 @@ export default function AdminArchivePage() {
   const [filterResults, setFilterResults] = useState<FilterResult[]>([])
   const [filtering, setFiltering] = useState(false)
   const [selectedBrowseMonth, setSelectedBrowseMonth] = useState('')
+  const monthRailRef = useRef<HTMLDivElement>(null)
+  const centeredYearRef = useRef<number | null>(null)
 
   const loadFiles = useCallback(async () => {
     if (!authUser) return
@@ -220,10 +224,58 @@ export default function AdminArchivePage() {
 
   useEffect(() => {
     if (!draftMonth && filterMonths[0]) setDraftMonth(filterMonths[0])
-    if (monthGroups[0] && !monthGroups.some((group) => group.key === selectedBrowseMonth)) setSelectedBrowseMonth(monthGroups[0].key)
-  }, [draftMonth, filterMonths, monthGroups, selectedBrowseMonth])
+    if (!selectedBrowseMonth && !loading) {
+      const now = new Date()
+      setSelectedBrowseMonth(monthGroups[0]?.key || `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`)
+    }
+  }, [draftMonth, filterMonths, loading, monthGroups, selectedBrowseMonth])
 
-  const browseGroup = monthGroups.find((group) => group.key === selectedBrowseMonth) || monthGroups[0]
+  const browseGroup = monthGroups.find((group) => group.key === selectedBrowseMonth)
+  const selectedYear = Number(selectedBrowseMonth.slice(0, 4)) || new Date().getFullYear()
+  const wheelMonths = Array.from({ length: 12 }, (_, index) => `${selectedYear}-${String(index + 1).padStart(2, '0')}`)
+
+  const centerMonth = useCallback((key: string, behavior: ScrollBehavior = 'smooth') => {
+    window.requestAnimationFrame(() => {
+      const rail = monthRailRef.current
+      const item = rail?.querySelector<HTMLElement>(`[data-month-key="${key}"]`)
+      if (!rail || !item) return
+      rail.scrollTo({ left: item.offsetLeft - (rail.clientWidth - item.offsetWidth) / 2, behavior })
+    })
+  }, [])
+
+  useEffect(() => {
+    if (selectedBrowseMonth && centeredYearRef.current !== selectedYear) {
+      centeredYearRef.current = selectedYear
+      centerMonth(selectedBrowseMonth, 'auto')
+    }
+  }, [centerMonth, selectedBrowseMonth, selectedYear])
+
+  const selectYear = (offset: number) => {
+    const month = Number(selectedBrowseMonth.slice(5, 7)) || 1
+    const key = `${selectedYear + offset}-${String(month).padStart(2, '0')}`
+    setSelectedBrowseMonth(key)
+    setSelected(null)
+    setArchive(null)
+  }
+
+  const handleMonthScroll = (event: React.UIEvent<HTMLDivElement>) => {
+    const rail = event.currentTarget
+    const center = rail.scrollLeft + rail.clientWidth / 2
+    let closestKey = selectedBrowseMonth
+    let closestDistance = Number.POSITIVE_INFINITY
+    rail.querySelectorAll<HTMLElement>('[data-month-key]').forEach((item) => {
+      const distance = Math.abs(item.offsetLeft + item.offsetWidth / 2 - center)
+      if (distance < closestDistance) {
+        closestDistance = distance
+        closestKey = item.dataset.monthKey || closestKey
+      }
+    })
+    if (closestKey && closestKey !== selectedBrowseMonth) {
+      setSelectedBrowseMonth(closestKey)
+      setSelected(null)
+      setArchive(null)
+    }
+  }
 
   const getArchive = useCallback(async (file: ArchiveFileSummary) => {
     const cached = archiveCache.current.get(file.id)
@@ -401,13 +453,12 @@ export default function AdminArchivePage() {
 
         {appliedFilter && <div className="mt-3 flex gap-2 overflow-x-auto pb-1"><span className="shrink-0 rounded-full bg-indigo-600 px-3 py-1.5 text-xs font-bold text-white">{monthLabel(appliedFilter.month)}</span>{appliedFilter.collection !== 'all' && <span className="shrink-0 rounded-full bg-indigo-50 px-3 py-1.5 text-xs font-bold text-indigo-700 dark:bg-indigo-500/10 dark:text-indigo-200">{collectionLabels[appliedFilter.collection]}</span>}{appliedFilter.employee && <span className="shrink-0 rounded-full bg-indigo-50 px-3 py-1.5 text-xs font-bold text-indigo-700 dark:bg-indigo-500/10 dark:text-indigo-200">{appliedFilter.employee}</span>}<button type="button" onClick={clearFilters} className="shrink-0 px-2 text-xs font-bold text-slate-500">Xóa lọc</button></div>}
 
-        {!appliedFilter && monthGroups.length > 0 && (
-          <nav aria-label="Chọn tháng lưu trữ" className="-mx-1 mt-3 flex snap-x snap-mandatory gap-2 overflow-x-auto px-1 pb-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-            {monthGroups.map((group) => {
-              const active = group.key === browseGroup?.key
-              return <button key={group.key} type="button" onClick={() => { setSelectedBrowseMonth(group.key); setSelected(null); setArchive(null) }} className={`min-w-[9.25rem] snap-start rounded-2xl border p-3 text-left transition active:scale-[0.98] ${active ? 'border-indigo-600 bg-indigo-600 text-white shadow-lg shadow-indigo-600/20' : 'border-slate-200 bg-white text-slate-900 shadow-sm dark:border-slate-700 dark:bg-slate-900 dark:text-white'}`}><p className={`text-[10px] font-bold uppercase tracking-wider ${active ? 'text-indigo-100' : 'text-slate-400'}`}>{group.weekKeys.length} tuần</p><p className="mt-1 font-black">{monthLabel(group.key)}</p><p className={`mt-1 text-xs ${active ? 'text-indigo-100' : 'text-muted-foreground'}`}>{group.files.length} bản lưu</p></button>
-            })}
-          </nav>
+        {!appliedFilter && selectedBrowseMonth && (
+          <section className="mt-3 overflow-hidden rounded-3xl border border-slate-200/80 bg-white/70 py-3 shadow-sm backdrop-blur dark:border-slate-700 dark:bg-slate-900/70">
+            <div className="flex items-center justify-center gap-4 px-3"><button type="button" onClick={() => selectYear(-1)} aria-label="Năm trước" className="grid h-9 w-9 place-items-center rounded-xl bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300"><ChevronLeft className="h-4 w-4" /></button><p className="min-w-20 text-center text-sm font-black">Năm {selectedYear}</p><button type="button" onClick={() => selectYear(1)} aria-label="Năm sau" className="grid h-9 w-9 place-items-center rounded-xl bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300"><ChevronRight className="h-4 w-4" /></button></div>
+            <div className="relative mt-3"><div className="pointer-events-none absolute inset-y-0 left-1/2 z-0 w-[8.5rem] -translate-x-1/2 rounded-2xl bg-indigo-50/70 dark:bg-indigo-500/5" /><nav ref={monthRailRef} aria-label="Bánh xe chọn tháng" onScroll={handleMonthScroll} className="relative z-10 flex snap-x snap-mandatory gap-2 overflow-x-auto px-0 py-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"><span aria-hidden="true" className="shrink-0" style={{ width: 'calc(50% - 4.25rem)' }} />{wheelMonths.map((key) => { const group = monthGroups.find((item) => item.key === key); const active = key === selectedBrowseMonth; return <button key={key} data-month-key={key} type="button" onClick={() => { setSelectedBrowseMonth(key); setSelected(null); setArchive(null); centerMonth(key) }} className={`w-[8.5rem] shrink-0 snap-center rounded-2xl border px-3 py-3 text-center transition duration-200 active:scale-[0.98] ${active ? 'scale-100 border-indigo-600 bg-indigo-600 text-white shadow-lg shadow-indigo-600/25' : 'scale-90 border-slate-200 bg-white text-slate-500 opacity-70 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300'}`}><p className="text-[10px] font-bold uppercase tracking-wider">Tháng</p><p className="mt-0.5 text-2xl font-black">{Number(key.slice(5))}</p><p className={`mt-1 text-[10px] font-semibold ${active ? 'text-indigo-100' : 'text-slate-400'}`}>{group ? `${group.files.length} bản lưu` : 'Không có dữ liệu'}</p></button>})}<span aria-hidden="true" className="shrink-0" style={{ width: 'calc(50% - 4.25rem)' }} /></nav></div>
+            <p className="mt-1 text-center text-[10px] font-semibold text-slate-400">Vuốt ngang để đổi tháng</p>
+          </section>
         )}
 
         {loading || filtering ? (
@@ -428,13 +479,13 @@ export default function AdminArchivePage() {
           </section>
         ) : (
           <section className="mt-4 space-y-3">
-            {browseGroup && <div className="flex items-end justify-between gap-3 px-1"><div><h2 className="font-black">Các tuần trong {monthLabel(browseGroup.key).toLocaleLowerCase('vi')}</h2><p className="mt-1 text-xs text-muted-foreground">Chạm vào một tuần để xem dữ liệu.</p></div><Badge variant="outline">{browseGroup.weekKeys.length} tuần</Badge></div>}
+            <div className="flex items-end justify-between gap-3 px-1"><div><h2 className="font-black">Các tuần trong {monthLabel(selectedBrowseMonth).toLocaleLowerCase('vi')}</h2><p className="mt-1 text-xs text-muted-foreground">Chạm vào một tuần để xem dữ liệu.</p></div><Badge variant="outline">{browseGroup?.weekKeys.length || 0} tuần</Badge></div>
             {browseGroup?.files.map((file) => {
                     const weekKey = sourceWeekKey(file.archiveKey)
                     const weekNumber = browseGroup.weekKeys.indexOf(weekKey) + 1
                     return <div key={file.id} className="mobile-card overflow-hidden"><button type="button" onClick={() => void openArchive(file)} className="flex w-full items-center gap-3 p-4 text-left"><div className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-indigo-50 text-indigo-600 dark:bg-indigo-500/10"><CalendarDays className="h-5 w-5" /></div><div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-2"><h3 className="font-extrabold">Tuần {weekNumber}</h3>{file.archiveKey.includes('-test-') && <Badge variant="outline">Bản thử</Badge>}</div><p className="mt-1 text-xs text-muted-foreground">{weekRange(weekKey)} · {bytes(file.size)}</p></div>{selected?.id === file.id && loadingFile ? <Loader2 className="h-5 w-5 animate-spin text-indigo-600" /> : <ChevronDown className={`h-5 w-5 text-slate-400 transition ${selected?.id === file.id ? 'rotate-180' : ''}`} />}</button>{selected?.id === file.id && archive && archiveDetails(archive, file)}</div>
                   })}
-            {!monthGroups.length && !message && <div className="mobile-card p-8 text-center"><Database className="mx-auto h-8 w-8 text-slate-400" /><h2 className="mt-3 font-extrabold">Chưa có bản lưu</h2><p className="mt-1 text-sm text-muted-foreground">Bản lưu tuần sẽ xuất hiện sau khi tác vụ lưu trữ chạy thành công.</p></div>}
+            {!browseGroup && <div className="mobile-card p-8 text-center"><CalendarDays className="mx-auto h-8 w-8 text-slate-300" /><h2 className="mt-3 font-extrabold">Tháng này chưa có dữ liệu</h2><p className="mt-1 text-sm leading-6 text-muted-foreground">Khi có bản lưu tuần, dữ liệu sẽ tự xuất hiện tại đây.</p></div>}
           </section>
         )}
 
