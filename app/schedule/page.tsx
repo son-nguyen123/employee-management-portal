@@ -108,10 +108,11 @@ export default function SchedulePage() {
           const hydrated: Selection = {}
           const custom: Record<string, CustomShift> = {}
           let loadedDuty: string | null = null
+          let loadedWeekNote = ''
           current.forEach((item) => {
             const key = localDateKey(scheduleDate(item.date))
             const weekNoteMatch = item.note?.match(/\[WEEK_NOTE\]\s*([^\[]+)/)
-            if (weekNoteMatch) setWeekNote(weekNoteMatch[1].trim())
+            if (weekNoteMatch) loadedWeekNote = weekNoteMatch[1].trim()
             if (item.note?.includes('[NO_SHIFTS]')) return
             const dutyOnly = item.note?.includes('[DUTY_ONLY]')
             if (item.note?.includes('[DUTY')) loadedDuty = key
@@ -123,6 +124,7 @@ export default function SchedulePage() {
               custom[key] = { start: customMatch[1], end: customMatch[2], note: '', request: '' }
             }
           })
+          setWeekNote(loadedWeekNote)
           setSelected(hydrated)
           setOriginal(cloneSelection(hydrated))
           setCustomData(custom)
@@ -138,6 +140,7 @@ export default function SchedulePage() {
             setEditing(false)
           }
         } else {
+          setWeekNote('')
           setSelected({})
           setOriginal({})
           setCustomData({})
@@ -478,6 +481,11 @@ export default function SchedulePage() {
                 </div>
               ))}
             </div>
+            {weekNote.trim() && (
+              <div className="mx-4 mb-3 rounded-2xl border border-slate-100 bg-white px-3 py-3 text-sm leading-6 text-slate-700 shadow-sm dark:border-white/10 dark:bg-slate-900 dark:text-slate-200">
+                <strong>Ghi chú:</strong> {weekNote.trim()}
+              </div>
+            )}
             {canEdit && (
               <div className="m-4 mt-2 grid grid-cols-2 gap-2">
                 <button type="button" onClick={() => void startEditing()} disabled={submitting} className="flex min-h-12 items-center justify-center gap-2 rounded-2xl border border-indigo-200 bg-indigo-50 font-bold text-indigo-700 disabled:opacity-60 dark:border-indigo-500/30 dark:bg-indigo-500/10 dark:text-indigo-200">
