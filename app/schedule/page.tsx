@@ -31,6 +31,7 @@ import type { WorkSchedule } from '@/lib/models/types'
 import { Header } from '@/components/layout/header'
 import { Badge } from '@/components/ui/badge'
 import { getManagementContact } from '@/lib/services/managementSettingsService'
+import { toMessengerUrl } from '@/lib/utils/messenger'
 
 type Shift = 'Morning' | 'Afternoon' | 'Evening' | 'Custom'
 type DayItem = { key: string; name: string; shortName: string; date: Date }
@@ -491,7 +492,7 @@ export default function SchedulePage() {
             )}
             <div className={`${canEdit ? 'mx-4 mb-4 -mt-1' : 'm-4'} border-t border-slate-100 pt-3 dark:border-white/10`}>
               {managerFacebookUrl ? (
-                <a href={managerFacebookUrl} target="_blank" rel="noreferrer" className="flex min-h-12 w-full items-center justify-center gap-2 rounded-2xl bg-blue-600 px-4 font-extrabold text-white shadow-lg shadow-blue-600/15 transition active:scale-[0.99]">
+                <a href={toMessengerUrl(managerFacebookUrl)} target="_blank" rel="noreferrer" className="flex min-h-12 w-full items-center justify-center gap-2 rounded-2xl bg-blue-600 px-4 font-extrabold text-white shadow-lg shadow-blue-600/15 transition active:scale-[0.99]">
                   <ExternalLink className="h-4 w-4" /> Liên hệ quản lí
                 </a>
               ) : (
