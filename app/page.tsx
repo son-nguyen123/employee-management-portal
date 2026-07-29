@@ -166,8 +166,6 @@ export default function Page() {
     { title: 'Danh sách nhân viên', note: 'Tài khoản đang hoạt động trong tháng', href: '/admin/dashboard#employees', icon: UsersRound },
     { title: 'Kho dữ liệu', note: 'Xem lịch sử đã lưu trên Google Drive', href: '/admin/archive', icon: Archive },
   ]
-  const staffRegistrationFeature = staffFeatures[0]
-  const StaffRegistrationIcon = staffRegistrationFeature.icon
   const collapsibleStaffFeatures = staffFeatures.slice(1)
 
   return (
@@ -273,27 +271,12 @@ export default function Page() {
 
         {isAdmin ? (
           <section>
-            <Link
-              href={staffRegistrationFeature.href}
-              className="mobile-card flex min-h-[92px] items-center gap-3 border-indigo-100 bg-gradient-to-r from-indigo-50/95 via-white to-sky-50/90 p-3 shadow-md shadow-indigo-950/5 transition active:scale-[0.99] dark:border-indigo-500/25 dark:from-indigo-500/15 dark:via-slate-900 dark:to-sky-500/10"
-            >
-              <div className={`grid h-12 w-12 shrink-0 place-items-center rounded-2xl text-white ${staffRegistrationFeature.tone}`}>
-                <StaffRegistrationIcon className="h-5 w-5" />
-              </div>
-              <div className="min-w-0 flex-1">
-                <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-indigo-600">Dành cho nhân viên</p>
-                <h2 className="mt-0.5 font-extrabold">{staffRegistrationFeature.title}</h2>
-                <p className="mt-1 truncate text-xs text-muted-foreground">{staffRegistrationFeature.note}</p>
-              </div>
-              <ChevronRight className="h-5 w-5 shrink-0 text-slate-400" />
-            </Link>
-
             <button
               type="button"
               onClick={() => setEmployeeModeOpen((current) => !current)}
               aria-expanded={employeeModeOpen}
               aria-controls="employee-mode-actions"
-              className={`mobile-card mt-3 flex min-h-20 w-full items-center gap-3 border-indigo-100 bg-gradient-to-r from-indigo-50/95 via-white to-sky-50/90 p-3 text-left shadow-md shadow-indigo-950/5 transition duration-300 active:scale-[0.99] dark:border-indigo-500/25 dark:from-indigo-500/15 dark:via-slate-900 dark:to-sky-500/10 ${employeeModeOpen ? 'border-indigo-200 from-indigo-100/90 to-sky-100/80 ring-4 ring-indigo-500/5 dark:border-indigo-500/40 dark:from-indigo-500/20 dark:to-sky-500/15' : ''}`}
+              className={`mobile-card flex min-h-20 w-full items-center gap-3 border-indigo-100 bg-gradient-to-r from-indigo-50/95 via-white to-sky-50/90 p-3 text-left shadow-md shadow-indigo-950/5 transition duration-300 active:scale-[0.99] dark:border-indigo-500/25 dark:from-indigo-500/15 dark:via-slate-900 dark:to-sky-500/10 ${employeeModeOpen ? 'border-indigo-200 from-indigo-100/90 to-sky-100/80 ring-4 ring-indigo-500/5 dark:border-indigo-500/40 dark:from-indigo-500/20 dark:to-sky-500/15' : ''}`}
             >
               <div className={`grid h-12 w-12 shrink-0 place-items-center rounded-2xl transition duration-300 ${employeeModeOpen ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-600/20' : 'bg-indigo-50 text-indigo-600 dark:bg-indigo-500/15'}`}>
                 <UserRound className="h-5 w-5" />
@@ -301,7 +284,7 @@ export default function Page() {
               <div className="min-w-0 flex-1">
                 <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-indigo-600">Chế độ nhân viên</p>
                 <h2 className="mt-0.5 font-extrabold">Các tiện ích dành cho bạn</h2>
-                <p className="mt-1 truncate text-xs text-muted-foreground">Đăng ký lịch · Xin nghỉ · Đi trễ · Ứng lương</p>
+                <p className="mt-1 truncate text-xs text-muted-foreground">Xin nghỉ · Đi trễ · Ứng lương · Tiện ích khác</p>
               </div>
               <div className="flex shrink-0 items-center gap-1.5 text-xs font-bold text-slate-500">
                 <span className="hidden sm:inline">{employeeModeOpen ? 'Thu gọn' : 'Mở'}</span>
