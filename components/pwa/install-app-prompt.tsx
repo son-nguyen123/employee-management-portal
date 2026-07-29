@@ -1,8 +1,8 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { Download, Smartphone, X } from 'lucide-react'
-import { useAuth } from '@/lib/hooks/useAuth'
+import Image from 'next/image'
+import { CheckCircle2, Download, MoreVertical, RotateCw, Smartphone } from 'lucide-react'
 
 interface BeforeInstallPromptEvent extends Event {
   prompt: () => Promise<void>
@@ -12,101 +12,151 @@ interface BeforeInstallPromptEvent extends Event {
   }>
 }
 
-const DISMISSED_AT_KEY = 'tricandy-install-prompt-dismissed-at'
-const SHOW_AGAIN_AFTER_MS = 7 * 24 * 60 * 60 * 1000
+const INSTALLED_KEY = 'tricandy-pwa-installed'
 
 function isInstalled(): boolean {
   return window.matchMedia('(display-mode: standalone)').matches
 }
 
 export function InstallAppPrompt() {
-  const { authUser } = useAuth()
   const [installEvent, setInstallEvent] = useState<BeforeInstallPromptEvent | null>(null)
-  const [visible, setVisible] = useState(false)
+  const [mode, setMode] = useState<'hidden' | 'checking' | 'ready' | 'manual'>('hidden')
+  const [installing, setInstalling] = useState(false)
 
   useEffect(() => {
-    if (!/Android/i.test(navigator.userAgent) || isInstalled()) return
+    const isAndroid = /Android/i.test(navigator.userAgent)
+    const installationRemembered = window.localStorage.getItem(INSTALLED_KEY) === 'true'
+    if (!isAndroid || isInstalled() || installationRemembered) return
+
+    setMode('checking')
+    const manualFallbackTimer = window.setTimeout(() => {
+      setMode((current) => current === 'checking' ? 'manual' : current)
+    }, 1800)
 
     const handleBeforeInstallPrompt = (event: Event) => {
       event.preventDefault()
-      const dismissedAt = Number(window.localStorage.getItem(DISMISSED_AT_KEY) || 0)
       setInstallEvent(event as BeforeInstallPromptEvent)
-      setVisible(Date.now() - dismissedAt >= SHOW_AGAIN_AFTER_MS)
+      setMode('ready')
     }
     const handleInstalled = () => {
+      window.localStorage.setItem(INSTALLED_KEY, 'true')
       setInstallEvent(null)
-      setVisible(false)
-      window.localStorage.removeItem(DISMISSED_AT_KEY)
+      setMode('hidden')
     }
 
     window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt)
     window.addEventListener('appinstalled', handleInstalled)
     return () => {
+      window.clearTimeout(manualFallbackTimer)
       window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt)
       window.removeEventListener('appinstalled', handleInstalled)
     }
   }, [])
 
-  const dismiss = () => {
-    window.localStorage.setItem(DISMISSED_AT_KEY, String(Date.now()))
-    setVisible(false)
-  }
-
   const install = async () => {
     if (!installEvent) return
 
-    await installEvent.prompt()
-    const choice = await installEvent.userChoice
-    setInstallEvent(null)
-    setVisible(false)
-    if (choice.outcome === 'dismissed') {
-      window.localStorage.setItem(DISMISSED_AT_KEY, String(Date.now()))
+    setInstalling(true)
+    try {
+      await installEvent.prompt()
+      const choice = await installEvent.userChoice
+      setInstallEvent(null)
+      if (choice.outcome === 'accepted') {
+        window.localStorage.setItem(INSTALLED_KEY, 'true')
+        setMode('hidden')
+      } else {
+        setMode('manual')
+      }
+    } finally {
+      setInstalling(false)
     }
   }
 
-  if (!authUser || !visible || !installEvent) return null
+  if (mode === 'hidden') return null
 
   return (
-    <aside
-      aria-label="Cài ứng dụng Trí Candy"
-      className="fixed inset-x-3 bottom-[calc(5.25rem+env(safe-area-inset-bottom))] z-[70] mx-auto max-w-md overflow-hidden rounded-3xl border border-indigo-200 bg-white shadow-2xl shadow-indigo-950/20 dark:border-indigo-500/30 dark:bg-slate-950 md:bottom-5"
-    >
-      <div className="flex items-start gap-3 p-4">
-        <div className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-gradient-to-br from-indigo-600 to-violet-600 text-white shadow-lg shadow-indigo-600/20">
-          <Smartphone className="h-5 w-5" />
-        </div>
-        <div className="min-w-0 flex-1">
-          <p className="font-extrabold">Cài Trí Candy</p>
-          <p className="mt-1 text-xs leading-5 text-muted-foreground">
-            Thêm biểu tượng vào màn hình chính để mở nhanh. Không cần CH Play.
-          </p>
-        </div>
-        <button
-          type="button"
-          onClick={dismiss}
-          aria-label="Để sau"
-          className="grid h-9 w-9 shrink-0 place-items-center rounded-xl text-slate-500 transition hover:bg-slate-100 dark:hover:bg-slate-800"
-        >
-          <X className="h-4 w-4" />
-        </button>
-      </div>
-      <div className="grid grid-cols-[.8fr_1.2fr] gap-2 border-t border-slate-100 p-3 dark:border-slate-800">
-        <button
-          type="button"
-          onClick={dismiss}
-          className="min-h-11 rounded-2xl font-bold text-slate-600 transition active:scale-[0.98] dark:text-slate-300"
-        >
-          Để sau
-        </button>
-        <button
-          type="button"
-          onClick={() => void install()}
-          className="flex min-h-11 items-center justify-center gap-2 rounded-2xl bg-indigo-600 px-4 font-extrabold text-white shadow-lg shadow-indigo-600/20 transition active:scale-[0.98]"
-        >
-          <Download className="h-4 w-4" />
-          Cài ứng dụng
-        </button>
-      </div>
-    </aside>
+    <div className="fixed inset-0 z-[100] overflow-y-auto bg-slate-100 px-4 py-[max(1.25rem,env(safe-area-inset-top))] dark:bg-slate-950">
+      <main className="mx-auto flex min-h-[calc(100svh-2.5rem)] max-w-md items-center justify-center">
+        <section className="w-full overflow-hidden rounded-[2rem] border border-indigo-100 bg-white shadow-2xl shadow-indigo-950/10 dark:border-indigo-500/20 dark:bg-slate-900">
+          <div className="bg-gradient-to-br from-indigo-600 to-violet-600 px-6 py-8 text-center text-white">
+            <Image
+              src="/pwa-maskable-512.png"
+              alt="Trí Candy"
+              width={88}
+              height={88}
+              className="mx-auto h-22 w-22 rounded-[1.75rem] object-cover shadow-xl shadow-indigo-950/25"
+              priority
+            />
+            <p className="mt-5 text-xs font-black uppercase tracking-[0.2em] text-indigo-100">Ứng dụng nhân sự</p>
+            <h1 className="mt-2 text-2xl font-black">Cài Trí Candy trước khi sử dụng</h1>
+            <p className="mx-auto mt-2 max-w-xs text-sm leading-6 text-indigo-100">
+              Chỉ cài biểu tượng từ Chrome, không tải APK và không cần CH Play.
+            </p>
+          </div>
+
+          <div className="p-5">
+            {mode === 'checking' && (
+              <div className="flex min-h-40 flex-col items-center justify-center text-center">
+                <RotateCw className="h-7 w-7 animate-spin text-indigo-600" />
+                <p className="mt-4 font-extrabold">Đang kiểm tra khả năng cài đặt…</p>
+              </div>
+            )}
+
+            {mode === 'ready' && (
+              <>
+                <div className="space-y-3 text-sm">
+                  <div className="flex items-center gap-3 rounded-2xl bg-emerald-50 p-3 text-emerald-800 dark:bg-emerald-500/10 dark:text-emerald-200">
+                    <CheckCircle2 className="h-5 w-5 shrink-0" />
+                    <p className="font-bold">Điện thoại đã sẵn sàng cài đặt.</p>
+                  </div>
+                  <p className="text-center leading-6 text-muted-foreground">
+                    Sau khi cài, biểu tượng Trí Candy sẽ xuất hiện ngoài màn hình điện thoại.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => void install()}
+                  disabled={installing}
+                  className="mt-5 flex min-h-13 w-full items-center justify-center gap-2 rounded-2xl bg-indigo-600 px-4 font-extrabold text-white shadow-lg shadow-indigo-600/20 transition active:scale-[0.98] disabled:opacity-60"
+                >
+                  {installing ? <RotateCw className="h-5 w-5 animate-spin" /> : <Download className="h-5 w-5" />}
+                  {installing ? 'Đang mở cài đặt…' : 'Cài ứng dụng'}
+                </button>
+              </>
+            )}
+
+            {mode === 'manual' && (
+              <>
+                <div className="flex items-start gap-3 rounded-2xl bg-amber-50 p-4 text-amber-950 dark:bg-amber-500/10 dark:text-amber-100">
+                  <MoreVertical className="mt-0.5 h-5 w-5 shrink-0" />
+                  <div>
+                    <p className="font-extrabold">Cài thủ công bằng Chrome</p>
+                    <ol className="mt-2 list-decimal space-y-1 pl-4 text-sm leading-6">
+                      <li>Mở đường link này bằng Google Chrome.</li>
+                      <li>Nhấn menu ⋮ ở góc trên.</li>
+                      <li>Chọn “Cài đặt ứng dụng”.</li>
+                      <li>Mở Trí Candy từ biểu tượng ngoài màn hình.</li>
+                    </ol>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => window.location.reload()}
+                  className="mt-4 flex min-h-12 w-full items-center justify-center gap-2 rounded-2xl border border-indigo-200 bg-indigo-50 font-extrabold text-indigo-700 transition active:scale-[0.98] dark:border-indigo-500/30 dark:bg-indigo-500/10 dark:text-indigo-200"
+                >
+                  <RotateCw className="h-4 w-4" />
+                  Kiểm tra lại
+                </button>
+              </>
+            )}
+
+            <div className="mt-5 flex items-center justify-center gap-2 text-xs font-semibold text-slate-400">
+              <Smartphone className="h-4 w-4" />
+              Màn hình này chỉ hiển thị trên Android chưa cài app
+            </div>
+          </div>
+        </section>
+      </main>
+    </div>
   )
 }
