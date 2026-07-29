@@ -225,33 +225,39 @@ export default function ProfilePage() {
             </p>
           )}
 
-          <button
-            type="button"
-            disabled={
-              isSaving ||
-              isPreviewMode ||
-              cannotEnable
-            }
-            onClick={
-              isRegistered
-                ? handleDisableNotifications
-                : handleEnableNotifications
-            }
-            className={`mt-4 flex min-h-12 w-full items-center justify-center gap-2 rounded-2xl px-4 text-sm font-extrabold text-white transition disabled:cursor-not-allowed disabled:opacity-50 ${
-              isRegistered
-                ? 'bg-slate-700 hover:bg-slate-800'
-                : 'bg-indigo-600 hover:bg-indigo-700'
-            }`}
-          >
-            {isSaving && <LoaderCircle className="h-4 w-4 animate-spin" />}
-            {isRegistered
-              ? 'Tắt thông báo trên thiết bị này'
-              : permission === 'granted'
-                ? 'Hoàn tất đăng ký thiết bị'
-              : permission === 'denied'
-                ? 'Mở quyền trong cài đặt trình duyệt'
-                : 'Bật thông báo'}
-          </button>
+          {isRegistered && employee?.role === 'employee' && !isPreviewMode ? (
+            <div className="mt-4 flex min-h-12 items-center justify-center gap-2 rounded-2xl bg-emerald-50 px-4 text-sm font-extrabold text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-300">
+              <BellRing className="h-4 w-4" /> Thông báo bắt buộc đang bật
+            </div>
+          ) : (
+            <button
+              type="button"
+              disabled={
+                isSaving ||
+                isPreviewMode ||
+                cannotEnable
+              }
+              onClick={
+                isRegistered
+                  ? handleDisableNotifications
+                  : handleEnableNotifications
+              }
+              className={`mt-4 flex min-h-12 w-full items-center justify-center gap-2 rounded-2xl px-4 text-sm font-extrabold text-white transition disabled:cursor-not-allowed disabled:opacity-50 ${
+                isRegistered
+                  ? 'bg-slate-700 hover:bg-slate-800'
+                  : 'bg-indigo-600 hover:bg-indigo-700'
+              }`}
+            >
+              {isSaving && <LoaderCircle className="h-4 w-4 animate-spin" />}
+              {isRegistered
+                ? 'Tắt thông báo trên thiết bị này'
+                : permission === 'granted'
+                  ? 'Hoàn tất đăng ký thiết bị'
+                : permission === 'denied'
+                  ? 'Mở quyền trong cài đặt trình duyệt'
+                  : 'Bật thông báo'}
+            </button>
+          )}
         </section>
       </PageContainer>
     </main>

@@ -3,6 +3,7 @@ import type { Metadata, Viewport } from 'next'
 import { ThemeProvider } from '@/components/providers/theme-provider'
 import { SkipLoginFAB } from '@/components/demo/skip-login-fab'
 import { ForegroundNotificationListener } from '@/components/notifications/foreground-notification-listener'
+import { NotificationPermissionGate } from '@/components/notifications/notification-permission-gate'
 import { AuthProvider } from '@/lib/hooks/useAuth'
 import { ProfileCompletionGuard } from '@/components/auth/profile-completion-guard'
 import { PersistentBottomNav } from '@/components/layout/persistent-bottom-nav'
@@ -62,7 +63,9 @@ export default function RootLayout({
             <SkipLoginFAB />
             <ServiceWorkerRegistrar />
             <ForegroundNotificationListener />
-            <ProfileCompletionGuard>{children}</ProfileCompletionGuard>
+            <ProfileCompletionGuard>
+              <NotificationPermissionGate>{children}</NotificationPermissionGate>
+            </ProfileCompletionGuard>
             <InstallAppPrompt />
             <PersistentBottomNav />
             {process.env.NODE_ENV === 'production' && <Analytics />}
