@@ -47,7 +47,9 @@ export function PersistentBottomNav() {
       <div className="h-[calc(4.5rem+env(safe-area-inset-bottom))] md:hidden" aria-hidden />
       <BottomNav items={[
         { href: '/', icon: <LayoutDashboard className="h-5 w-5" />, label: 'Trang chủ' },
-        { href: '/schedule', icon: <CalendarDays className="h-5 w-5" />, label: 'Lịch làm' },
+        isManagement
+          ? { href: '/admin/dashboard', icon: <LayoutDashboard className="h-5 w-5" />, label: 'Quản trị' }
+          : { href: '/schedule', icon: <CalendarDays className="h-5 w-5" />, label: 'Lịch làm' },
         {
           href: '/notifications',
           icon: <Bell className="h-5 w-5" />,

@@ -7,6 +7,7 @@ import {
   AlertTriangle,
   BookOpenText,
   CalendarDays,
+  ChevronDown,
   ChevronRight,
   CircleDollarSign,
   ClipboardList,
@@ -51,6 +52,7 @@ export default function Page() {
   const { theme, setTheme } = useTheme()
   const [adminStats, setAdminStats] = useState({ confirmed: 0, total: 0, pending: 0 })
   const [showNewEmployeePrompt, setShowNewEmployeePrompt] = useState(false)
+  const [employeeModeOpen, setEmployeeModeOpen] = useState(false)
 
   useEffect(() => {
     if (!isLoading && !authUser) router.push('/auth/login')
@@ -257,31 +259,60 @@ export default function Page() {
           </section>
         )}
 
-        <section>
-          <div className="mb-3">
-            <p className="text-xs font-bold uppercase tracking-[0.14em] text-indigo-600">
-              {isAdmin ? 'Chế độ nhân viên' : 'Tiện ích'}
-            </p>
-            <h2 className="text-xl font-extrabold tracking-tight">Bạn muốn làm gì?</h2>
-          </div>
-          <div className="grid grid-cols-2 gap-3">
-            {staffFeatures.map(({ title, note, href, icon: Icon, tone }, index) => (
-              <Link
-                key={title}
-                href={href}
-                className={`mobile-card flex min-h-[148px] flex-col p-4 transition active:scale-[0.98] ${index === 0 ? 'col-span-2 min-h-[118px]' : ''}`}
-              >
-                <div className={`grid h-11 w-11 place-items-center rounded-2xl text-white ${tone}`}>
-                  <Icon className="h-5 w-5" />
+        {isAdmin ? (
+          <section>
+            <button
+              type="button"
+              onClick={() => setEmployeeModeOpen((current) => !current)}
+              aria-expanded={employeeModeOpen}
+              aria-controls="employee-mode-actions"
+              className={`mobile-card flex min-h-20 w-full items-center gap-3 p-3 text-left transition duration-300 active:scale-[0.99] ${employeeModeOpen ? 'border-indigo-200 ring-4 ring-indigo-500/5 dark:border-indigo-500/30' : ''}`}
+            >
+              <div className={`grid h-12 w-12 shrink-0 place-items-center rounded-2xl transition duration-300 ${employeeModeOpen ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-600/20' : 'bg-indigo-50 text-indigo-600 dark:bg-indigo-500/15'}`}>
+                <UserRound className="h-5 w-5" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-indigo-600">Chế độ nhân viên</p>
+                <h2 className="mt-0.5 font-extrabold">Các tiện ích dành cho bạn</h2>
+                <p className="mt-1 truncate text-xs text-muted-foreground">Đăng ký lịch · Xin nghỉ · Đi trễ · Ứng lương</p>
+              </div>
+              <div className="flex shrink-0 items-center gap-1.5 text-xs font-bold text-slate-500">
+                <span className="hidden sm:inline">{employeeModeOpen ? 'Thu gọn' : 'Mở'}</span>
+                <ChevronDown className={`h-5 w-5 transition-transform duration-300 ${employeeModeOpen ? 'rotate-180 text-indigo-600' : ''}`} />
+              </div>
+            </button>
+
+            <div id="employee-mode-actions" aria-hidden={!employeeModeOpen} className={`grid transition-[grid-template-rows,opacity] duration-300 ease-out ${employeeModeOpen ? 'grid-rows-[1fr] opacity-100' : 'grid-rows-[0fr] opacity-0'}`}>
+              <div className="overflow-hidden">
+                <div className="grid grid-cols-2 gap-3 pt-3">
+                  {staffFeatures.map(({ title, note, href, icon: Icon, tone }, index) => (
+                    <Link
+                      key={title}
+                      href={href}
+                      tabIndex={employeeModeOpen ? undefined : -1}
+                      className={`mobile-card flex min-h-[108px] flex-col p-3 transition active:scale-[0.98] ${index === staffFeatures.length - 1 ? 'col-span-2 min-h-[92px]' : ''}`}
+                    >
+                      <div className={`grid h-10 w-10 place-items-center rounded-xl text-white ${tone}`}><Icon className="h-4.5 w-4.5" /></div>
+                      <div className="mt-auto pt-3"><h3 className="text-sm font-extrabold leading-tight">{title}</h3><p className="mt-1 truncate text-[11px] text-muted-foreground">{note}</p></div>
+                    </Link>
+                  ))}
                 </div>
-                <div className="mt-auto pt-4">
-                  <h3 className="font-extrabold leading-tight">{title}</h3>
-                  <p className="mt-1 line-clamp-2 text-xs leading-5 text-muted-foreground">{note}</p>
-                </div>
-              </Link>
-            ))}
-          </div>
-        </section>
+              </div>
+            </div>
+          </section>
+        ) : (
+          <section>
+            <div className="mb-3"><p className="text-xs font-bold uppercase tracking-[0.14em] text-indigo-600">Tiện ích</p><h2 className="text-xl font-extrabold tracking-tight">Bạn muốn làm gì?</h2></div>
+            <div className="grid grid-cols-2 gap-3">
+              {staffFeatures.map(({ title, note, href, icon: Icon, tone }, index) => (
+                <Link key={title} href={href} className={`mobile-card flex min-h-[148px] flex-col p-4 transition active:scale-[0.98] ${index === 0 ? 'col-span-2 min-h-[118px]' : ''}`}>
+                  <div className={`grid h-11 w-11 place-items-center rounded-2xl text-white ${tone}`}><Icon className="h-5 w-5" /></div>
+                  <div className="mt-auto pt-4"><h3 className="font-extrabold leading-tight">{title}</h3><p className="mt-1 line-clamp-2 text-xs leading-5 text-muted-foreground">{note}</p></div>
+                </Link>
+              ))}
+            </div>
+          </section>
+        )}
       </div>
 
     </main>
