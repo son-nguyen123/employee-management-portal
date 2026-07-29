@@ -49,14 +49,20 @@ export async function signIn(email: string, password: string): Promise<User> {
 export async function signInWithGoogle(): Promise<User> {
   let hasLeftApp = false
   let returnTimer: ReturnType<typeof setTimeout> | undefined
-  let rejectWhenReturned: ((reason: Error) => void) | undefined
+  let stopWatchingAuth: (() => void) | undefined
+  let rejectWhenIncomplete: ((reason: Error) => void) | undefined
 
-  const popupClosedError = Object.assign(
-    new Error('Google sign-in window was closed before completion.'),
-    { code: 'auth/popup-closed-by-user' }
+  const incompleteError = Object.assign(
+    new Error('Google sign-in did not complete after returning to the app.'),
+    { code: 'auth/sign-in-incomplete' }
   )
   const returnedWithoutResult = new Promise<never>((_, reject) => {
-    rejectWhenReturned = reject
+    rejectWhenIncomplete = reject
+  })
+  const authenticatedUser = new Promise<User>((resolve) => {
+    stopWatchingAuth = onAuthStateChanged(auth, (user) => {
+      if (user) resolve(user)
+    })
   })
   const markAppHidden = () => {
     hasLeftApp = true
@@ -72,31 +78,29 @@ export async function signInWithGoogle(): Promise<User> {
     if (!hasLeftApp) return
     if (returnTimer) clearTimeout(returnTimer)
     returnTimer = setTimeout(() => {
-      if (!auth.currentUser) rejectWhenReturned?.(popupClosedError)
-    }, 1800)
+      if (!auth.currentUser) rejectWhenIncomplete?.(incompleteError)
+    }, 12000)
   }
 
   try {
     const provider = new GoogleAuthProvider()
     provider.setCustomParameters({ prompt: 'select_account' })
-    window.addEventListener('blur', markAppHidden)
-    window.addEventListener('focus', handleAppReturn)
     window.addEventListener('pagehide', markAppHidden)
     window.addEventListener('pageshow', handleAppReturn)
     document.addEventListener('visibilitychange', handleVisibilityChange)
 
-    const userCredential = await Promise.race([
-      signInWithPopup(auth, provider),
+    const user = await Promise.race([
+      signInWithPopup(auth, provider).then((credential) => credential.user),
+      authenticatedUser,
       returnedWithoutResult,
     ])
-    return userCredential.user
+    return user
   } catch (error) {
     console.error('Error signing in with Google:', error)
     throw error
   } finally {
     if (returnTimer) clearTimeout(returnTimer)
-    window.removeEventListener('blur', markAppHidden)
-    window.removeEventListener('focus', handleAppReturn)
+    stopWatchingAuth?.()
     window.removeEventListener('pagehide', markAppHidden)
     window.removeEventListener('pageshow', handleAppReturn)
     document.removeEventListener('visibilitychange', handleVisibilityChange)

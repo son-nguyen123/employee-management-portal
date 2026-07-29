@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState } from 'react'
+import React, { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import Image from 'next/image'
@@ -8,14 +8,20 @@ import { Mail, Lock, AlertCircle, Loader2 } from 'lucide-react'
 import { signIn, signInWithGoogle } from '@/lib/services/authService'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui/card'
 import { AuthShell } from '@/components/auth/auth-shell'
+import { useAuth } from '@/lib/hooks/useAuth'
 
 export function LoginForm() {
   const router = useRouter()
+  const { authUser } = useAuth()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
   const [loadingAction, setLoadingAction] = useState<'password' | 'google' | null>(null)
   const loading = loadingAction !== null
+
+  useEffect(() => {
+    if (authUser) router.replace('/')
+  }, [authUser, router])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -48,8 +54,14 @@ export function LoginForm() {
     } catch (err: any) {
       setError(
         err?.code === 'auth/popup-closed-by-user'
-          ? 'Bạn đã hủy đăng nhập Google'
-          : 'Không thể đăng nhập bằng Google'
+          ? 'Bạn đã đóng cửa sổ đăng nhập Google.'
+          : err?.code === 'auth/sign-in-incomplete'
+            ? 'Đăng nhập Google chưa hoàn tất. Vui lòng thử lại.'
+            : err?.code === 'auth/popup-blocked'
+              ? 'Trình duyệt đang chặn cửa sổ Google. Vui lòng cho phép cửa sổ bật lên rồi thử lại.'
+              : err?.code === 'auth/network-request-failed'
+                ? 'Mạng không ổn định. Vui lòng kiểm tra kết nối rồi thử lại.'
+                : 'Không thể đăng nhập bằng Google.'
       )
     } finally {
       setLoadingAction(null)
