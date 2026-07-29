@@ -256,11 +256,11 @@ export default function AdminRequestsPage() {
 
   const visibleRows = rows.filter((row) => filter === 'all' || row.type === filter)
   const meta = {
-    leave: { icon: FileText, iconStyle: 'bg-emerald-50 text-emerald-600 ring-emerald-100 dark:bg-emerald-500/10 dark:text-emerald-300 dark:ring-emerald-500/20', accent: 'bg-emerald-500', label: 'Xin nghỉ' },
-    late: { icon: Clock3, iconStyle: 'bg-amber-50 text-amber-600 ring-amber-100 dark:bg-amber-500/10 dark:text-amber-300 dark:ring-amber-500/20', accent: 'bg-amber-500', label: 'Đi trễ' },
-    salary: { icon: CircleDollarSign, iconStyle: 'bg-sky-50 text-sky-600 ring-sky-100 dark:bg-sky-500/10 dark:text-sky-300 dark:ring-sky-500/20', accent: 'bg-sky-500', label: 'Ứng lương' },
-    overtime: { icon: CalendarPlus, iconStyle: 'bg-blue-50 text-blue-600 ring-blue-100 dark:bg-blue-500/10 dark:text-blue-300 dark:ring-blue-500/20', accent: 'bg-blue-500', label: 'Làm thêm' },
-    note: { icon: MessageSquareText, iconStyle: 'bg-cyan-50 text-cyan-600 ring-cyan-100 dark:bg-cyan-500/10 dark:text-cyan-300 dark:ring-cyan-500/20', accent: 'bg-cyan-500', label: 'Ghi chú' },
+    leave: { icon: FileText, label: 'Xin nghỉ' },
+    late: { icon: Clock3, label: 'Đi trễ' },
+    salary: { icon: CircleDollarSign, label: 'Ứng lương' },
+    overtime: { icon: CalendarPlus, label: 'Làm thêm' },
+    note: { icon: MessageSquareText, label: 'Ghi chú' },
   }
   const filterItems: Array<{ value: 'all' | RequestType; label: string; count: number }> = [
     { value: 'all', label: 'Tất cả', count: rows.length },
@@ -344,24 +344,23 @@ export default function AdminRequestsPage() {
           </div>}
         </section>
         <section className="order-1">
-        <div className="mb-4 flex items-end justify-between gap-3">
+        <div className="mb-3 flex items-end justify-between gap-3">
           <div><p className="text-[11px] font-black uppercase tracking-[0.16em] text-indigo-600">Yêu cầu chờ xử lý</p><h2 className="mt-0.5 text-[1.45rem] font-black tracking-tight">Nhân viên vừa gửi</h2></div>
-          <div className="flex h-9 items-center gap-2 rounded-2xl border border-indigo-100 bg-white px-3 text-xs font-extrabold text-indigo-700 shadow-sm dark:border-indigo-500/20 dark:bg-slate-900 dark:text-indigo-300">
-            <span className="h-2 w-2 rounded-full bg-indigo-500" />{rows.length} yêu cầu
-          </div>
+          <p className="pb-1 text-xs font-bold text-slate-500 dark:text-slate-400">{rows.length} đang chờ</p>
         </div>
-        <div className="-mx-3 overflow-x-auto px-3 pb-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden sm:mx-0 sm:px-0">
-          <div className="flex w-max gap-1 rounded-[1.35rem] border border-slate-200/80 bg-white/80 p-1.5 shadow-sm backdrop-blur dark:border-white/10 dark:bg-slate-900/80">
+        <div className="-mx-3 overflow-x-auto border-y border-slate-200/80 bg-white/70 px-3 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden dark:border-white/10 dark:bg-slate-900/60 sm:mx-0 sm:rounded-2xl sm:border sm:px-2">
+          <div className="flex w-max">
             {filterItems.map((item) => (
               <button
                 key={item.value}
                 type="button"
                 onClick={() => setFilter(item.value)}
                 aria-pressed={filter === item.value}
-                className={`flex h-11 min-w-[96px] shrink-0 items-center justify-center gap-2 rounded-2xl px-3 text-sm font-extrabold transition duration-200 active:scale-[0.98] ${filter === item.value ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-600/20' : 'text-slate-500 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800'}`}
+                className={`relative flex h-12 min-w-[92px] shrink-0 items-center justify-center gap-1.5 px-3 text-sm font-bold transition-colors ${filter === item.value ? 'text-indigo-700 dark:text-indigo-300' : 'text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-200'}`}
               >
                 {item.label}
-                <span className={`grid h-5 min-w-5 place-items-center rounded-full px-1 text-[10px] font-black ${filter === item.value ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-300'}`}>{item.count}</span>
+                <span className="text-[11px] font-extrabold text-slate-400 dark:text-slate-500">{item.count}</span>
+                {filter === item.value && <span className="absolute inset-x-3 bottom-0 h-0.5 rounded-full bg-indigo-600" />}
               </button>
             ))}
           </div>
@@ -370,28 +369,26 @@ export default function AdminRequestsPage() {
         {loading ? (
           <div className="grid min-h-56 place-items-center"><Loader2 className="h-7 w-7 animate-spin text-indigo-600" /></div>
         ) : (
-          <div className="mt-4 space-y-3.5">
+          <div className="mt-4 space-y-3">
             {visibleRows.map((row) => {
               const itemMeta = meta[row.type]
               const Icon = itemMeta.icon
               const employee = employees.find((item) => item.uid === row.employeeId)
               return (
-                <article key={`${row.type}-${row.id}`} className="relative overflow-hidden rounded-[1.75rem] border border-slate-200/80 bg-white shadow-[0_10px_30px_-18px_rgba(15,23,42,0.35)] dark:border-white/10 dark:bg-slate-900">
-                  <div className={`absolute inset-y-6 left-0 w-1 rounded-r-full ${itemMeta.accent}`} />
-                  <div className="p-4 pl-5">
+                <article key={`${row.type}-${row.id}`} className="rounded-3xl border border-slate-200/80 bg-white p-4 shadow-[0_8px_24px_-20px_rgba(15,23,42,0.45)] dark:border-white/10 dark:bg-slate-900">
                     <div className="flex items-start gap-3">
-                      <div className={`grid h-12 w-12 shrink-0 place-items-center rounded-2xl ring-1 ring-inset ${itemMeta.iconStyle}`}><Icon className="h-5 w-5" /></div>
-                      <div className="min-w-0 flex-1 pt-0.5">
-                        <p className="text-[10px] font-black uppercase tracking-[0.14em] text-slate-400">{itemMeta.label}</p>
-                        <h2 className="mt-0.5 text-[17px] font-black leading-tight tracking-tight">{row.title}</h2>
-                        <p className="mt-1 truncate text-xs font-bold text-indigo-600 dark:text-indigo-300">{row.employeeName}</p>
+                      <div className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-indigo-50 text-indigo-600 dark:bg-indigo-500/10 dark:text-indigo-300"><Icon className="h-5 w-5" /></div>
+                      <div className="min-w-0 flex-1">
+                        <p className="text-[10px] font-extrabold uppercase tracking-[0.12em] text-slate-400">{itemMeta.label}</p>
+                        <h2 className="mt-0.5 text-base font-extrabold leading-tight tracking-tight">{row.title}</h2>
+                        <p className="mt-1 truncate text-xs font-semibold text-slate-500 dark:text-slate-400">{row.employeeName}</p>
                       </div>
-                      <span className="flex h-8 shrink-0 items-center gap-1.5 rounded-xl bg-amber-50 px-2.5 text-[11px] font-extrabold text-amber-700 ring-1 ring-inset ring-amber-100 dark:bg-amber-500/10 dark:text-amber-300 dark:ring-amber-500/20">
-                        <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />Chờ duyệt
+                      <span className="flex h-7 shrink-0 items-center gap-1.5 rounded-lg bg-slate-100 px-2 text-[10px] font-bold text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+                        <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />Chờ xử lý
                       </span>
                     </div>
 
-                    <div className="mt-3 rounded-2xl bg-slate-50 px-3.5 py-3 text-sm leading-5 text-slate-600 dark:bg-slate-800/80 dark:text-slate-300">
+                    <div className="mt-3 border-t border-slate-100 pt-3 text-sm leading-5 text-slate-600 dark:border-white/10 dark:text-slate-300">
                       {row.detail}
                     </div>
                       {!!row.shifts?.length && (
@@ -404,15 +401,12 @@ export default function AdminRequestsPage() {
                         </div>
                       )}
 
-                    <div className="mt-3 grid grid-cols-2 gap-2">
-                      <a href={`tel:${employee?.phone || ''}`} className="flex h-11 items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-white text-xs font-extrabold text-slate-700 transition active:scale-[0.98] dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200"><Phone className="h-4 w-4" /> Gọi điện</a>
-                      <a href={employee?.facebookUrl || 'https://facebook.com/'} target="_blank" rel="noreferrer" className="flex h-11 items-center justify-center gap-2 rounded-2xl border border-blue-200 bg-blue-50 text-xs font-extrabold text-blue-700 transition active:scale-[0.98] dark:border-blue-500/30 dark:bg-blue-500/10 dark:text-blue-300"><ExternalLink className="h-4 w-4" /> Facebook</a>
+                    <div className="mt-4 grid grid-cols-2 gap-2 border-t border-slate-100 pt-4 dark:border-white/10">
+                      <a href={`tel:${employee?.phone || ''}`} className="flex h-11 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white text-xs font-bold text-slate-700 transition active:scale-[0.98] dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200"><Phone className="h-4 w-4" /> Gọi điện</a>
+                      <a href={employee?.facebookUrl || 'https://facebook.com/'} target="_blank" rel="noreferrer" className="flex h-11 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white text-xs font-bold text-slate-700 transition active:scale-[0.98] dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200"><ExternalLink className="h-4 w-4" /> Facebook</a>
+                      <button type="button" onClick={() => setRejectingRow(row)} className="flex h-11 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white text-xs font-bold text-slate-700 transition active:scale-[0.98] dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200"><X className="h-4 w-4" /> Từ chối</button>
+                      <button type="button" onClick={() => process(row, 'Approved')} className="flex h-11 items-center justify-center gap-2 rounded-xl bg-indigo-600 text-xs font-bold text-white transition active:scale-[0.98]"><Check className="h-4 w-4" /> Duyệt</button>
                     </div>
-                  </div>
-                  <div className="grid grid-cols-2 gap-2 border-t border-slate-100 bg-slate-50/70 p-3 dark:border-white/10 dark:bg-slate-950/30">
-                    <button type="button" onClick={() => setRejectingRow(row)} className="flex h-12 items-center justify-center gap-2 rounded-2xl border border-rose-200 bg-white text-sm font-extrabold text-rose-600 transition active:scale-[0.98] dark:border-rose-500/30 dark:bg-slate-900"><X className="h-4 w-4" /> Từ chối</button>
-                    <button type="button" onClick={() => process(row, 'Approved')} className="flex h-12 items-center justify-center gap-2 rounded-2xl bg-emerald-600 text-sm font-extrabold text-white shadow-lg shadow-emerald-600/15 transition active:scale-[0.98]"><Check className="h-4 w-4" /> Duyệt</button>
-                  </div>
                 </article>
               )
             })}
