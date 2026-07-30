@@ -15,7 +15,7 @@ import {
   Clock3,
   Factory,
   CalendarPlus,
-  StickyNote,
+  Settings,
   Archive,
   LayoutDashboard,
   History,
@@ -41,8 +41,7 @@ const staffFeatures = [
   { title: 'Xin nghỉ', note: 'Chọn ngày, ca và lý do nghỉ', href: '/leave-request', icon: ClipboardList, tone: 'bg-emerald-600' },
   { title: 'Ứng lương', note: 'Theo dõi yêu cầu trong tháng', href: '/salary-advance', icon: CircleDollarSign, tone: 'bg-sky-600' },
   { title: 'Khoản phạt', note: 'Xem lịch sử và nguồn phát sinh', href: '/penalties', icon: AlertTriangle, tone: 'bg-rose-600' },
-  { title: 'Xin làm thêm', note: 'Chọn ca muốn làm thêm từ lịch đã duyệt', href: '/schedule?mode=overtime', icon: CalendarPlus, tone: 'bg-fuchsia-600' },
-  { title: 'Ghi chú', note: 'Gửi lời nhắn riêng cho quản lý', href: '/staff-note', icon: StickyNote, tone: 'bg-cyan-600' },
+  { title: 'Đổi / thêm ca', note: 'Đổi ca cũ hoặc đăng ký làm thêm', href: '/schedule?mode=change', icon: CalendarPlus, tone: 'bg-fuchsia-600' },
   { title: 'Điều khoản công ty', note: 'Quy định và hướng dẫn chung', href: '/rules', icon: BookOpenText, tone: 'bg-violet-600' },
   { title: 'Công việc trong xưởng', note: 'Danh sách công việc được giao', href: '/workshop', icon: Factory, tone: 'bg-slate-700' },
 ]
@@ -159,12 +158,13 @@ export default function Page() {
   const displayName = employee?.fullName || authUser.displayName || 'Nhân viên'
   const isAdmin = role === 'admin' || role === 'manager'
   const adminFeatures = [
-    { title: 'Đăng ký lịch', note: `${adminStats.pending} nhân viên đang chờ xác nhận`, href: '/admin/dashboard#schedules', icon: ShieldCheck },
+    { title: 'Điều hành', note: `${adminStats.pending} lịch chờ duyệt · yêu cầu khác`, href: '/admin/dashboard#schedules', icon: ShieldCheck },
     { title: 'Nhân sự tuần tới', note: 'Xem người làm theo từng ngày và ca', href: '/admin/next-week', icon: CalendarRange },
-    { title: 'Điều hành', note: 'Yêu cầu nhân viên · khoản phạt', href: '/admin/requests', icon: LayoutDashboard },
+    { title: 'Quản lý phạt', note: 'Nhân viên · danh sách khoản phạt', href: '/admin/requests?view=penalties', icon: LayoutDashboard },
     { title: 'Lịch sử xử lý', note: 'Xem và sửa quyết định trong tuần', href: '/admin/history', icon: History },
-    { title: 'Danh sách nhân viên', note: 'Tài khoản đang hoạt động trong tháng', href: '/admin/dashboard#employees', icon: UsersRound },
+    { title: 'Danh sách nhân viên', note: 'Tên, mã nhân viên và số điện thoại', href: '/admin/dashboard?view=employees#employees', icon: UsersRound },
     { title: 'Kho dữ liệu', note: 'Xem lịch sử đã lưu trên Google Drive', href: '/admin/archive', icon: Archive },
+    { title: 'Cài đặt', note: 'Email biên nhận và cấu hình quản lý', href: '/admin/settings', icon: Settings },
   ]
   const collapsibleStaffFeatures = staffFeatures.slice(1)
 

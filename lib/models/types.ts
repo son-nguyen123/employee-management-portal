@@ -47,7 +47,7 @@ export interface WorkSchedule {
   updatedAt: Timestamp | Date
 }
 
-export type StaffRequestType = 'overtime' | 'note'
+export type StaffRequestType = 'overtime' | 'note' | 'scheduleChange'
 export type StaffRequestStatus = 'Pending' | 'Approved' | 'Rejected'
 
 export interface StaffRequestShift {
@@ -62,6 +62,7 @@ export interface StaffRequest {
   content: string
   weekStart?: Timestamp | Date
   shifts?: StaffRequestShift[]
+  removedShifts?: Array<StaffRequestShift & { scheduleId: string }>
   status: StaffRequestStatus
   reviewNote?: string
   reviewedBy?: string

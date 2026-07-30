@@ -448,17 +448,21 @@ export async function submitStaffRequest(actor: RequestActor, raw: unknown) {
   requireStaff(actor)
   const body = objectBody(raw)
   const id = requestId(body)
-  const type = text(body.type, 'Loại yêu cầu', 20) as 'overtime' | 'note'
-  if (!['overtime', 'note'].includes(type)) throw new ApiError(400, 'Loại yêu cầu không hợp lệ.')
-  const content = text(body.content ?? '', 'Nội dung', 1000, type === 'overtime')
+  const type = text(body.type, 'Loại yêu cầu', 30) as 'overtime' | 'note' | 'scheduleChange'
+  if (!['overtime', 'note', 'scheduleChange'].includes(type)) throw new ApiError(400, 'Loại yêu cầu không hợp lệ.')
+  const content = text(body.content ?? '', 'Nội dung', 1000, type === 'overtime' || type === 'scheduleChange')
   const managerIds = await activeManagerIds()
   const requestRef = adminDb.collection('staffRequests').doc()
   const workflow = workflowRef(actor, id)
   let weekStart: Date | null = null
   let requestedShifts: Array<{ date: Date; shift: Shift }> = []
+  let removedShifts: Array<{ scheduleId: string; date: Date; shift: Shift }> = []
 
-  if (type === 'overtime') {
-    if (!Array.isArray(body.shifts) || body.shifts.length < 1 || body.shifts.length > 21) {
+  if (type === 'overtime' || type === 'scheduleChange') {
+    if (!Array.isArray(body.shifts) || body.shifts.length > 21) {
+      throw new ApiError(400, 'Danh sách ca mới không hợp lệ.')
+    }
+    if (type === 'overtime' && body.shifts.length < 1) {
       throw new ApiError(400, 'Vui lòng chọn ít nhất một ca muốn làm thêm.')
     }
     requestedShifts = body.shifts.map((item, index) => {
@@ -468,24 +472,51 @@ export async function submitStaffRequest(actor: RequestActor, raw: unknown) {
       if (!shifts.includes(shift as Shift)) throw new ApiError(400, `Ca làm thêm ${index + 1} không hợp lệ.`)
       return { date, shift: shift as Shift }
     })
-    weekStart = mondayFor(requestedShifts[0].date)
-    if (requestedShifts.some((item) => mondayFor(item.date).getTime() !== weekStart!.getTime())) {
+    if (type === 'scheduleChange') {
+      if (!Array.isArray(body.removedShifts) || body.removedShifts.length > 21) {
+        throw new ApiError(400, 'Danh sách ca xin hủy không hợp lệ.')
+      }
+      removedShifts = body.removedShifts.map((item, index) => {
+        const row = objectBody(item)
+        const scheduleId = text(row.scheduleId, `Mã ca hủy ${index + 1}`, 128)
+        const date = dateValue(row.date, `Ngày ca hủy ${index + 1}`)
+        const shift = row.shift
+        if (!shifts.includes(shift as Shift)) throw new ApiError(400, `Ca hủy ${index + 1} không hợp lệ.`)
+        return { scheduleId, date, shift: shift as Shift }
+      })
+      if (!requestedShifts.length && !removedShifts.length) {
+        throw new ApiError(400, 'Vui lòng chọn ít nhất một ca cần đổi, hủy hoặc đăng ký thêm.')
+      }
+    }
+    const firstRequestDate = (requestedShifts[0]?.date || removedShifts[0]?.date)!
+    weekStart = mondayFor(firstRequestDate)
+    if ([...requestedShifts, ...removedShifts].some((item) => mondayFor(item.date).getTime() !== weekStart!.getTime())) {
       throw new ApiError(400, 'Các ca làm thêm phải thuộc cùng một tuần.')
     }
     const [existing, existingStaffRequests] = await Promise.all([
       adminDb.collection('workSchedules').where('employeeId', '==', actor.uid).get(),
       adminDb.collection('staffRequests').where('employeeId', '==', actor.uid).get(),
     ])
+    const removedIds = new Set(removedShifts.map((item) => item.scheduleId))
+    if (removedShifts.some((removed) => !existing.docs.some((snapshot) => {
+      const schedule = snapshot.data()
+      return snapshot.id === removed.scheduleId &&
+        schedule.status === 'Approved' &&
+        (schedule.date as Timestamp).toDate().toISOString().slice(0, 10) === removed.date.toISOString().slice(0, 10) &&
+        schedule.shift === removed.shift
+    }))) {
+      throw new ApiError(409, 'Một ca xin hủy không còn đúng với lịch đã duyệt. Vui lòng tải lại lịch.')
+    }
     const duplicated = requestedShifts.some((requested) => existing.docs.some((snapshot) => {
       const schedule = snapshot.data()
-      if (schedule.status === 'Cancelled') return false
+      if (schedule.status === 'Cancelled' || removedIds.has(snapshot.id)) return false
       return (schedule.date as Timestamp).toDate().toISOString().slice(0, 10) === requested.date.toISOString().slice(0, 10) &&
         schedule.shift === requested.shift
     }))
     if (duplicated) throw new ApiError(409, 'Một ca làm thêm đã có trong lịch hiện tại. Vui lòng tải lại và chọn ca khác.')
     const alreadyPending = existingStaffRequests.docs.some((snapshot) => {
       const request = snapshot.data()
-      return request.type === 'overtime' && request.status === 'Pending' &&
+      return request.type === type && request.status === 'Pending' &&
         request.weekStart instanceof Timestamp && request.weekStart.toDate().getTime() === weekStart!.getTime()
     })
     if (alreadyPending) throw new ApiError(409, 'Bạn đã có một yêu cầu làm thêm đang chờ xử lý cho tuần này.')
@@ -502,6 +533,13 @@ export async function submitStaffRequest(actor: RequestActor, raw: unknown) {
       ...(requestedShifts.length ? {
         shifts: requestedShifts.map((item) => ({ date: Timestamp.fromDate(item.date), shift: item.shift })),
       } : {}),
+      ...(removedShifts.length ? {
+        removedShifts: removedShifts.map((item) => ({
+          scheduleId: item.scheduleId,
+          date: Timestamp.fromDate(item.date),
+          shift: item.shift,
+        })),
+      } : {}),
       status: 'Pending',
       createdAt: now,
       updatedAt: now,
@@ -511,8 +549,8 @@ export async function submitStaffRequest(actor: RequestActor, raw: unknown) {
         managerNotificationRef(managerId, `staff-${requestRef.id}`),
         managerNotification(
           managerId,
-          type === 'overtime' ? 'Yêu cầu làm thêm chờ xử lý' : 'Ghi chú mới từ nhân viên',
-          type === 'overtime' ? 'Một nhân viên vừa gửi các ca muốn làm thêm.' : 'Một nhân viên vừa gửi ghi chú cho quản lý.'
+          type === 'scheduleChange' ? 'Yêu cầu đổi / thêm ca chờ xử lý' : type === 'overtime' ? 'Yêu cầu làm thêm chờ xử lý' : 'Ghi chú mới từ nhân viên',
+          type === 'scheduleChange' ? 'Một nhân viên vừa gửi các ca xin hủy và ca mới / ca thêm.' : type === 'overtime' ? 'Một nhân viên vừa gửi các ca muốn làm thêm.' : 'Một nhân viên vừa gửi ghi chú cho quản lý.'
         )
       )
     })
@@ -527,8 +565,8 @@ export async function submitStaffRequest(actor: RequestActor, raw: unknown) {
   await sendManagerPushes({
     managerIds,
     sourceKey: `staff-${requestRef.id}`,
-    title: type === 'overtime' ? 'Yêu cầu làm thêm chờ xử lý' : 'Ghi chú mới từ nhân viên',
-    body: type === 'overtime' ? 'Một nhân viên vừa gửi các ca muốn làm thêm.' : 'Một nhân viên vừa gửi ghi chú cho quản lý.',
+    title: type === 'scheduleChange' ? 'Yêu cầu đổi / thêm ca chờ xử lý' : type === 'overtime' ? 'Yêu cầu làm thêm chờ xử lý' : 'Ghi chú mới từ nhân viên',
+    body: type === 'scheduleChange' ? 'Một nhân viên vừa gửi các ca xin hủy và ca mới / ca thêm.' : type === 'overtime' ? 'Một nhân viên vừa gửi các ca muốn làm thêm.' : 'Một nhân viên vừa gửi ghi chú cho quản lý.',
     link: '/admin/requests',
     source: 'staffRequests',
     sourceId: requestRef.id,
@@ -1395,29 +1433,48 @@ export async function reviewRequest(actor: RequestActor, raw: unknown) {
     }
     employeeId = data.employeeId
     const now = FieldValue.serverTimestamp()
-    if (resource === 'staff' && status === 'Approved' && data.type === 'overtime' && Array.isArray(data.shifts)) {
+    if (resource === 'staff' && status === 'Approved' && ['overtime', 'scheduleChange'].includes(data.type)) {
+      const removedItems = data.type === 'scheduleChange' && Array.isArray(data.removedShifts)
+        ? data.removedShifts as Array<{ scheduleId: string; date: Timestamp; shift: Shift }>
+        : []
+      const removedRefs = removedItems
+        .filter((item) => typeof item?.scheduleId === 'string')
+        .map((item) => adminDb.collection('workSchedules').doc(item.scheduleId))
+      const removedSnapshots = await Promise.all(removedRefs.map((ref) => transaction.get(ref)))
+      removedSnapshots.forEach((snapshot, index) => {
+        if (!snapshot.exists || snapshot.get('employeeId') !== employeeId || snapshot.get('status') !== 'Approved') {
+          throw new ApiError(409, 'Một ca xin hủy đã thay đổi. Vui lòng từ chối yêu cầu và bảo nhân viên tải lại lịch.')
+        }
+      })
       const currentSchedules = await transaction.get(
         adminDb.collection('workSchedules').where('employeeId', '==', employeeId)
       )
+      removedRefs.forEach((ref) => transaction.set(ref, {
+        status: 'Cancelled',
+        lockedAt: null,
+        reviewedBy: actor.uid,
+        reviewedAt: now,
+        updatedAt: now,
+      }, { merge: true }))
       const existingKeys = new Set(currentSchedules.docs
-        .filter((snapshot) => snapshot.get('status') !== 'Cancelled')
+        .filter((snapshot) => snapshot.get('status') !== 'Cancelled' && !removedRefs.some((ref) => ref.id === snapshot.id))
         .map((snapshot) => {
           const schedule = snapshot.data()
           return `${(schedule.date as Timestamp).toDate().toISOString().slice(0, 10)}-${schedule.shift}`
         }))
-      const overtimeShifts = (data.shifts as Array<{ date: Timestamp; shift: Shift }>).filter((item) =>
+      const overtimeShifts = (Array.isArray(data.shifts) ? data.shifts : [] as Array<{ date: Timestamp; shift: Shift }>).filter((item: { date: Timestamp; shift: Shift }) =>
         item?.date instanceof Timestamp && shifts.includes(item.shift)
       )
-      const firstDate = overtimeShifts[0]?.date.toDate()
+      const firstDate = overtimeShifts[0]?.date.toDate() || removedItems[0]?.date?.toDate()
       overtimeShifts.forEach((item, index) => {
         const key = `${item.date.toDate().toISOString().slice(0, 10)}-${item.shift}`
         if (existingKeys.has(key) || !firstDate) return
-        transaction.set(adminDb.collection('workSchedules').doc(`overtime-${id}-${index}`), {
+        transaction.set(adminDb.collection('workSchedules').doc(`${data.type === 'scheduleChange' ? 'schedule-change' : 'overtime'}-${id}-${index}`), {
           employeeId,
           date: item.date,
           shift: item.shift,
           status: 'Approved',
-          note: `[OVERTIME_APPROVED]${data.content ? ` ${String(data.content).slice(0, 450)}` : ''}`,
+          note: `${data.type === 'scheduleChange' ? '[SCHEDULE_CHANGE_APPROVED]' : '[OVERTIME_APPROVED]'}${data.content ? ` ${String(data.content).slice(0, 450)}` : ''}`,
           batchKey: scheduleBatchKey(employeeId, mondayFor(firstDate)),
           requiresReapproval: false,
           revisionCount: 0,
@@ -1461,7 +1518,7 @@ export async function reviewRequest(actor: RequestActor, raw: unknown) {
     }
     transaction.set(targetRef, updates, { merge: true })
     const requestLabel = resource === 'staff'
-      ? data.type === 'overtime' ? 'Yêu cầu làm thêm' : 'Ghi chú'
+      ? data.type === 'scheduleChange' ? 'Yêu cầu đổi / thêm ca' : data.type === 'overtime' ? 'Yêu cầu làm thêm' : 'Ghi chú'
       : config.label
     reviewedLabel = requestLabel
     reviewedLink = resource === 'staff' && data.type === 'note' ? '/staff-note' : config.link

@@ -44,7 +44,7 @@ const filterCollections = [
   ['leaveRequests', 'Xin nghỉ'],
   ['lateRequests', 'Đi trễ'],
   ['salaryAdvances', 'Ứng lương'],
-  ['staffRequests', 'Làm thêm · Ghi chú'],
+  ['staffRequests', 'Đổi / thêm ca · Ghi chú'],
   ['penalties', 'Khoản phạt'],
 ] as const
 

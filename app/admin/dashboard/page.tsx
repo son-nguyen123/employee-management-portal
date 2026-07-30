@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
-import { AlertTriangle, CalendarCheck, Check, ChevronRight, ClipboardCheck, ExternalLink, Loader2, MailCheck, MessageSquareText, Phone, UsersRound, X } from 'lucide-react'
+import { AlertTriangle, CalendarCheck, Check, ChevronRight, ClipboardCheck, ExternalLink, Loader2, MessageSquareText, Phone, UsersRound, X } from 'lucide-react'
 import { useAuth, useUserRole } from '@/lib/hooks/useAuth'
 import { subscribeToAllEmployees } from '@/lib/services/employeeService'
 import { reviewWorkScheduleBatch, subscribeToAllSchedules } from '@/lib/services/scheduleService'
@@ -12,9 +12,7 @@ import { Header } from '@/components/layout/header'
 import { PageContainer } from '@/components/layout/page-container'
 import { Badge } from '@/components/ui/badge'
 import {
-  getAuditReceiptSettings,
   getWeeklyScheduleTarget,
-  updateAuditReceiptSettings,
   updateWeeklyScheduleTarget,
 } from '@/lib/services/managementSettingsService'
 
@@ -75,26 +73,16 @@ export default function AdminDashboardPage() {
   const [message, setMessage] = useState('')
   const [expectedEmployees, setExpectedEmployees] = useState(0)
   const [savingTarget, setSavingTarget] = useState(false)
-  const [receiptSettings, setReceiptSettings] = useState({
-    emailEnabled: false,
-    auditTrailEnabled: true,
-    emailEnvironmentEnabled: false,
-    emailConfigured: false,
-  })
-  const [savingReceiptSetting, setSavingReceiptSetting] = useState(false)
+
+  useEffect(() => {
+    if (new URLSearchParams(window.location.search).get('view') === 'employees') setTab('employees')
+  }, [])
 
   useEffect(() => {
     if (!authUser || isPreviewMode) return
     void getWeeklyScheduleTarget(nextMondayKey())
       .then((result) => setExpectedEmployees(result.expectedEmployees))
       .catch(() => setMessage('Chưa tải được mục tiêu nhân viên của tuần này.'))
-  }, [authUser, isPreviewMode])
-
-  useEffect(() => {
-    if (!authUser || isPreviewMode) return
-    void getAuditReceiptSettings()
-      .then(setReceiptSettings)
-      .catch(() => setMessage('Chưa tải được cài đặt email biên nhận.'))
   }, [authUser, isPreviewMode])
 
   useEffect(() => {
@@ -236,29 +224,6 @@ export default function AdminDashboardPage() {
     }
   }
 
-  const toggleReceiptEmail = async () => {
-    const nextEnabled = !receiptSettings.emailEnabled
-    setSavingReceiptSetting(true)
-    setMessage('')
-    try {
-      if (isPreviewMode) {
-        setReceiptSettings((current) => ({ ...current, emailEnabled: nextEnabled }))
-      } else {
-        const result = await updateAuditReceiptSettings(nextEnabled)
-        setReceiptSettings(result)
-      }
-      setMessage(
-        nextEnabled
-          ? 'Đã bật email biên nhận cho các thao tác mới của nhân viên.'
-          : 'Đã tắt email biên nhận. Các email đang chờ cũng đã được hủy.'
-      )
-    } catch (error) {
-      setMessage(error instanceof Error ? error.message : 'Chưa thể cập nhật cài đặt email biên nhận.')
-    } finally {
-      setSavingReceiptSetting(false)
-    }
-  }
-
   const review = async (batch: ScheduleBatch, status: 'Approved' | 'Rejected', reviewNote = '') => {
     if (status === 'Rejected' && !reviewNote.trim()) return
     setProcessingId(batch.key)
@@ -324,35 +289,9 @@ export default function AdminDashboardPage() {
           </label>
           <button type="button" disabled={savingTarget} onClick={() => void saveWeeklyTarget()} className="min-h-12 rounded-2xl bg-slate-950 px-5 text-sm font-bold text-white disabled:opacity-60 dark:bg-white dark:text-slate-950">{savingTarget ? 'Đang lưu...' : 'Lưu'}</button>
         </section>
-        <section className="mt-3 flex items-center gap-3 rounded-2xl border border-slate-200 bg-white p-3 dark:border-slate-700 dark:bg-slate-900">
-          <div className={`grid h-11 w-11 shrink-0 place-items-center rounded-2xl ${receiptSettings.emailEnabled ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300' : 'bg-slate-100 text-slate-500 dark:bg-slate-800'}`}>
-            <MailCheck className="h-5 w-5" />
-          </div>
-          <div className="min-w-0 flex-1">
-            <p className="text-sm font-extrabold">Email biên nhận nhân viên</p>
-            <p className="mt-0.5 text-xs text-muted-foreground">
-              {receiptSettings.emailEnabled && receiptSettings.emailConfigured
-                ? 'Đang bật · chỉ gửi khi có thao tác mới'
-                : receiptSettings.emailEnabled
-                  ? 'Đã bị ngắt bằng công tắc hệ thống · không gửi email'
-                : receiptSettings.emailConfigured
-                  ? 'Đang tắt · không gửi email cho nhân viên'
-                  : 'Đang tắt · Gmail chưa được kết nối'}
-            </p>
-          </div>
-          <button
-            type="button"
-            disabled={savingReceiptSetting || (!receiptSettings.emailEnabled && !receiptSettings.emailConfigured)}
-            onClick={() => void toggleReceiptEmail()}
-            className={`min-h-11 rounded-xl px-4 text-xs font-extrabold text-white disabled:cursor-not-allowed disabled:opacity-45 ${receiptSettings.emailEnabled ? 'bg-rose-600' : 'bg-emerald-600'}`}
-          >
-            {savingReceiptSetting ? 'Đang lưu...' : receiptSettings.emailEnabled ? 'Tắt gửi' : 'Bật gửi'}
-          </button>
-        </section>
-
         <div className="mt-5 grid grid-cols-2 gap-2 rounded-2xl bg-slate-100 p-1 dark:bg-slate-800">
           <button type="button" onClick={() => setTab('requests')} className={`min-h-11 rounded-xl text-sm font-bold ${tab === 'requests' ? 'bg-white text-indigo-600 shadow-sm dark:bg-slate-950' : 'text-muted-foreground'}`}>Lịch chờ duyệt</button>
-          <button type="button" onClick={() => setTab('employees')} className={`min-h-11 rounded-xl text-sm font-bold ${tab === 'employees' ? 'bg-white text-indigo-600 shadow-sm dark:bg-slate-950' : 'text-muted-foreground'}`}>Nhân viên</button>
+          <Link href="/admin/requests?view=requests" className="grid min-h-11 place-items-center rounded-xl text-sm font-bold text-muted-foreground">Yêu cầu khác</Link>
         </div>
 
         {message && <p className="mt-4 rounded-2xl bg-indigo-50 p-3 text-sm font-semibold text-indigo-800 dark:bg-indigo-500/10 dark:text-indigo-200">{message}</p>}
@@ -430,7 +369,7 @@ export default function AdminDashboardPage() {
                   <h3 className="truncate font-extrabold">{employee.fullName}</h3>
                   <p className="text-xs text-muted-foreground">{employee.employeeCode} · {employee.phone || 'Chưa có SĐT'}</p>
                 </div>
-                <Badge variant="success">Đang làm tháng này</Badge>
+                <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-emerald-100 text-emerald-700" title="Đang hoạt động"><Check className="h-4 w-4" /></span>
                 <ChevronRight className="h-5 w-5 shrink-0 text-slate-400" />
               </Link>
             ))}

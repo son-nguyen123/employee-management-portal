@@ -152,6 +152,9 @@ export default function LateArrivalPage() {
           <p className="mt-1 text-sm leading-6 text-slate-300">
             Chọn đúng ca bạn sẽ đi trễ, sau đó nhập giờ dự kiến có mặt.
           </p>
+          <p className="mt-3 rounded-2xl bg-white/10 p-3 text-xs font-semibold leading-5 text-slate-100">
+            Báo trước giờ vào ca từ 60 phút: không bị trừ. Báo dưới 60 phút: ghi nhận khoản phạt 500đ.
+          </p>
         </section>
 
         {message && <p className="mb-4 rounded-2xl bg-indigo-50 p-3 text-sm font-semibold text-indigo-800 dark:bg-indigo-500/10 dark:text-indigo-200">{message}</p>}

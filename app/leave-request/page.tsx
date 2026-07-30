@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { CalendarDays, Check, CheckCircle2, Info, Loader2, Palmtree, Pencil, Send, Trash2 } from 'lucide-react'
 import { useAuth } from '@/lib/hooks/useAuth'
 import { cancelLeaveRequest, createLeaveRequest, reviseLeaveRequest, subscribeToEmployeeLeaves } from '@/lib/services/leaveService'
@@ -36,18 +36,10 @@ export default function LeaveRequestPage() {
   useEffect(() => {
     if (!authUser) return
     const updateApprovedShifts = (scheduleData: any[]) => {
-        const now = new Date()
-        const monday = new Date(now)
-        const day = now.getDay() || 7
-        monday.setDate(now.getDate() - day + 1)
-        monday.setHours(0, 0, 0, 0)
-        const sunday = new Date(monday)
-        sunday.setDate(monday.getDate() + 6)
-        sunday.setHours(23, 59, 59, 999)
         setApprovedShifts(scheduleData
           .filter((item) => {
             const date = item.date instanceof Date ? item.date : typeof item.date === 'string' ? new Date(item.date) : item.date.toDate()
-            return item.status === 'Approved' && date >= monday && date <= sunday && !item.note?.includes('[DUTY_ONLY]')
+            return item.status === 'Approved' && !item.note?.includes('[DUTY_ONLY]') && date >= new Date(new Date().setHours(0, 0, 0, 0))
           })
           .map((item) => ({
             id: item.id!,
@@ -79,9 +71,22 @@ export default function LeaveRequestPage() {
     }
   }, [authUser, isPreviewMode])
 
+  const weekShifts = useMemo(() => {
+    if (!startDate) return []
+    const selectedDate = new Date(`${startDate}T12:00:00`)
+    const monday = new Date(selectedDate)
+    const day = monday.getDay() || 7
+    monday.setDate(monday.getDate() - day + 1)
+    monday.setHours(0, 0, 0, 0)
+    const sunday = new Date(monday)
+    sunday.setDate(monday.getDate() + 6)
+    sunday.setHours(23, 59, 59, 999)
+    return approvedShifts.filter((item) => item.date >= monday && item.date <= sunday)
+  }, [approvedShifts, startDate])
+
   const submit = async (event: React.FormEvent) => {
     event.preventDefault()
-    if (!authUser || !startDate || !reason.trim() || (duration === 'long' && !endDate)) {
+    if (!authUser || !startDate || !reason.trim() || (duration === 'short' && !selectedScheduleId) || (duration === 'long' && !endDate)) {
       setMessage('Vui lòng điền đầy đủ thông tin.')
       return
     }
@@ -177,17 +182,26 @@ export default function LeaveRequestPage() {
             ))}
           </div>
 
-          {duration === 'short' && approvedShifts.length > 0 ? (
+          {duration === 'short' && (
+            <div className="mt-5">
+              <label className="block text-sm font-bold">
+                Chọn một ngày trong tuần cần nghỉ
+                <input type="date" value={startDate} onChange={(event) => { setStartDate(event.target.value); setSelectedScheduleId('') }} className="mobile-field mt-2" required />
+              </label>
+            </div>
+          )}
+
+          {duration === 'short' && startDate && weekShifts.length > 0 ? (
             <div className="mt-5">
               <div className="mb-3 flex items-center justify-between">
                 <div>
-                  <p className="text-sm font-extrabold">Chọn ca muốn nghỉ</p>
-                  <p className="text-xs text-muted-foreground">Các ca đã được duyệt trong tuần này</p>
+                  <p className="text-sm font-extrabold">Lịch đã đăng ký của tuần này</p>
+                  <p className="text-xs text-muted-foreground">Chỉ hiện ca đã duyệt · chạm ca muốn nghỉ</p>
                 </div>
-                <Badge variant="success">{approvedShifts.length} ca</Badge>
+                <Badge variant="success">{weekShifts.length} ca</Badge>
               </div>
               <div className="space-y-2">
-                {approvedShifts.map((shift) => {
+                {weekShifts.map((shift) => {
                   const active = selectedScheduleId === shift.id
                   return (
                     <button key={shift.id} type="button" onClick={() => { setSelectedScheduleId(shift.id); setStartDate(shift.date.toISOString().slice(0, 10)) }} className={`flex min-h-16 w-full items-center gap-3 rounded-2xl border p-3 text-left transition ${active ? 'border-emerald-600 bg-emerald-600 text-white shadow-lg shadow-emerald-600/20' : 'border-slate-200 bg-slate-50 dark:border-slate-700 dark:bg-slate-800'}`}>
@@ -202,28 +216,27 @@ export default function LeaveRequestPage() {
                 })}
               </div>
             </div>
-          ) : (
+          ) : duration === 'short' && startDate ? (
             <>
-              {duration === 'short' && (
-                <div className="mt-5 flex gap-3 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm leading-6 text-amber-800 dark:bg-amber-500/10 dark:text-amber-200">
-                  <Info className="mt-0.5 h-5 w-5 shrink-0" />
-                  <div><p className="font-extrabold">Bạn không có lịch trong tuần này.</p><p>Bạn muốn đăng ký một ngày nghỉ?</p></div>
-                </div>
-              )}
-              <div className={`mt-5 grid gap-3 ${duration === 'long' ? 'grid-cols-2' : 'grid-cols-1'}`}>
+              <div className="mt-5 flex gap-3 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm leading-6 text-amber-800 dark:bg-amber-500/10 dark:text-amber-200">
+                <Info className="mt-0.5 h-5 w-5 shrink-0" />
+                <div><p className="font-extrabold">Tuần này không có ca đã đăng ký.</p><p>Hãy chọn tuần khác hoặc liên hệ quản lý.</p></div>
+              </div>
+            </>
+          ) : duration === 'long' ? (
+            <>
+              <div className="mt-5 grid grid-cols-2 gap-3">
                 <label className="text-sm font-bold">
-                  {duration === 'short' ? 'Ngày muốn nghỉ' : 'Từ ngày'}
+                  Từ ngày
                   <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} className="mobile-field mt-2" required />
                 </label>
-            {duration === 'long' && (
               <label className="text-sm font-bold">
                 Đến ngày
                 <input type="date" value={endDate} min={startDate} onChange={(e) => setEndDate(e.target.value)} className="mobile-field mt-2" required />
               </label>
-            )}
               </div>
             </>
-          )}
+          ) : null}
 
           <label className="mt-5 block text-sm font-bold">
             Lý do xin nghỉ

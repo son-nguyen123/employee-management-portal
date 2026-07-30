@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { AlertTriangle, CalendarPlus, Check, ChevronDown, CircleDollarSign, Clock3, ExternalLink, FileText, Loader2, MessageSquareText, Phone, X } from 'lucide-react'
+import { AlertTriangle, CalendarPlus, Check, ChevronDown, CircleDollarSign, Clock3, ExternalLink, FileText, Loader2, MessageSquareText, Phone, UsersRound, X } from 'lucide-react'
 import { useAuth } from '@/lib/hooks/useAuth'
 import { subscribeToPendingLeaveRequests, updateLeaveStatus } from '@/lib/services/leaveService'
 import { subscribeToPendingLateRequests, updateLateStatus } from '@/lib/services/lateService'
@@ -14,7 +14,7 @@ import { adjustPenalty, cancelPenalty, createForgottenDutyPenalty, getAllPenalti
 import { subscribeToPendingStaffRequests, updateStaffRequestStatus } from '@/lib/services/staffRequestService'
 import type { Employee, Penalty, StaffRequest } from '@/lib/models/types'
 
-type RequestType = 'leave' | 'late' | 'salary' | 'overtime' | 'note'
+type RequestType = 'leave' | 'late' | 'salary' | 'overtime' | 'note' | 'scheduleChange'
 type RequestRow = {
   id: string
   type: RequestType
@@ -24,6 +24,7 @@ type RequestRow = {
   detail: string
   status: string
   shifts?: StaffRequest['shifts']
+  removedShifts?: StaffRequest['removedShifts']
 }
 
 function buildRequestRows(
@@ -69,12 +70,15 @@ function buildRequestRows(
       type: item.type,
       employeeId: item.employeeId,
       employeeName: employeeNames.get(item.employeeId) || fallbackName,
-      title: item.type === 'overtime' ? 'Yêu cầu làm thêm' : 'Ghi chú từ nhân viên',
-      detail: item.type === 'overtime'
+      title: item.type === 'scheduleChange' ? 'Yêu cầu đổi / thêm ca' : item.type === 'overtime' ? 'Yêu cầu làm thêm' : 'Ghi chú từ nhân viên',
+      detail: item.type === 'scheduleChange'
+        ? `${item.removedShifts?.length || 0} ca xin hủy · ${item.shifts?.length || 0} ca mới / ca thêm${item.content ? ` · ${item.content}` : ''}`
+        : item.type === 'overtime'
         ? `${item.shifts?.length || 0} ca muốn làm thêm${item.content ? ` · ${item.content}` : ''}`
         : item.content,
       status: item.status,
       shifts: item.shifts,
+      removedShifts: item.removedShifts,
     })),
   ].filter((item) => item.status === 'Pending')
 }
@@ -99,6 +103,12 @@ export default function AdminRequestsPage() {
   const [rejectReason, setRejectReason] = useState('')
   const [penaltiesOpen, setPenaltiesOpen] = useState(false)
   const [manualPenaltyOpen, setManualPenaltyOpen] = useState(false)
+  const [pageMode, setPageMode] = useState<'requests' | 'penalties'>('requests')
+  const [penaltyTab, setPenaltyTab] = useState<'employees' | 'list'>('employees')
+
+  useEffect(() => {
+    setPageMode(new URLSearchParams(window.location.search).get('view') === 'penalties' ? 'penalties' : 'requests')
+  }, [])
 
   useEffect(() => {
     if (!authUser) return
@@ -186,7 +196,7 @@ export default function AdminRequestsPage() {
         if (row.type === 'leave') await updateLeaveStatus(row.id, status, authUser.uid, reviewNote)
         if (row.type === 'late') await updateLateStatus(row.id, status, authUser.uid, reviewNote)
         if (row.type === 'salary') await updateSalaryAdvanceStatus(row.id, status, authUser.uid, reviewNote)
-        if (row.type === 'overtime' || row.type === 'note') await updateStaffRequestStatus(row.id, status, reviewNote)
+        if (row.type === 'overtime' || row.type === 'note' || row.type === 'scheduleChange') await updateStaffRequestStatus(row.id, status, reviewNote)
       }
       setRows((prev) => prev.filter((item) => item.id !== row.id))
       setMessage(status === 'Approved' ? 'Đã duyệt yêu cầu.' : 'Đã từ chối yêu cầu.')
@@ -255,11 +265,14 @@ export default function AdminRequestsPage() {
   }
 
   const visibleRows = rows.filter((row) => filter === 'all' || row.type === filter)
+  const activePenalties = penalties.filter((item) => item.status !== 'Cancelled')
+  const penalizedEmployees = employees.filter((employee) => activePenalties.some((penalty) => penalty.employeeId === employee.uid))
   const meta = {
     leave: { icon: FileText, label: 'Xin nghỉ' },
     late: { icon: Clock3, label: 'Đi trễ' },
     salary: { icon: CircleDollarSign, label: 'Ứng lương' },
     overtime: { icon: CalendarPlus, label: 'Làm thêm' },
+    scheduleChange: { icon: CalendarPlus, label: 'Đổi / thêm ca' },
     note: { icon: MessageSquareText, label: 'Ghi chú' },
   }
   const filterItems: Array<{ value: 'all' | RequestType; label: string; count: number }> = [
@@ -268,15 +281,54 @@ export default function AdminRequestsPage() {
     { value: 'late', label: 'Đi trễ', count: rows.filter((row) => row.type === 'late').length },
     { value: 'salary', label: 'Ứng lương', count: rows.filter((row) => row.type === 'salary').length },
     { value: 'overtime', label: 'Làm thêm', count: rows.filter((row) => row.type === 'overtime').length },
+    { value: 'scheduleChange', label: 'Đổi / thêm', count: rows.filter((row) => row.type === 'scheduleChange').length },
     { value: 'note', label: 'Ghi chú', count: rows.filter((row) => row.type === 'note').length },
   ]
 
   return (
     <main className="min-h-screen pb-8">
-      <Header title="Duyệt yêu cầu" subtitle="Xử lý yêu cầu trước, theo dõi khoản phạt sau" />
+      <Header title={pageMode === 'penalties' ? 'Quản lý phạt' : 'Yêu cầu khác'} subtitle={pageMode === 'penalties' ? 'Theo dõi theo nhân viên và từng khoản phạt' : 'Tất cả yêu cầu ngoài lịch đăng ký tuần'} />
       <PageContainer>
         <div className="flex flex-col">
-        <form onSubmit={addForgottenDutyPenalty} className="order-3 mt-5 overflow-hidden rounded-3xl border border-rose-200 bg-white shadow-sm dark:border-rose-500/20 dark:bg-slate-900">
+        {pageMode === 'penalties' && (
+          <div className="order-1 mb-4 grid grid-cols-2 gap-2 rounded-2xl bg-slate-100 p-1 dark:bg-slate-800">
+            <button type="button" onClick={() => setPenaltyTab('employees')} className={`min-h-11 rounded-xl text-sm font-bold ${penaltyTab === 'employees' ? 'bg-white text-rose-600 shadow-sm dark:bg-slate-950' : 'text-muted-foreground'}`}>Nhân viên</button>
+            <button type="button" onClick={() => setPenaltyTab('list')} className={`min-h-11 rounded-xl text-sm font-bold ${penaltyTab === 'list' ? 'bg-white text-rose-600 shadow-sm dark:bg-slate-950' : 'text-muted-foreground'}`}>Danh sách phạt</button>
+          </div>
+        )}
+        {pageMode === 'penalties' && penaltyTab === 'employees' && (
+          <section className="order-2 space-y-3">
+            {penalizedEmployees.map((employee) => {
+              const employeePenalties = activePenalties.filter((penalty) => penalty.employeeId === employee.uid)
+              return (
+                <details key={employee.uid} className="mobile-card overflow-hidden">
+                  <summary className="flex min-h-20 cursor-pointer list-none items-center gap-3 p-4">
+                    <div className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-rose-50 font-black text-rose-600"><UsersRound className="h-5 w-5" /></div>
+                    <div className="min-w-0 flex-1">
+                      <h2 className="truncate font-extrabold">{employee.fullName}</h2>
+                      <p className="text-xs text-muted-foreground">{employee.employeeCode} · {employee.phone || 'Chưa có SĐT'}</p>
+                    </div>
+                    <span className="rounded-full bg-rose-50 px-3 py-1 text-xs font-extrabold text-rose-700">{employeePenalties.length} khoản</span>
+                  </summary>
+                  <div className="space-y-2 border-t border-slate-100 p-3">
+                    {employeePenalties.map((penalty) => (
+                      <article key={penalty.id} className="rounded-2xl bg-slate-50 p-3">
+                        <div className="flex justify-between gap-3"><strong>{penalty.title}</strong><span className="font-black text-rose-600">{Number(penalty.amount || 0).toLocaleString('vi-VN')}đ</span></div>
+                        <p className="mt-1 text-xs text-muted-foreground">{penalty.description}</p>
+                        <div className="mt-3 grid grid-cols-2 gap-2">
+                          <button type="button" onClick={() => openPenaltyManager(penalty, 'cancel')} className="min-h-10 rounded-xl border border-rose-200 text-xs font-bold text-rose-600">Hủy</button>
+                          <button type="button" onClick={() => openPenaltyManager(penalty, 'adjust')} className="min-h-10 rounded-xl bg-slate-900 text-xs font-bold text-white">Xác nhận / sửa</button>
+                        </div>
+                      </article>
+                    ))}
+                  </div>
+                </details>
+              )
+            })}
+            {!penalizedEmployees.length && <div className="mobile-card p-8 text-center text-sm font-semibold text-muted-foreground">Chưa có nhân viên bị phạt.</div>}
+          </section>
+        )}
+        <form onSubmit={addForgottenDutyPenalty} className={`${pageMode === 'penalties' && penaltyTab === 'employees' ? 'order-3' : 'hidden'} mt-5 overflow-hidden rounded-3xl border border-rose-200 bg-white shadow-sm dark:border-rose-500/20 dark:bg-slate-900`}>
           <button type="button" onClick={() => setManualPenaltyOpen((current) => !current)} className="flex w-full items-center gap-3 bg-gradient-to-r from-rose-600 to-fuchsia-600 p-4 text-left text-white" aria-expanded={manualPenaltyOpen}>
             <div className="grid h-11 w-11 place-items-center rounded-2xl bg-white/15"><AlertTriangle className="h-5 w-5" /></div>
             <div className="min-w-0 flex-1"><p className="text-xs font-bold uppercase tracking-wider text-rose-100">Ghi phạt thủ công</p><h2 className="font-black">Quên trực · 1.000đ</h2></div>
@@ -300,14 +352,14 @@ export default function AdminRequestsPage() {
             </button>
           </div>}
         </form>
-        <section className="order-2 mt-5 overflow-hidden rounded-3xl border border-rose-100 bg-white shadow-sm dark:border-rose-500/20 dark:bg-slate-900">
+        <section className={`${pageMode === 'penalties' && penaltyTab === 'list' ? 'order-2' : 'hidden'} mt-5 overflow-hidden rounded-3xl border border-rose-100 bg-white shadow-sm dark:border-rose-500/20 dark:bg-slate-900`}>
           <button type="button" onClick={() => setPenaltiesOpen((current) => !current)} className="flex w-full items-center justify-between gap-3 p-4 text-left" aria-expanded={penaltiesOpen}>
             <div>
-              <p className="text-xs font-bold uppercase tracking-wider text-rose-600">Khoản phạt đang áp dụng</p>
-              <h2 className="text-xl font-black">Điều chỉnh hoặc hủy</h2>
+              <p className="text-xs font-bold uppercase tracking-wider text-rose-600">{penalizedEmployees.length} nhân viên bị phạt</p>
+              <h2 className="text-xl font-black">{activePenalties.length} khoản phạt đang áp dụng</h2>
             </div>
             <div className="flex items-center gap-2"><span className="rounded-full bg-rose-50 px-3 py-1 text-xs font-bold text-rose-700">
-              {penalties.filter((item) => item.status !== 'Cancelled').length} khoản
+              {activePenalties.length} khoản
             </span><ChevronDown className={`h-5 w-5 text-slate-400 transition-transform ${penaltiesOpen ? 'rotate-180' : ''}`} /></div>
           </button>
           {penaltiesOpen && <div className="space-y-3 border-t border-slate-100 p-3 dark:border-white/10">
@@ -343,7 +395,7 @@ export default function AdminRequestsPage() {
             )}
           </div>}
         </section>
-        <section className="order-1">
+        <section className={pageMode === 'requests' ? 'order-1' : 'hidden'}>
         <div className="mb-3 flex items-end justify-between gap-3">
           <div><p className="text-[11px] font-black uppercase tracking-[0.16em] text-indigo-600">Yêu cầu chờ xử lý</p><h2 className="mt-0.5 text-[1.45rem] font-black tracking-tight">Nhân viên vừa gửi</h2></div>
           <p className="pb-1 text-xs font-bold text-slate-500 dark:text-slate-400">{rows.length} đang chờ</p>
@@ -391,8 +443,19 @@ export default function AdminRequestsPage() {
                     <div className="mt-3 border-t border-slate-100 pt-3 text-sm leading-5 text-slate-600 dark:border-white/10 dark:text-slate-300">
                       {row.detail}
                     </div>
+                      {!!row.removedShifts?.length && (
+                        <div className="mt-2.5 space-y-1.5 rounded-2xl border border-rose-100 bg-rose-50/80 p-3 text-xs text-rose-950 dark:border-rose-500/20 dark:bg-rose-500/10 dark:text-rose-100">
+                          <p className="font-extrabold">Ca xin hủy</p>
+                          {row.removedShifts.map((item, index) => {
+                            const date = item.date instanceof Date ? item.date : item.date.toDate()
+                            const shiftLabel = item.shift === 'Morning' ? 'Ca sáng' : item.shift === 'Afternoon' ? 'Ca chiều' : 'Ca tối'
+                            return <p key={`${item.scheduleId}-${index}`}><strong>{date.toLocaleDateString('vi-VN', { weekday: 'long', day: '2-digit', month: '2-digit' })}</strong> · {shiftLabel}</p>
+                          })}
+                        </div>
+                      )}
                       {!!row.shifts?.length && (
                         <div className="mt-2.5 space-y-1.5 rounded-2xl border border-sky-100 bg-sky-50/80 p-3 text-xs text-sky-950 dark:border-sky-500/20 dark:bg-sky-500/10 dark:text-sky-100">
+                          {row.type === 'scheduleChange' && <p className="font-extrabold">Ca mới / ca thêm</p>}
                           {row.shifts.map((item, index) => {
                             const date = item.date instanceof Date ? item.date : item.date.toDate()
                             const shiftLabel = item.shift === 'Morning' ? 'Ca sáng' : item.shift === 'Afternoon' ? 'Ca chiều' : 'Ca tối'

@@ -92,7 +92,7 @@ function buildRows(data: Record<DecisionResource, SnapshotRow[]>): DecisionHisto
     ids: [item.id],
     resource: 'staff',
     employeeId: String(item.employeeId || ''),
-    title: item.type === 'overtime' ? 'Yêu cầu làm thêm' : 'Ghi chú cho quản lý',
+    title: item.type === 'scheduleChange' ? 'Yêu cầu đổi / thêm ca' : item.type === 'overtime' ? 'Yêu cầu làm thêm' : 'Ghi chú cho quản lý',
     detail: item.type === 'overtime'
       ? `${Array.isArray(item.shifts) ? item.shifts.length : 0} ca · ${String(item.content || 'Không có ghi chú')}`
       : String(item.content || 'Không có nội dung'),

@@ -1,6 +1,7 @@
 'use client'
 
-import React from 'react'
+import React, { useEffect, useState } from 'react'
+import { createPortal } from 'react-dom'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { Badge } from '../ui/badge'
@@ -20,11 +21,16 @@ interface BottomNavProps {
 const BottomNav = React.forwardRef<HTMLDivElement, BottomNavProps>(
   ({ items, className = '' }, ref) => {
     const pathname = usePathname()
+    const [mounted, setMounted] = useState(false)
 
-    return (
+    useEffect(() => setMounted(true), [])
+
+    if (!mounted) return null
+
+    return createPortal(
       <div
         ref={ref}
-        className={`fixed bottom-0 left-0 right-0 z-40 border-t border-slate-200 bg-white pb-[env(safe-area-inset-bottom)] shadow-[0_-6px_20px_rgba(15,23,42,0.07)] dark:border-white/10 dark:bg-slate-950 md:hidden ${className}`}
+        className={`fixed inset-x-0 bottom-0 z-[60] [transform:translate3d(0,0,0)] border-t border-slate-200 bg-white pb-[env(safe-area-inset-bottom)] shadow-[0_-6px_20px_rgba(15,23,42,0.07)] [backface-visibility:hidden] dark:border-white/10 dark:bg-slate-950 md:hidden ${className}`}
       >
         <nav className="mx-auto grid h-[4.5rem] max-w-md grid-flow-col auto-cols-fr px-2 pt-1">
           {items.map((item) => {
@@ -56,7 +62,8 @@ const BottomNav = React.forwardRef<HTMLDivElement, BottomNavProps>(
             )
           })}
         </nav>
-      </div>
+      </div>,
+      document.body
     )
   }
 )
