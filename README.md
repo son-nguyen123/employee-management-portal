@@ -116,4 +116,3 @@ Cron trong `vercel.json` gọi endpoint lưu trữ hằng tuần vào Chủ Nh�
 Ứng dụng đang được sử dụng nội bộ và triển khai tại:
 
 <https://employee-management-portal-seven-pi.vercel.app>
-
