@@ -5,7 +5,7 @@ import { AlertTriangle, CalendarDays, CircleDollarSign, Info, Loader2 } from 'lu
 import { Header } from '@/components/layout/header'
 import { PageContainer } from '@/components/layout/page-container'
 import { useAuth } from '@/lib/hooks/useAuth'
-import { getEmployeePenalties } from '@/lib/services/penaltyService'
+import { subscribeToEmployeePenalties } from '@/lib/services/penaltyService'
 import type { Penalty } from '@/lib/models/types'
 
 const previewPenalties: Penalty[] = [
@@ -31,15 +31,22 @@ export default function PenaltiesPage() {
 
   useEffect(() => {
     if (!authUser) return
-    void (async () => {
-      try {
-        setPenalties(isPreviewMode ? previewPenalties : await getEmployeePenalties(authUser.uid))
-      } catch {
+    if (isPreviewMode) {
+      setPenalties(previewPenalties)
+      setLoading(false)
+      return
+    }
+    return subscribeToEmployeePenalties(
+      authUser.uid,
+      (items) => {
+        setPenalties(items)
+        setLoading(false)
+      },
+      () => {
         setMessage('Chưa thể tải các khoản phạt.')
-      } finally {
         setLoading(false)
       }
-    })()
+    )
   }, [authUser, isPreviewMode])
 
   const penaltyAmount = (item: Penalty) => item.status === 'Cancelled' ? 0 : Number(item.amount || 0)

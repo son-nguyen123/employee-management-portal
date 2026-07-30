@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Camera, IdCard, Link as LinkIcon, Loader2, LogOut, Phone, Save, UserRound } from 'lucide-react'
+import { Camera, CreditCard, IdCard, Landmark, Link as LinkIcon, Loader2, LogOut, Phone, Save, UserRound } from 'lucide-react'
 import { useAuth } from '@/lib/hooks/useAuth'
 import { createEmployee, updateEmployee } from '@/lib/services/employeeService'
 import { updateUserProfile } from '@/lib/services/authService'
@@ -16,6 +16,9 @@ export default function ProfileSetupPage() {
     phone: '',
     photoURL: '',
     facebookUrl: '',
+    bankName: '',
+    bankAccountName: '',
+    bankAccountNumber: '',
   })
   const [saving, setSaving] = useState(false)
   const [signingOut, setSigningOut] = useState(false)
@@ -30,6 +33,9 @@ export default function ProfileSetupPage() {
       phone: employee?.phone || '',
       photoURL: employee?.photoURL || authUser.photoURL || '',
       facebookUrl: employee?.facebookUrl || '',
+      bankName: employee?.bankName || '',
+      bankAccountName: employee?.bankAccountName || '',
+      bankAccountNumber: employee?.bankAccountNumber || '',
     })
   }, [authUser, employee, isLoading, router])
 
@@ -43,13 +49,18 @@ export default function ProfileSetupPage() {
       Object.entries(form).map(([key, value]) => [key, value.trim()])
     ) as typeof form
     if (Object.values(values).some((value) => !value)) {
-      setMessage('Vui lòng hoàn thiện đủ 5 thông tin trước khi tiếp tục.')
+      setMessage('Vui lòng hoàn thiện đầy đủ thông tin cá nhân và tài khoản ngân hàng.')
       return
     }
     if (!/^https?:\/\//i.test(values.photoURL) || !/^https?:\/\//i.test(values.facebookUrl)) {
       setMessage('Link ảnh đại diện và Facebook phải bắt đầu bằng http:// hoặc https://.')
       return
     }
+    if (!/^\d{6,24}$/.test(values.bankAccountNumber.replace(/\s/g, ''))) {
+      setMessage('Số tài khoản chỉ gồm 6–24 chữ số.')
+      return
+    }
+    values.bankAccountNumber = values.bankAccountNumber.replace(/\s/g, '')
     setSaving(true)
     setMessage('')
     try {
@@ -97,6 +108,13 @@ export default function ProfileSetupPage() {
     { key: 'phone' as const, label: 'Số điện thoại', placeholder: '0901 234 567', icon: Phone },
     { key: 'facebookUrl' as const, label: 'Facebook', placeholder: 'https://facebook.com/ten-cua-ban', icon: LinkIcon },
   ]
+  const bankOptions = [
+    'Vietcombank', 'VietinBank', 'BIDV', 'Agribank', 'Techcombank', 'MB Bank',
+    'ACB', 'VPBank', 'TPBank', 'Sacombank', 'HDBank', 'VIB', 'MSB', 'OCB',
+    'SeABank', 'SHB', 'Eximbank', 'LienVietPostBank', 'Nam A Bank', 'VietBank',
+    'VietABank', 'Bac A Bank', 'BaoViet Bank', 'KienlongBank', 'PVcomBank',
+    'NCB', 'PGBank', 'SaigonBank', 'GPBank', 'OceanBank', 'Shinhan Bank',
+  ]
 
   return (
     <main className="min-h-screen bg-gradient-to-b from-indigo-50 via-background to-background px-3 py-7 dark:from-indigo-950/30">
@@ -120,6 +138,33 @@ export default function ProfileSetupPage() {
               </div>
             </label>
           ))}
+          <div className="rounded-3xl border border-indigo-100 bg-indigo-50/70 p-4 dark:border-indigo-500/20 dark:bg-indigo-500/10">
+            <div className="mb-4 flex items-center gap-2">
+              <Landmark className="h-5 w-5 text-indigo-600" />
+              <div><h2 className="font-extrabold">Tài khoản nhận lương</h2><p className="text-xs text-muted-foreground">Thông tin để quản lý chuyển lương và ứng lương</p></div>
+            </div>
+            <label className="block text-sm font-bold">
+              Ngân hàng
+              <select value={form.bankName} onChange={(event) => setValue('bankName', event.target.value)} className="mobile-field mt-2" disabled={saving || signingOut} required>
+                <option value="">Chọn ngân hàng</option>
+                {bankOptions.map((bank) => <option key={bank} value={bank}>{bank}</option>)}
+              </select>
+            </label>
+            <label className="mt-4 block text-sm font-bold">
+              Tên chủ tài khoản
+              <div className="relative mt-2">
+                <UserRound className="absolute left-4 top-3.5 h-5 w-5 text-muted-foreground" />
+                <input value={form.bankAccountName} onChange={(event) => setValue('bankAccountName', event.target.value)} className="mobile-field !pl-12 uppercase" placeholder="NGUYỄN VĂN AN" disabled={saving || signingOut} required />
+              </div>
+            </label>
+            <label className="mt-4 block text-sm font-bold">
+              Số tài khoản
+              <div className="relative mt-2">
+                <CreditCard className="absolute left-4 top-3.5 h-5 w-5 text-muted-foreground" />
+                <input value={form.bankAccountNumber} onChange={(event) => setValue('bankAccountNumber', event.target.value.replace(/[^\d\s]/g, ''))} inputMode="numeric" className="mobile-field !pl-12" placeholder="Nhập số tài khoản" disabled={saving || signingOut} required />
+              </div>
+            </label>
+          </div>
           <button type="submit" disabled={saving} className="mobile-primary-button mt-2">
             {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
             {saving ? 'Đang lưu...' : 'Lưu và tiếp tục'}

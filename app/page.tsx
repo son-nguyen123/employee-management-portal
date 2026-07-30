@@ -30,7 +30,7 @@ import {
 import { useTheme } from 'next-themes'
 import { useAuth, useUserRole } from '@/lib/hooks/useAuth'
 import { getAllEmployees } from '@/lib/services/employeeService'
-import { getAllSchedules, getSchedulesByDateRange } from '@/lib/services/scheduleService'
+import { getAllSchedules, getEmployeeSchedules, getSchedulesByDateRange } from '@/lib/services/scheduleService'
 import { getPreviewSchedules } from '@/lib/services/previewWorkflow'
 import { getWeeklyScheduleTarget } from '@/lib/services/managementSettingsService'
 import { SkeletonLoader } from '@/components/ui/skeleton-loader'
@@ -52,7 +52,7 @@ export default function Page() {
   const role = useUserRole()
   const { theme, setTheme } = useTheme()
   const [adminStats, setAdminStats] = useState({ confirmed: 0, total: 0, pending: 0 })
-  const [schedulePrompt, setSchedulePrompt] = useState<{ visible: boolean; isNew: boolean }>({ visible: false, isNew: false })
+  const [schedulePrompt, setSchedulePrompt] = useState<{ visible: boolean; isNew: boolean; href: string }>({ visible: false, isNew: false, href: '/schedule' })
   const [employeeModeOpen, setEmployeeModeOpen] = useState(false)
 
   useEffect(() => {
@@ -115,14 +115,15 @@ export default function Page() {
 
   useEffect(() => {
     if (!authUser || !employee) {
-      setSchedulePrompt({ visible: false, isNew: false })
+      setSchedulePrompt({ visible: false, isNew: false, href: '/schedule' })
       return
     }
 
     const loadRegistrationWeek = async () => {
       const now = new Date()
       const monday = new Date(now)
-      const daysUntilNextMonday = ((8 - now.getDay()) % 7) || 7
+      const useCurrentWeek = now.getDay() === 1
+      const daysUntilNextMonday = useCurrentWeek ? 0 : ((8 - now.getDay()) % 7) || 7
       monday.setDate(now.getDate() + daysUntilNextMonday)
       monday.setHours(0, 0, 0, 0)
       const sunday = new Date(monday)
@@ -132,18 +133,26 @@ export default function Page() {
       const appearsNew = Date.now() - joined.getTime() <= 45 * 24 * 60 * 60 * 1000
 
       try {
+        const allSchedules = isPreviewMode
+          ? getPreviewSchedules().filter((item) => item.employeeId === authUser.uid)
+          : await getEmployeeSchedules(authUser.uid)
         const schedules = isPreviewMode
-          ? getPreviewSchedules().filter((item) => {
-              const date = new Date(item.date)
-              return item.employeeId === authUser.uid && date >= monday && date <= sunday
+          ? allSchedules.filter((item) => {
+              const date = item.date instanceof Date
+                ? item.date
+                : typeof item.date === 'string'
+                  ? new Date(item.date)
+                  : item.date.toDate()
+              return date >= monday && date <= sunday
             })
           : await getSchedulesByDateRange(authUser.uid, monday, sunday)
         setSchedulePrompt({
           visible: !schedules.some((item) => item.status !== 'Cancelled'),
-          isNew: appearsNew,
+          isNew: appearsNew && !allSchedules.some((item) => item.status !== 'Cancelled'),
+          href: useCurrentWeek ? '/schedule?week=current' : '/schedule',
         })
       } catch {
-        setSchedulePrompt({ visible: false, isNew: false })
+        setSchedulePrompt({ visible: false, isNew: false, href: '/schedule' })
       }
     }
 
@@ -161,6 +170,7 @@ export default function Page() {
     { title: 'Điều hành', note: `${adminStats.pending} lịch chờ duyệt · yêu cầu khác`, href: '/admin/dashboard#schedules', icon: ShieldCheck },
     { title: 'Nhân sự tuần tới', note: 'Xem người làm theo từng ngày và ca', href: '/admin/next-week', icon: CalendarRange },
     { title: 'Quản lý phạt', note: 'Nhân viên · danh sách khoản phạt', href: '/admin/requests?view=penalties', icon: LayoutDashboard },
+    { title: 'Danh sách ứng lương', note: 'Xem yêu cầu và tài khoản nhận tiền', href: '/admin/salary-advances', icon: CircleDollarSign },
     { title: 'Lịch sử xử lý', note: 'Xem và sửa quyết định trong tuần', href: '/admin/history', icon: History },
     { title: 'Danh sách nhân viên', note: 'Tên, mã nhân viên và số điện thoại', href: '/admin/dashboard?view=employees#employees', icon: UsersRound },
     { title: 'Kho dữ liệu', note: 'Xem lịch sử đã lưu trên Google Drive', href: '/admin/archive', icon: Archive },
@@ -227,7 +237,7 @@ export default function Page() {
       <div className="mx-auto max-w-2xl px-3 py-5 sm:px-6">
         {schedulePrompt.visible && (
           <Link
-            href="/schedule"
+            href={schedulePrompt.href}
             className="mb-5 flex items-center gap-3 rounded-3xl border border-indigo-200 bg-indigo-50 p-4 text-indigo-950 shadow-sm transition active:scale-[0.99] dark:border-indigo-500/30 dark:bg-indigo-500/10 dark:text-indigo-100"
           >
             <div className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-indigo-600 text-white">

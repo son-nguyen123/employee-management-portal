@@ -162,6 +162,9 @@ export default function LeaveRequestPage() {
           <p className="mt-1 text-sm leading-6 text-emerald-50">
             Nghỉ ngắn hạn áp dụng cho một ngày. Nghỉ dài hạn cần chọn khoảng ngày cụ thể.
           </p>
+          <p className="mt-3 rounded-2xl bg-white/10 p-3 text-xs font-semibold leading-5 text-emerald-50">
+            Ghi lý do chính tại đây; hình ảnh hoặc giấy tờ làm bằng chứng gửi riêng cho quản lý qua Messenger.
+          </p>
         </section>
 
         {(!hasPendingRequest || editingId) && <form onSubmit={submit} className="mobile-card p-4 sm:p-6">

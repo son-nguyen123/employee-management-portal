@@ -78,13 +78,16 @@ export default function SchedulePage() {
   const [confirmationOpen, setConfirmationOpen] = useState(false)
   const [overtimeMode, setOvertimeMode] = useState(false)
   const [changeMode, setChangeMode] = useState(false)
+  const [currentWeekMode, setCurrentWeekMode] = useState(false)
   const [originalScheduleIds, setOriginalScheduleIds] = useState<Record<string, string>>({})
   const [submittedChangeSummary, setSubmittedChangeSummary] = useState<{ removed: string[]; added: string[] } | null>(null)
 
   useEffect(() => {
     const mode = new URLSearchParams(window.location.search).get('mode')
+    const week = new URLSearchParams(window.location.search).get('week')
     setOvertimeMode(mode === 'overtime')
     setChangeMode(mode === 'change')
+    setCurrentWeekMode(mode === 'change' ? new Date().getDay() !== 0 : week === 'current')
   }, [])
 
   useEffect(() => {
@@ -97,7 +100,9 @@ export default function SchedulePage() {
   const days = useMemo<DayItem[]>(() => {
     const now = new Date()
     const currentDay = now.getDay()
-    const daysUntilNextMonday = ((8 - currentDay) % 7) || 7
+    const daysUntilNextMonday = currentWeekMode
+      ? -((currentDay || 7) - 1)
+      : ((8 - currentDay) % 7) || 7
     const monday = new Date(now)
     monday.setHours(0, 0, 0, 0)
     monday.setDate(now.getDate() + daysUntilNextMonday)
@@ -108,7 +113,7 @@ export default function SchedulePage() {
       date.setDate(monday.getDate() + index)
       return { key: localDateKey(date), name, shortName: shortNames[index], date }
     })
-  }, [])
+  }, [currentWeekMode])
 
   useEffect(() => {
     if (!authUser) return
@@ -305,6 +310,10 @@ export default function SchedulePage() {
         setMessage(changeMode ? 'Vui lòng chọn ca cần hủy, đổi hoặc đăng ký thêm.' : 'Vui lòng chọn ít nhất một ca muốn làm thêm.')
         return
       }
+      if (changeMode && removedShifts.length && !requestedShifts.length) {
+        setMessage('Bạn đã xin hủy ca cũ nên phải chọn ít nhất một ca mới để thay thế.')
+        return
+      }
       setSubmitting(true)
       setMessage(null)
       try {
@@ -486,8 +495,14 @@ export default function SchedulePage() {
 
   return (
     <main className="min-h-screen pb-32">
-      <Header title={changeMode ? 'Đổi / thêm ca' : overtimeMode ? 'Xin làm thêm' : 'Đăng ký lịch làm'} subtitle="Tuần kế tiếp · Thứ Hai đến Chủ Nhật" />
+      <Header title={changeMode ? 'Đổi / thêm ca' : overtimeMode ? 'Xin làm thêm' : 'Đăng ký lịch làm'} subtitle={`${currentWeekMode ? 'Tuần hiện tại' : 'Tuần kế tiếp'} · Thứ Hai đến Chủ Nhật`} />
       <div className="mx-auto max-w-2xl px-3 py-4 sm:px-6">
+        {changeMode && (
+          <div className="mb-4 grid grid-cols-2 gap-2 rounded-2xl bg-slate-100 p-1 dark:bg-slate-800">
+            <button type="button" onClick={() => { setCurrentWeekMode(true); setSubmittedChangeSummary(null); setMessage(null) }} className={`min-h-11 rounded-xl text-sm font-bold ${currentWeekMode ? 'bg-white text-indigo-600 shadow-sm dark:bg-slate-950' : 'text-muted-foreground'}`}>Tuần này</button>
+            <button type="button" onClick={() => { setCurrentWeekMode(false); setSubmittedChangeSummary(null); setMessage(null) }} className={`min-h-11 rounded-xl text-sm font-bold ${!currentWeekMode ? 'bg-white text-indigo-600 shadow-sm dark:bg-slate-950' : 'text-muted-foreground'}`}>Tuần sau</button>
+          </div>
+        )}
         <section className="mb-4 rounded-3xl bg-slate-950 p-5 text-white">
           <div className="flex items-start justify-between gap-4">
             <div>
@@ -651,10 +666,13 @@ export default function SchedulePage() {
                 <div className="flex items-center gap-2"><span className="h-3 w-3 shrink-0 rounded-full bg-rose-600" /> Màu đỏ là ca đã duyệt{changeMode ? '; chạm lại để xin hủy.' : ', không thể thay đổi.'}</div>
                 <div className="mt-2 flex items-center gap-2"><span className="h-3 w-3 shrink-0 rounded-full bg-sky-600" /> Màu xanh là ca mới / ca thêm.</div>
                 {changeMode && (
-                  <div className="mt-3 grid grid-cols-2 gap-2">
-                    <div className="rounded-xl bg-rose-50 p-2 font-bold text-rose-700">Ca xin hủy: {removedCount}</div>
-                    <div className="rounded-xl bg-sky-50 p-2 font-bold text-sky-700">Ca mới / ca thêm: {overtimeCount}</div>
-                  </div>
+                  <>
+                    <div className="mt-3 grid grid-cols-2 gap-2">
+                      <div className="rounded-xl bg-rose-50 p-2 font-bold text-rose-700">Ca xin hủy: {removedCount}</div>
+                      <div className="rounded-xl bg-sky-50 p-2 font-bold text-sky-700">Ca mới / ca thêm: {overtimeCount}</div>
+                    </div>
+                    <p className="mt-2 rounded-xl bg-amber-50 p-2 font-semibold text-amber-800">Hủy ca của hôm nay bị phạt 1.000đ. Đổi từ ngày mai hoặc chỉ đăng ký thêm ca thì không bị phạt.</p>
+                  </>
                 )}
               </div>
             ) : editing && (
@@ -685,6 +703,9 @@ export default function SchedulePage() {
                   </div>
                   <div className="grid grid-cols-2 gap-2">
                     {shiftOptions.filter((shift) => (!overtimeMode && !changeMode) || shift.value !== 'Custom').map((shift) => {
+                      const today = new Date()
+                      today.setHours(0, 0, 0, 0)
+                      const isPastDay = changeMode && day.date < today
                       const active = selected[day.key]?.includes(shift.value)
                       const wasSaved = (editing || overtimeMode || changeMode) && original[day.key]?.includes(shift.value)
                       const activeClass = wasSaved
@@ -697,7 +718,7 @@ export default function SchedulePage() {
                           key={shift.value}
                           type="button"
                           onClick={() => chooseShift(day.key, shift.value)}
-                          disabled={(overtimeMode && (wasSaved || !submittedIds.length)) || (changeMode && !submittedIds.length)}
+                          disabled={(overtimeMode && (wasSaved || !submittedIds.length)) || (changeMode && (!submittedIds.length || isPastDay))}
                           className={`min-h-[58px] rounded-2xl border px-3 text-left transition active:scale-[0.98] ${
                             active ? activeClass : 'border-slate-200 bg-slate-50 dark:border-slate-700 dark:bg-slate-800'
                           } disabled:cursor-not-allowed disabled:active:scale-100`}
@@ -725,7 +746,7 @@ export default function SchedulePage() {
             <button type="button" onClick={overtimeMode || changeMode ? () => { setSelected(cloneSelection(original)); setWeekNote('') } : editing ? () => void cancelEditing() : saveDraft} disabled={submitting} className="flex min-h-12 items-center justify-center gap-2 rounded-2xl border border-slate-200 font-bold disabled:opacity-60 dark:border-slate-700">
               {overtimeMode || changeMode || editing ? <RotateCcw className="h-4 w-4" /> : <Save className="h-4 w-4" />} {overtimeMode || changeMode ? 'Chọn lại' : editing ? 'Hủy sửa' : 'Lưu nháp'}
             </button>
-            <button type="button" onClick={() => void submitSchedule()} disabled={submitting || ((overtimeMode || changeMode) && ((!overtimeCount && !removedCount) || !submittedIds.length))} className="mobile-primary-button disabled:opacity-50">
+            <button type="button" onClick={() => void submitSchedule()} disabled={submitting || ((overtimeMode || changeMode) && ((!overtimeCount && !removedCount) || (changeMode && removedCount > 0 && !overtimeCount) || !submittedIds.length))} className="mobile-primary-button disabled:opacity-50">
               {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : overtimeMode || changeMode ? <CalendarPlus className="h-4 w-4" /> : <Send className="h-4 w-4" />}
               {submitting ? 'Đang gửi...' : changeMode ? 'Gửi yêu cầu' : overtimeMode ? `Gửi ${overtimeCount} ca` : editing ? 'Gửi điều chỉnh' : 'Gửi lịch'}
             </button>

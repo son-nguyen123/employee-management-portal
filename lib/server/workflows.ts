@@ -287,14 +287,23 @@ function mondayFor(date: Date): Date {
   return result
 }
 
+function vietnamDateKey(date: Date): string {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Ho_Chi_Minh',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(date)
+}
+
 function scheduleDeadline(firstShift: Date): Date {
   const monday = mondayFor(firstShift)
-  // Hết Thứ Bảy là hạn cuối: từ 00:00 Chủ Nhật (giờ Việt Nam) được tính là trễ.
+  // Hết Thứ Sáu là hạn cuối: gửi từ 00:00 Thứ Bảy (giờ Việt Nam) được tính là trễ.
   return new Date(
     Date.UTC(
       monday.getUTCFullYear(),
       monday.getUTCMonth(),
-      monday.getUTCDate() - 1,
+      monday.getUTCDate() - 2,
       -7,
       0,
       0
@@ -457,6 +466,7 @@ export async function submitStaffRequest(actor: RequestActor, raw: unknown) {
   let weekStart: Date | null = null
   let requestedShifts: Array<{ date: Date; shift: Shift }> = []
   let removedShifts: Array<{ scheduleId: string; date: Date; shift: Shift }> = []
+  let shouldPenalizeSameDayChange = false
 
   if (type === 'overtime' || type === 'scheduleChange') {
     if (!Array.isArray(body.shifts) || body.shifts.length > 21) {
@@ -487,6 +497,17 @@ export async function submitStaffRequest(actor: RequestActor, raw: unknown) {
       if (!requestedShifts.length && !removedShifts.length) {
         throw new ApiError(400, 'Vui lòng chọn ít nhất một ca cần đổi, hủy hoặc đăng ký thêm.')
       }
+      if (removedShifts.length && !requestedShifts.length) {
+        throw new ApiError(400, 'Khi xin hủy ca cũ, bạn phải chọn ít nhất một ca mới để thay thế.')
+      }
+      if ([...requestedShifts, ...removedShifts].some((item) =>
+        vietnamDateKey(item.date) < vietnamDateKey(new Date())
+      )) {
+        throw new ApiError(400, 'Không thể đổi hoặc đăng ký thêm cho ngày đã qua.')
+      }
+      shouldPenalizeSameDayChange = removedShifts.some((item) =>
+        vietnamDateKey(item.date) === vietnamDateKey(new Date())
+      )
     }
     const firstRequestDate = (requestedShifts[0]?.date || removedShifts[0]?.date)!
     weekStart = mondayFor(firstRequestDate)
@@ -544,6 +565,26 @@ export async function submitStaffRequest(actor: RequestActor, raw: unknown) {
       createdAt: now,
       updatedAt: now,
     })
+    if (shouldPenalizeSameDayChange && workflowPolicy.sameDayScheduleChangePenalty > 0) {
+      const penaltyRef = adminDb.collection('penalties').doc(`schedule-change-${actor.uid}-${id}`)
+      transaction.create(penaltyRef, penaltyData({
+        employeeId: actor.uid,
+        title: 'Đổi lịch trong ngày',
+        description: 'Yêu cầu có hủy ca đã đăng ký của chính hôm nay. Đổi từ ngày mai trở đi không phát sinh khoản phạt này.',
+        category: 'Late',
+        amount: workflowPolicy.sameDayScheduleChangePenalty,
+        sourceType: 'scheduleChange',
+        sourceId: requestRef.id,
+      }))
+      transaction.create(
+        adminDb.collection('notifications').doc(`schedule-change-penalty-${actor.uid}-${id}`),
+        warningNotification(
+          actor.uid,
+          'Phát sinh khoản phạt đổi lịch trong ngày',
+          `Khoản phạt ${workflowPolicy.sameDayScheduleChangePenalty.toLocaleString('vi-VN')}đ đã được ghi nhận.`
+        )
+      )
+    }
     managerIds.forEach((managerId) => {
       transaction.set(
         managerNotificationRef(managerId, `staff-${requestRef.id}`),
@@ -572,7 +613,20 @@ export async function submitStaffRequest(actor: RequestActor, raw: unknown) {
     sourceId: requestRef.id,
   })
 
-  return { id: requestRef.id }
+  if (shouldPenalizeSameDayChange && workflowPolicy.sameDayScheduleChangePenalty > 0) {
+    await sendPenaltyPush({
+      employeeId: actor.uid,
+      penaltyId: `schedule-change-${actor.uid}-${id}`,
+      event: 'created',
+      title: 'Phát sinh khoản phạt đổi lịch trong ngày',
+      body: `Khoản phạt ${workflowPolicy.sameDayScheduleChangePenalty.toLocaleString('vi-VN')}đ đã được ghi nhận.`,
+    })
+  }
+
+  return {
+    id: requestRef.id,
+    penalty: shouldPenalizeSameDayChange ? workflowPolicy.sameDayScheduleChangePenalty : 0,
+  }
 }
 
 export async function replaceSchedules(actor: RequestActor, raw: unknown) {

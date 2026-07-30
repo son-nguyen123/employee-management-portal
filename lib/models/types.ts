@@ -8,6 +8,9 @@ export interface Employee {
   phone: string
   photoURL?: string
   facebookUrl?: string
+  bankName?: string
+  bankAccountName?: string
+  bankAccountNumber?: string
   email: string
   role: 'admin' | 'manager' | 'employee'
   status: 'active' | 'inactive'

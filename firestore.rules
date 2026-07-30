@@ -5,7 +5,8 @@ service cloud.firestore {
     // Assumed data model
     // ===============================================================
     // employees/{uid}: uid, employeeCode, fullName, phone, email,
-    //   optional photoURL/facebookUrl, role, status, joinDate, createdAt, updatedAt
+    //   optional photoURL/facebookUrl and optional bankName/bankAccountName/
+    //   bankAccountNumber, role, status, joinDate, createdAt, updatedAt
     // workSchedules/{id}: employeeId, date, shift, status, note, optional reviewNote,
     //   optional reviewedBy/reviewedAt/lockedAt, createdAt, updatedAt
     // leaveRequests/{id}: employeeId, optional workScheduleId, leaveDate,
@@ -102,6 +103,20 @@ service cloud.firestore {
         );
     }
 
+    function validOptionalBankAccount(data) {
+      return (
+          !('bankName' in data) &&
+          !('bankAccountName' in data) &&
+          !('bankAccountNumber' in data)
+        ) ||
+        (
+          validString(data.bankName, 2, 100) &&
+          validString(data.bankAccountName, 2, 150) &&
+          validString(data.bankAccountNumber, 6, 24) &&
+          data.bankAccountNumber.matches('^[0-9]+$')
+        );
+    }
+
     function recentTimestamp(value) {
       return value is timestamp &&
         value >= request.time - duration.value(10, 'm') &&
@@ -128,7 +143,8 @@ service cloud.firestore {
         ]) &&
         data.keys().hasOnly([
           'uid', 'employeeCode', 'fullName', 'phone', 'email',
-          'photoURL', 'facebookUrl', 'role', 'status', 'joinDate', 'createdAt', 'updatedAt'
+          'photoURL', 'facebookUrl', 'bankName', 'bankAccountName', 'bankAccountNumber',
+          'role', 'status', 'joinDate', 'createdAt', 'updatedAt'
         ]) &&
         validString(data.uid, 1, 128) &&
         validString(data.employeeCode, 3, 30) &&
@@ -136,6 +152,7 @@ service cloud.firestore {
         validString(data.phone, 0, 30) &&
         validOptionalUrl(data, 'photoURL') &&
         validOptionalUrl(data, 'facebookUrl') &&
+        validOptionalBankAccount(data) &&
         validEmail(data.email) &&
         data.role in ['admin', 'manager', 'employee'] &&
         data.status in ['active', 'inactive'] &&
@@ -225,7 +242,10 @@ service cloud.firestore {
           (
             isDocOwner() &&
             request.resource.data.diff(resource.data).affectedKeys()
-              .hasOnly(['fullName', 'phone', 'employeeCode', 'photoURL', 'facebookUrl', 'updatedAt']) &&
+              .hasOnly([
+                'fullName', 'phone', 'employeeCode', 'photoURL', 'facebookUrl',
+                'bankName', 'bankAccountName', 'bankAccountNumber', 'updatedAt'
+              ]) &&
             request.resource.data.role == resource.data.role &&
             request.resource.data.status == resource.data.status
           ) ||

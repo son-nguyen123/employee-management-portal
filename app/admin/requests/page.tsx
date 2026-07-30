@@ -316,7 +316,7 @@ export default function AdminRequestsPage() {
                         <div className="flex justify-between gap-3"><strong>{penalty.title}</strong><span className="font-black text-rose-600">{Number(penalty.amount || 0).toLocaleString('vi-VN')}đ</span></div>
                         <p className="mt-1 text-xs text-muted-foreground">{penalty.description}</p>
                         <div className="mt-3 grid grid-cols-2 gap-2">
-                          <button type="button" onClick={() => openPenaltyManager(penalty, 'cancel')} className="min-h-10 rounded-xl border border-rose-200 text-xs font-bold text-rose-600">Hủy</button>
+                          <button type="button" onClick={() => openPenaltyManager(penalty, 'cancel')} className="min-h-10 rounded-xl border border-rose-200 text-xs font-bold text-rose-600">Xóa phạt</button>
                           <button type="button" onClick={() => openPenaltyManager(penalty, 'adjust')} className="min-h-10 rounded-xl bg-slate-900 text-xs font-bold text-white">Xác nhận / sửa</button>
                         </div>
                       </article>
@@ -381,7 +381,7 @@ export default function AdminRequestsPage() {
                   </div>
                   <div className="mt-4 grid grid-cols-2 gap-2">
                     <button type="button" onClick={() => openPenaltyManager(penalty, 'cancel')} className="min-h-11 rounded-xl border border-rose-200 text-sm font-bold text-rose-600">
-                      Hủy khoản phạt
+                      Xóa phạt
                     </button>
                     <button type="button" onClick={() => openPenaltyManager(penalty, 'adjust')} className="min-h-11 rounded-xl bg-slate-900 text-sm font-bold text-white dark:bg-white dark:text-slate-900">
                       Điều chỉnh

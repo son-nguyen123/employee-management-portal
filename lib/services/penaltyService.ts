@@ -1,4 +1,4 @@
-import { collection, getDocs, query, where, orderBy } from 'firebase/firestore'
+import { collection, getDocs, onSnapshot, query, where, orderBy } from 'firebase/firestore'
 import { db } from '@/lib/firebase'
 import { Penalty } from '@/lib/models/types'
 import { callWorkflowApi, newWorkflowRequestId } from '@/lib/services/workflowApi'
@@ -100,4 +100,24 @@ export async function getEmployeeTotalPenalties(employeeId: string): Promise<num
     console.error('Error calculating total penalties:', error)
     throw error
   }
+}
+
+export function subscribeToEmployeePenalties(
+  employeeId: string,
+  callback: (penalties: Penalty[]) => void,
+  onError?: (error: Error) => void
+): () => void {
+  const penaltiesQuery = query(
+    collection(db, PENALTIES_COLLECTION),
+    where('employeeId', '==', employeeId),
+    orderBy('penaltyDate', 'desc')
+  )
+  return onSnapshot(
+    penaltiesQuery,
+    (snapshot) => callback(snapshot.docs.map((item) => ({
+      id: item.id,
+      ...item.data(),
+    } as Penalty))),
+    (error) => onError?.(error)
+  )
 }

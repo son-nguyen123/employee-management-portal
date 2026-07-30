@@ -10,6 +10,7 @@ import {
   ShieldCheck,
   UserRound,
   ExternalLink,
+  Landmark,
 } from 'lucide-react'
 import Link from 'next/link'
 import { useAuth } from '@/lib/hooks/useAuth'
@@ -71,6 +72,13 @@ export default function ProfilePage() {
       label: 'Số điện thoại',
       value: employee?.phone || 'Chưa cập nhật',
       icon: Phone,
+    },
+    {
+      label: 'Tài khoản ngân hàng',
+      value: employee?.bankName && employee?.bankAccountNumber
+        ? `${employee.bankName} · ${employee.bankAccountNumber}`
+        : 'Chưa cập nhật',
+      icon: Landmark,
     },
   ]
 

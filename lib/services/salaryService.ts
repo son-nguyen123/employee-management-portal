@@ -140,3 +140,18 @@ export function subscribeToPendingSalaryAdvances(
     (error) => onError?.(error)
   )
 }
+
+export function subscribeToAllSalaryAdvances(
+  callback: (requests: SalaryAdvance[]) => void,
+  onError?: (error: Error) => void
+): () => void {
+  const salaryQuery = query(
+    collection(db, SALARY_ADVANCES_COLLECTION),
+    orderBy('createdAt', 'desc')
+  )
+  return onSnapshot(
+    salaryQuery,
+    (snapshot) => callback(snapshot.docs.map(salaryFromSnapshot)),
+    (error) => onError?.(error)
+  )
+}
