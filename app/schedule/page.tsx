@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
+import { createPortal } from 'react-dom'
 import {
   CalendarDays,
   CalendarPlus,
@@ -107,6 +108,9 @@ export default function SchedulePage() {
   const [editBaseline, setEditBaseline] = useState<EditBaseline | null>(null)
   const [hasExistingSchedules, setHasExistingSchedules] = useState<boolean | null>(null)
   const [referenceNow] = useState(() => Date.now())
+  const [portalReady, setPortalReady] = useState(false)
+
+  useEffect(() => setPortalReady(true), [])
 
   useEffect(() => {
     const mode = new URLSearchParams(window.location.search).get('mode')
@@ -822,8 +826,8 @@ export default function SchedulePage() {
         )}
       </div>
 
-      {!compactMode && (
-        <div className="fixed inset-x-0 bottom-[calc(4.5rem+env(safe-area-inset-bottom))] z-30 border-t border-slate-200/70 bg-white/95 p-3 backdrop-blur-xl dark:border-white/10 dark:bg-slate-950/95 md:bottom-0">
+      {!compactMode && portalReady && createPortal(
+        <div className="fixed inset-x-0 bottom-[calc(4.5rem+env(safe-area-inset-bottom))] z-[55] border-t border-slate-200/70 bg-white/95 p-3 shadow-[0_-8px_24px_rgba(15,23,42,0.08)] backdrop-blur-xl dark:border-white/10 dark:bg-slate-950/95 md:bottom-0">
           <div className="mx-auto grid max-w-2xl grid-cols-[.8fr_1.2fr] gap-2">
             <button type="button" onClick={overtimeMode || changeMode ? () => { setSelected(cloneSelection(original)); setWeekNote('') } : editing ? () => void cancelEditing() : saveDraft} disabled={submitting} className="flex min-h-12 items-center justify-center gap-2 rounded-2xl border border-slate-200 font-bold disabled:opacity-60 dark:border-slate-700">
               {overtimeMode || changeMode || editing ? <RotateCcw className="h-4 w-4" /> : <Save className="h-4 w-4" />} {overtimeMode || changeMode ? 'Chọn lại' : editing ? 'Hủy sửa' : 'Lưu nháp'}
@@ -833,7 +837,8 @@ export default function SchedulePage() {
               {submitting ? 'Đang gửi...' : changeMode ? 'Gửi yêu cầu' : overtimeMode ? `Gửi ${overtimeCount} ca` : editing ? 'Gửi điều chỉnh' : 'Gửi lịch'}
             </button>
           </div>
-        </div>
+        </div>,
+        document.body
       )}
 
       {confirmationOpen && (
