@@ -1,4 +1,4 @@
-import { BellRing, BookOpenText, CheckCircle2, RefreshCw, ShieldCheck, Sparkles } from 'lucide-react'
+import { BellRing, BookOpenText, CalendarClock, CheckCircle2, Clock3, ShieldCheck, WalletCards } from 'lucide-react'
 import { Header } from '@/components/layout/header'
 import { PageContainer } from '@/components/layout/page-container'
 
@@ -32,18 +32,55 @@ export default function RulesPage() {
           ))}
         </section>
 
-        <section className="mobile-card mt-4 flex min-h-[300px] flex-col items-center justify-center px-6 text-center">
-          <div className="relative">
-            <div className="grid h-20 w-20 place-items-center rounded-[1.75rem] bg-indigo-50 text-indigo-600 dark:bg-indigo-500/15"><RefreshCw className="h-9 w-9" /></div>
-            <Sparkles className="absolute -right-3 -top-3 h-6 w-6 text-amber-500" />
+        <section className="mt-4 space-y-3">
+          {[
+            {
+              title: 'Xin nghỉ đúng hạn',
+              note: 'Gửi trước giờ bắt đầu ca ít nhất 24 giờ.',
+              approved: 'Duyệt: không khấu trừ',
+              rejected: 'Từ chối: khấu trừ 500đ',
+              icon: CheckCircle2,
+              tone: 'bg-emerald-50 text-emerald-600 dark:bg-emerald-500/10',
+            },
+            {
+              title: 'Xin nghỉ trễ hạn',
+              note: 'Gửi dưới 24 giờ trước ca, bao gồm gửi trong ngày làm.',
+              approved: 'Duyệt: khấu trừ 500đ',
+              rejected: 'Từ chối: khấu trừ 1.000đ',
+              icon: Clock3,
+              tone: 'bg-amber-50 text-amber-600 dark:bg-amber-500/10',
+            },
+            {
+              title: 'Đăng ký lịch tuần trễ hạn',
+              note: 'Gửi bảng lịch sau thời hạn đăng ký của tuần.',
+              approved: 'Khấu trừ cố định 500đ',
+              rejected: 'Không phụ thuộc kết quả duyệt',
+              icon: CalendarClock,
+              tone: 'bg-indigo-50 text-indigo-600 dark:bg-indigo-500/10',
+            },
+            {
+              title: 'Đổi hoặc hủy ca trong ngày',
+              note: 'Yêu cầu thay đổi ca đã duyệt của chính ngày hôm đó.',
+              approved: 'Khấu trừ cố định 1.000đ',
+              rejected: 'Ca cũ vẫn được giữ nếu yêu cầu bị từ chối',
+              icon: WalletCards,
+              tone: 'bg-rose-50 text-rose-600 dark:bg-rose-500/10',
+            },
+          ].map(({ title, note, approved, rejected, icon: Icon, tone }) => (
+            <article key={title} className="mobile-card p-4">
+              <div className="flex items-start gap-3">
+                <div className={`grid h-11 w-11 shrink-0 place-items-center rounded-2xl ${tone}`}><Icon className="h-5 w-5" /></div>
+                <div className="min-w-0 flex-1"><h2 className="font-black">{title}</h2><p className="mt-1 text-sm leading-5 text-muted-foreground">{note}</p></div>
+              </div>
+              <div className="mt-3 grid gap-2 rounded-2xl bg-slate-50 p-3 text-sm dark:bg-slate-800">
+                <p className="font-bold">{approved}</p>
+                <p className="text-muted-foreground">{rejected}</p>
+              </div>
+            </article>
+          ))}
+          <div className="rounded-2xl border border-indigo-100 bg-indigo-50 p-3 text-xs leading-5 text-indigo-800 dark:border-indigo-500/20 dark:bg-indigo-500/10 dark:text-indigo-200">
+            Khoản khấu trừ của yêu cầu nghỉ chỉ được chốt khi quản lý Duyệt hoặc Từ chối. Yêu cầu đang chờ xử lý chưa bị trừ tiền.
           </div>
-          <h2 className="mt-6 text-xl font-black">Nội dung đang được biên soạn</h2>
-          <p className="mt-2 max-w-sm text-sm leading-6 text-muted-foreground">
-            Nội dung điều khoản công ty đang được cập nhật. Bạn sẽ nhận thông báo khi phiên bản đầu tiên được công bố.
-          </p>
-          <span className="mt-6 rounded-full bg-slate-100 px-4 py-2 text-xs font-bold text-slate-600 dark:bg-slate-800 dark:text-slate-300">
-            Chưa yêu cầu xác nhận
-          </span>
         </section>
       </PageContainer>
     </main>

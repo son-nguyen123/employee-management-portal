@@ -48,15 +48,20 @@ export default function ProfileSetupPage() {
     const values = Object.fromEntries(
       Object.entries(form).map(([key, value]) => [key, value.trim()])
     ) as typeof form
-    if (Object.values(values).some((value) => !value)) {
-      setMessage('Vui lòng hoàn thiện đầy đủ thông tin cá nhân và tài khoản ngân hàng.')
+    if (['fullName', 'employeeCode', 'phone', 'photoURL', 'facebookUrl'].some((key) => !values[key as keyof typeof values])) {
+      setMessage('Vui lòng hoàn thiện đầy đủ thông tin cá nhân.')
       return
     }
     if (!/^https?:\/\//i.test(values.photoURL) || !/^https?:\/\//i.test(values.facebookUrl)) {
       setMessage('Link ảnh đại diện và Facebook phải bắt đầu bằng http:// hoặc https://.')
       return
     }
-    if (!/^\d{6,24}$/.test(values.bankAccountNumber.replace(/\s/g, ''))) {
+    const hasAnyBankValue = Boolean(values.bankName || values.bankAccountName || values.bankAccountNumber)
+    if (hasAnyBankValue && !(values.bankName && values.bankAccountName && values.bankAccountNumber)) {
+      setMessage('Nếu thêm tài khoản nhận lương, vui lòng điền đủ ngân hàng, tên chủ tài khoản và số tài khoản.')
+      return
+    }
+    if (hasAnyBankValue && !/^\d{6,24}$/.test(values.bankAccountNumber.replace(/\s/g, ''))) {
       setMessage('Số tài khoản chỉ gồm 6–24 chữ số.')
       return
     }
@@ -138,14 +143,14 @@ export default function ProfileSetupPage() {
               </div>
             </label>
           ))}
-          <div className="rounded-3xl border border-indigo-100 bg-indigo-50/70 p-4 dark:border-indigo-500/20 dark:bg-indigo-500/10">
+          <div className="rounded-3xl border border-indigo-100 bg-gradient-to-b from-indigo-50/80 to-white p-4 dark:border-indigo-500/20 dark:from-indigo-500/10 dark:to-slate-900">
             <div className="mb-4 flex items-center gap-2">
               <Landmark className="h-5 w-5 text-indigo-600" />
-              <div><h2 className="font-extrabold">Tài khoản nhận lương</h2><p className="text-xs text-muted-foreground">Thông tin để quản lý chuyển lương và ứng lương</p></div>
+              <div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-2"><h2 className="font-extrabold">Tài khoản nhận lương</h2><span className="rounded-full bg-white px-2 py-1 text-[10px] font-bold text-indigo-600 shadow-sm dark:bg-slate-900">Không bắt buộc</span></div><p className="mt-1 text-xs text-muted-foreground">Chỉ cần nhập khi bạn muốn nhận lương hoặc ứng lương qua ngân hàng.</p></div>
             </div>
             <label className="block text-sm font-bold">
               Ngân hàng
-              <select value={form.bankName} onChange={(event) => setValue('bankName', event.target.value)} className="mobile-field mt-2" disabled={saving || signingOut} required>
+              <select value={form.bankName} onChange={(event) => setValue('bankName', event.target.value)} className="mobile-field mt-2" disabled={saving || signingOut}>
                 <option value="">Chọn ngân hàng</option>
                 {bankOptions.map((bank) => <option key={bank} value={bank}>{bank}</option>)}
               </select>
@@ -154,14 +159,14 @@ export default function ProfileSetupPage() {
               Tên chủ tài khoản
               <div className="relative mt-2">
                 <UserRound className="absolute left-4 top-3.5 h-5 w-5 text-muted-foreground" />
-                <input value={form.bankAccountName} onChange={(event) => setValue('bankAccountName', event.target.value)} className="mobile-field !pl-12 uppercase" placeholder="NGUYỄN VĂN AN" disabled={saving || signingOut} required />
+                <input value={form.bankAccountName} onChange={(event) => setValue('bankAccountName', event.target.value)} className="mobile-field !pl-12 uppercase" placeholder="NGUYỄN VĂN AN" disabled={saving || signingOut} />
               </div>
             </label>
             <label className="mt-4 block text-sm font-bold">
               Số tài khoản
               <div className="relative mt-2">
                 <CreditCard className="absolute left-4 top-3.5 h-5 w-5 text-muted-foreground" />
-                <input value={form.bankAccountNumber} onChange={(event) => setValue('bankAccountNumber', event.target.value.replace(/[^\d\s]/g, ''))} inputMode="numeric" className="mobile-field !pl-12" placeholder="Nhập số tài khoản" disabled={saving || signingOut} required />
+                <input value={form.bankAccountNumber} onChange={(event) => setValue('bankAccountNumber', event.target.value.replace(/[^\d\s]/g, ''))} inputMode="numeric" className="mobile-field !pl-12" placeholder="Nhập số tài khoản" disabled={saving || signingOut} />
               </div>
             </label>
           </div>

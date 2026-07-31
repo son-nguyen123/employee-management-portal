@@ -21,11 +21,12 @@ export async function createLeaveRequest(leaveData: Omit<LeaveRequest, 'id' | 'c
     leaveType: leaveData.leaveType,
     reason: leaveData.reason,
     workScheduleId: leaveData.workScheduleId,
+    workScheduleIds: leaveData.workScheduleIds,
   })
   return result.id
 }
 
-export async function reviseLeaveRequest(id: string, leaveData: Pick<LeaveRequest, 'leaveDate' | 'endDate' | 'duration' | 'reason' | 'workScheduleId'>): Promise<void> {
+export async function reviseLeaveRequest(id: string, leaveData: Pick<LeaveRequest, 'leaveDate' | 'endDate' | 'duration' | 'reason' | 'workScheduleId' | 'workScheduleIds'>): Promise<void> {
   await callWorkflowApi('reviseRequest', {
     resource: 'leave',
     id,
@@ -34,6 +35,7 @@ export async function reviseLeaveRequest(id: string, leaveData: Pick<LeaveReques
     duration: leaveData.duration,
     reason: leaveData.reason,
     workScheduleId: leaveData.workScheduleId,
+    workScheduleIds: leaveData.workScheduleIds,
   })
 }
 

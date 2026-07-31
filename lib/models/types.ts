@@ -82,9 +82,13 @@ export interface LeaveRequest {
   id?: string
   employeeId: string
   workScheduleId?: string
+  workScheduleIds?: string[]
   leaveDate: Timestamp | Date
   endDate?: Timestamp | Date
   duration?: 'short' | 'long'
+  noticeClass?: 'onTime' | 'late'
+  penaltyIfApproved?: number
+  penaltyIfRejected?: number
   leaveType: LeaveType
   reason: string
   status: LeaveStatus

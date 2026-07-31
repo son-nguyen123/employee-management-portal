@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
-import { CircleDollarSign, CreditCard, Landmark, Loader2, UserRound } from 'lucide-react'
+import { CircleDollarSign, CreditCard, Download, Landmark, Loader2, UserRound } from 'lucide-react'
 import { Header } from '@/components/layout/header'
 import { PageContainer } from '@/components/layout/page-container'
 import { Badge } from '@/components/ui/badge'
@@ -9,6 +9,7 @@ import { useAuth, useUserRole } from '@/lib/hooks/useAuth'
 import type { Employee, SalaryAdvance } from '@/lib/models/types'
 import { subscribeToAllEmployees } from '@/lib/services/employeeService'
 import { subscribeToAllSalaryAdvances } from '@/lib/services/salaryService'
+import { auth } from '@/lib/firebase'
 
 export default function AdminSalaryAdvancesPage() {
   const { authUser, isPreviewMode } = useAuth()
@@ -18,6 +19,35 @@ export default function AdminSalaryAdvancesPage() {
   const [ready, setReady] = useState({ employees: false, requests: false })
   const [filter, setFilter] = useState<'all' | 'Pending' | 'Approved' | 'Rejected'>('all')
   const [message, setMessage] = useState('')
+  const [exporting, setExporting] = useState(false)
+
+  const exportWord = async () => {
+    if (isPreviewMode) {
+      setMessage('Chế độ xem thử không tạo file Word.')
+      return
+    }
+    setExporting(true)
+    setMessage('')
+    try {
+      const token = await auth.currentUser?.getIdToken()
+      if (!token) throw new Error('Bạn cần đăng nhập lại.')
+      const response = await fetch('/api/exports/salary-advances', {
+        headers: { authorization: `Bearer ${token}` },
+      })
+      if (!response.ok) throw new Error('Chưa thể xuất lịch sử ứng lương.')
+      const blob = await response.blob()
+      const url = URL.createObjectURL(blob)
+      const anchor = document.createElement('a')
+      anchor.href = url
+      anchor.download = `lich-su-ung-luong-${new Date().toISOString().slice(0, 10)}.docx`
+      anchor.click()
+      URL.revokeObjectURL(url)
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'Chưa thể xuất file Word.')
+    } finally {
+      setExporting(false)
+    }
+  }
 
   useEffect(() => {
     if (!authUser) return
@@ -54,6 +84,10 @@ export default function AdminSalaryAdvancesPage() {
     <main className="min-h-screen pb-8">
       <Header title="Danh sách ứng lương" subtitle="Yêu cầu và tài khoản nhận tiền của nhân viên" />
       <PageContainer maxWidth="2xl">
+        <button type="button" onClick={() => void exportWord()} disabled={exporting} className="mb-4 flex min-h-12 w-full items-center justify-center gap-2 rounded-2xl bg-slate-950 px-4 text-sm font-bold text-white disabled:opacity-60 dark:bg-white dark:text-slate-950">
+          {exporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+          {exporting ? 'Đang tạo file...' : 'Xuất toàn bộ lịch sử Word'}
+        </button>
         <section className="mb-4 grid grid-cols-2 gap-3">
           <div className="rounded-3xl bg-sky-600 p-4 text-white">
             <CircleDollarSign className="h-5 w-5 text-sky-100" />

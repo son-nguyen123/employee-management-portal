@@ -424,7 +424,7 @@ export default function SchedulePage() {
       setEditingOriginStatus(previousStatus)
       setSubmittedStatus('Editing')
       setEditing(true)
-      setMessage('Bạn đang sửa bảng lịch. Quản lý sẽ thấy trạng thái “Đang sửa”.')
+      setMessage('Bạn đang sửa bảng lịch. Quản lý chỉ thấy lịch mới sau khi bạn gửi lại.')
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'Chưa thể mở chế độ chỉnh sửa.')
     } finally {

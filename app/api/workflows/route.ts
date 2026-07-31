@@ -3,6 +3,7 @@ import { ApiError, authenticateRequest } from '@/lib/server/api-auth'
 import {
   cancelRequest,
   cancelScheduleBatch,
+  adminCancelSchedules,
   createForgottenDutyPenalty,
   managePenalty,
   reviewRequest,
@@ -36,6 +37,7 @@ const handlers = {
   reviseRequest,
   cancelRequest,
   cancelScheduleBatch,
+  adminCancelSchedules,
   setScheduleBatchEditing,
   createForgottenDutyPenalty,
   managePenalty,

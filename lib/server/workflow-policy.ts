@@ -7,10 +7,12 @@ function envNumber(name: string, fallback: number, min = 0): number {
 
 export const workflowPolicy = {
   scheduleDeadlineHour: envNumber('SCHEDULE_DEADLINE_HOUR', 18, 0),
-  scheduleLatePenalty: envNumber('PENALTY_LATE_SCHEDULE_AMOUNT', 1_000),
+  scheduleLatePenalty: envNumber('PENALTY_LATE_SCHEDULE_AMOUNT', 500),
   sameDayScheduleChangePenalty: envNumber('PENALTY_SAME_DAY_SCHEDULE_CHANGE_AMOUNT', 1_000),
   leaveNoticeHours: envNumber('LEAVE_NOTICE_HOURS', 24, 1),
-  leaveLatePenalty: envNumber('PENALTY_LATE_LEAVE_AMOUNT', 0),
+  leaveOnTimeRejectedPenalty: envNumber('PENALTY_REJECTED_LEAVE_AMOUNT', 500),
+  leaveLateApprovedPenalty: envNumber('PENALTY_LATE_LEAVE_APPROVED_AMOUNT', 500),
+  leaveLateRejectedPenalty: envNumber('PENALTY_LATE_LEAVE_REJECTED_AMOUNT', 1_000),
   lateNoticeMinutes: 60,
   lateNoticePenalty: envNumber('PENALTY_LATE_NOTICE_AMOUNT', 500),
 }

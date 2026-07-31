@@ -42,7 +42,7 @@
         "createdAt": "timestamp",
         "updatedAt": "timestamp"
       },
-      "optionalFields": ["workScheduleId", "endDate", "duration (short | long)", "approvedBy", "reviewNote", "reviewedBy", "reviewedAt", "revisedAt", "cancelledBy", "cancelledAt"]
+      "optionalFields": ["workScheduleId", "workScheduleIds (array, max 21)", "endDate", "duration (short | long)", "noticeClass (onTime | late)", "penaltyIfApproved", "penaltyIfRejected", "approvedBy", "reviewNote", "reviewedBy", "reviewedAt", "revisedAt", "cancelledBy", "cancelledAt"]
     },
     "lateRequests": {
       "documentId": "auto",

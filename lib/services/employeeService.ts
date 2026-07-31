@@ -9,6 +9,7 @@ import {
   getDocs,
   onSnapshot,
   Timestamp,
+  deleteField,
 } from 'firebase/firestore'
 import { db } from '@/lib/firebase'
 import { Employee } from '@/lib/models/types'
@@ -38,8 +39,14 @@ export async function getEmployeeByUID(uid: string): Promise<Employee | null> {
  */
 export async function createEmployee(uid: string, employeeData: Omit<Employee, 'uid' | 'createdAt' | 'updatedAt'>): Promise<void> {
   try {
+    const sanitized = { ...employeeData }
+    if (!(sanitized.bankName && sanitized.bankAccountName && sanitized.bankAccountNumber)) {
+      delete sanitized.bankName
+      delete sanitized.bankAccountName
+      delete sanitized.bankAccountNumber
+    }
     const employee: Employee = {
-      ...employeeData,
+      ...sanitized,
       uid,
       createdAt: Timestamp.now(),
       updatedAt: Timestamp.now(),
@@ -58,8 +65,15 @@ export async function createEmployee(uid: string, employeeData: Omit<Employee, '
 export async function updateEmployee(uid: string, updates: Partial<Omit<Employee, 'uid' | 'createdAt'>>): Promise<void> {
   try {
     const docRef = doc(db, EMPLOYEES_COLLECTION, uid)
+    const sanitized: Record<string, unknown> = { ...updates }
+    const touchesBank = ['bankName', 'bankAccountName', 'bankAccountNumber'].some((key) => key in updates)
+    if (touchesBank && !(updates.bankName && updates.bankAccountName && updates.bankAccountNumber)) {
+      sanitized.bankName = deleteField()
+      sanitized.bankAccountName = deleteField()
+      sanitized.bankAccountNumber = deleteField()
+    }
     await updateDoc(docRef, {
-      ...updates,
+      ...sanitized,
       updatedAt: Timestamp.now(),
     })
   } catch (error) {

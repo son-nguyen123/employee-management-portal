@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
-import { AlertTriangle, CalendarCheck, Check, ChevronRight, ClipboardCheck, ExternalLink, Loader2, MessageSquareText, Phone, UsersRound, X } from 'lucide-react'
+import { CalendarCheck, Check, ChevronRight, ExternalLink, Loader2, MessageSquareText, Phone, UsersRound, X } from 'lucide-react'
 import { useAuth, useUserRole } from '@/lib/hooks/useAuth'
 import { subscribeToAllEmployees } from '@/lib/services/employeeService'
 import { reviewWorkScheduleBatch, subscribeToAllSchedules } from '@/lib/services/scheduleService'
@@ -163,7 +163,7 @@ export default function AdminDashboardPage() {
   const pendingBatches = useMemo(() => {
     const grouped = new Map<string, ScheduleBatch>()
     schedules.filter((item) =>
-      ['Registered', 'Pending', 'Editing'].includes(item.status) &&
+      ['Registered', 'Pending'].includes(item.status) &&
       mondayKey(toDate(item.date)) === nextMondayKey()
     ).forEach((schedule) => {
       const key = `${schedule.employeeId}-${mondayKey(toDate(schedule.date))}`
@@ -262,14 +262,6 @@ export default function AdminDashboardPage() {
     <main className="min-h-screen pb-8">
       <Header title="Trung tâm quản lý" subtitle="Duyệt lịch và theo dõi nhân viên" />
       <PageContainer maxWidth="2xl">
-        <Link href="/admin/requests" className="mb-4 flex min-h-14 items-center gap-3 rounded-2xl bg-indigo-600 px-4 text-white shadow-lg shadow-indigo-600/20">
-          <ClipboardCheck className="h-5 w-5" />
-          <div className="min-w-0 flex-1">
-            <p className="font-extrabold">Duyệt yêu cầu khác</p>
-            <p className="truncate text-xs text-indigo-100">Xin nghỉ · Đi trễ · Ứng lương · Làm thêm · Ghi chú</p>
-          </div>
-          <ChevronRight className="h-5 w-5" />
-        </Link>
         <section className="grid grid-cols-3 gap-2">
           {[
             { label: 'Đang hoạt động', value: activeEmployees.length, icon: UsersRound, color: 'bg-indigo-600' },
@@ -376,10 +368,6 @@ export default function AdminDashboardPage() {
           </section>
         )}
 
-        <div className="mt-6 flex gap-2 rounded-2xl border border-amber-200 bg-amber-50 p-3 text-xs leading-5 text-amber-800">
-          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-          Mỗi nhân viên chỉ có một bảng cho tuần kế tiếp. Bảng đang sửa sẽ tạm khóa thao tác xác nhận.
-        </div>
       </PageContainer>
 
       {rejectingBatch && (

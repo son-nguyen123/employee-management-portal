@@ -27,7 +27,7 @@ export default function LeaveRequestPage() {
   const [endDate, setEndDate] = useState('')
   const [reason, setReason] = useState('')
   const [approvedShifts, setApprovedShifts] = useState<ApprovedShift[]>([])
-  const [selectedScheduleId, setSelectedScheduleId] = useState('')
+  const [selectedScheduleIds, setSelectedScheduleIds] = useState<string[]>([])
   const [requests, setRequests] = useState<any[]>([])
   const [submitting, setSubmitting] = useState(false)
   const [message, setMessage] = useState('')
@@ -71,22 +71,22 @@ export default function LeaveRequestPage() {
     }
   }, [authUser, isPreviewMode])
 
-  const weekShifts = useMemo(() => {
+  const dayShifts = useMemo(() => {
     if (!startDate) return []
-    const selectedDate = new Date(`${startDate}T12:00:00`)
-    const monday = new Date(selectedDate)
-    const day = monday.getDay() || 7
-    monday.setDate(monday.getDate() - day + 1)
-    monday.setHours(0, 0, 0, 0)
-    const sunday = new Date(monday)
-    sunday.setDate(monday.getDate() + 6)
-    sunday.setHours(23, 59, 59, 999)
-    return approvedShifts.filter((item) => item.date >= monday && item.date <= sunday)
+    return approvedShifts.filter((item) => item.date.toISOString().slice(0, 10) === startDate)
   }, [approvedShifts, startDate])
+
+  const longLeaveShifts = useMemo(() => {
+    if (duration !== 'long' || !startDate || !endDate) return []
+    return approvedShifts.filter((item) => {
+      const key = item.date.toISOString().slice(0, 10)
+      return key >= startDate && key <= endDate
+    })
+  }, [approvedShifts, duration, endDate, startDate])
 
   const submit = async (event: React.FormEvent) => {
     event.preventDefault()
-    if (!authUser || !startDate || !reason.trim() || (duration === 'short' && !selectedScheduleId) || (duration === 'long' && !endDate)) {
+    if (!authUser || !startDate || !reason.trim() || (duration === 'short' && !selectedScheduleIds.length) || (duration === 'long' && !endDate)) {
       setMessage('Vui lòng điền đầy đủ thông tin.')
       return
     }
@@ -104,7 +104,8 @@ export default function LeaveRequestPage() {
       leaveType: 'personal' as const,
       reason: reason.trim(),
       status: 'Pending' as const,
-      workScheduleId: duration === 'short' ? selectedScheduleId || undefined : undefined,
+      workScheduleId: duration === 'short' ? selectedScheduleIds[0] : longLeaveShifts[0]?.id,
+      workScheduleIds: duration === 'short' ? selectedScheduleIds : longLeaveShifts.map((item) => item.id),
     }
     try {
       const id = editingId || (isPreviewMode ? `local-${Date.now()}` : await createLeaveRequest(request))
@@ -117,7 +118,7 @@ export default function LeaveRequestPage() {
       setStartDate('')
       setEndDate('')
       setReason('')
-      setSelectedScheduleId('')
+      setSelectedScheduleIds([])
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'Chưa thể gửi yêu cầu. Vui lòng thử lại.')
     } finally {
@@ -133,7 +134,7 @@ export default function LeaveRequestPage() {
     setStartDate(new Date(start).toISOString().slice(0, 10))
     setEndDate(end ? new Date(end).toISOString().slice(0, 10) : '')
     setReason(request.reason || '')
-    setSelectedScheduleId(request.workScheduleId || '')
+    setSelectedScheduleIds(request.workScheduleIds || (request.workScheduleId ? [request.workScheduleId] : []))
     setMessage('Bạn đang điều chỉnh yêu cầu đã gửi.')
     window.scrollTo({ top: 0, behavior: 'smooth' })
   }
@@ -176,7 +177,7 @@ export default function LeaveRequestPage() {
               <button
                 key={item.value}
                 type="button"
-                onClick={() => { setDuration(item.value); setStartDate(''); setSelectedScheduleId('') }}
+                onClick={() => { setDuration(item.value); setStartDate(''); setSelectedScheduleIds([]) }}
                 className={`min-h-14 rounded-xl px-2 text-sm transition ${duration === item.value ? 'bg-white font-extrabold text-indigo-600 shadow-sm dark:bg-slate-950' : 'text-muted-foreground'}`}
               >
                 <span className="block">{item.label}</span>
@@ -189,25 +190,27 @@ export default function LeaveRequestPage() {
             <div className="mt-5">
               <label className="block text-sm font-bold">
                 Chọn một ngày trong tuần cần nghỉ
-                <input type="date" value={startDate} onChange={(event) => { setStartDate(event.target.value); setSelectedScheduleId('') }} className="mobile-field mt-2" required />
+                <input type="date" value={startDate} onChange={(event) => { setStartDate(event.target.value); setSelectedScheduleIds([]) }} className="mobile-field mt-2 min-w-0" required />
               </label>
             </div>
           )}
 
-          {duration === 'short' && startDate && weekShifts.length > 0 ? (
+          {duration === 'short' && startDate && dayShifts.length > 0 ? (
             <div className="mt-5">
               <div className="mb-3 flex items-center justify-between">
                 <div>
-                  <p className="text-sm font-extrabold">Lịch đã đăng ký của tuần này</p>
-                  <p className="text-xs text-muted-foreground">Chỉ hiện ca đã duyệt · chạm ca muốn nghỉ</p>
+                  <p className="text-sm font-extrabold">Ca đã đăng ký trong ngày</p>
+                  <p className="text-xs text-muted-foreground">Có thể chọn một hoặc nhiều ca muốn nghỉ</p>
                 </div>
-                <Badge variant="success">{weekShifts.length} ca</Badge>
+                <Badge variant="success">{selectedScheduleIds.length}/{dayShifts.length} ca</Badge>
               </div>
               <div className="space-y-2">
-                {weekShifts.map((shift) => {
-                  const active = selectedScheduleId === shift.id
+                {dayShifts.map((shift) => {
+                  const active = selectedScheduleIds.includes(shift.id)
                   return (
-                    <button key={shift.id} type="button" onClick={() => { setSelectedScheduleId(shift.id); setStartDate(shift.date.toISOString().slice(0, 10)) }} className={`flex min-h-16 w-full items-center gap-3 rounded-2xl border p-3 text-left transition ${active ? 'border-emerald-600 bg-emerald-600 text-white shadow-lg shadow-emerald-600/20' : 'border-slate-200 bg-slate-50 dark:border-slate-700 dark:bg-slate-800'}`}>
+                    <button key={shift.id} type="button" onClick={() => setSelectedScheduleIds((current) =>
+                      current.includes(shift.id) ? current.filter((id) => id !== shift.id) : [...current, shift.id]
+                    )} className={`flex min-h-16 w-full items-center gap-3 rounded-2xl border p-3 text-left transition ${active ? 'border-emerald-600 bg-emerald-600 text-white shadow-lg shadow-emerald-600/20' : 'border-slate-200 bg-slate-50 dark:border-slate-700 dark:bg-slate-800'}`}>
                       <div className={`grid h-10 w-10 place-items-center rounded-xl ${active ? 'bg-white/15' : 'bg-white text-emerald-600 dark:bg-slate-900'}`}><CalendarDays className="h-4 w-4" /></div>
                       <div className="min-w-0 flex-1">
                         <p className="font-extrabold">{shiftLabels[shift.shift]}</p>
@@ -223,21 +226,27 @@ export default function LeaveRequestPage() {
             <>
               <div className="mt-5 flex gap-3 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm leading-6 text-amber-800 dark:bg-amber-500/10 dark:text-amber-200">
                 <Info className="mt-0.5 h-5 w-5 shrink-0" />
-                <div><p className="font-extrabold">Tuần này không có ca đã đăng ký.</p><p>Hãy chọn tuần khác hoặc liên hệ quản lý.</p></div>
+                <div><p className="font-extrabold">Ngày này không có ca đã được duyệt.</p><p>Hãy chọn ngày khác hoặc liên hệ quản lý.</p></div>
               </div>
             </>
           ) : duration === 'long' ? (
             <>
-              <div className="mt-5 grid grid-cols-2 gap-3">
-                <label className="text-sm font-bold">
+              <div className="mt-5 grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2">
+                <label className="min-w-0 text-sm font-bold">
                   Từ ngày
-                  <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} className="mobile-field mt-2" required />
+                  <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} className="mobile-field mt-2 min-w-0" required />
                 </label>
-              <label className="text-sm font-bold">
+              <label className="min-w-0 text-sm font-bold">
                 Đến ngày
-                <input type="date" value={endDate} min={startDate} onChange={(e) => setEndDate(e.target.value)} className="mobile-field mt-2" required />
+                <input type="date" value={endDate} min={startDate} onChange={(e) => setEndDate(e.target.value)} className="mobile-field mt-2 min-w-0" required />
               </label>
               </div>
+              {!!longLeaveShifts.length && (
+                <div className="mt-3 rounded-2xl bg-emerald-50 p-3 text-sm text-emerald-800 dark:bg-emerald-500/10 dark:text-emerald-200">
+                  <strong>{longLeaveShifts.length} ca bị ảnh hưởng</strong>
+                  <p className="mt-1 text-xs">Các ca đã duyệt trong khoảng nghỉ sẽ được gửi kèm để quản lý xem xét.</p>
+                </div>
+              )}
             </>
           ) : null}
 

@@ -40,6 +40,31 @@ export default function NotificationsPage() {
   const [pendingItems, setPendingItems] = useState<ManagementPendingItem[]>([])
   const [loading, setLoading] = useState(true)
   const [message, setMessage] = useState('')
+  const [weekView, setWeekView] = useState<'current' | 'previous'>('current')
+
+  const weekWindow = (view: typeof weekView) => {
+    const now = new Date()
+    const monday = new Date(now)
+    const weekday = monday.getDay() || 7
+    monday.setDate(monday.getDate() - weekday + 1 + (view === 'previous' ? -7 : 0))
+    monday.setHours(0, 0, 0, 0)
+    const end = new Date(monday)
+    end.setDate(monday.getDate() + 7)
+    return { start: monday, end }
+  }
+  const visibleItems = items.filter((item) => {
+    const createdAt = item.createdAt instanceof Date ? item.createdAt : item.createdAt.toDate()
+    const window = weekWindow(weekView)
+    return createdAt >= window.start && createdAt < window.end
+  })
+  const visiblePendingItems = pendingItems.filter((item) => {
+    const window = weekWindow(weekView)
+    return item.createdAt >= window.start && item.createdAt < window.end
+  })
+  const visibleManagementHistory = visibleItems.filter((item) => {
+    const text = `${item.title} ${item.message}`.toLocaleLowerCase('vi')
+    return !text.includes('chờ') && !text.includes('đang sửa')
+  })
 
   useEffect(() => {
     if (!authUser) return
@@ -74,7 +99,7 @@ export default function NotificationsPage() {
     }
 
     if (isManagement) {
-      return subscribeToManagementPendingItems(
+      const unsubscribePending = subscribeToManagementPendingItems(
         (pending) => {
           setPendingItems(pending)
           setLoading(false)
@@ -85,6 +110,14 @@ export default function NotificationsPage() {
           setLoading(false)
         }
       )
+      const unsubscribeNotifications = subscribeToEmployeeNotifications(authUser.uid, (notifications) => {
+        setItems(notifications)
+        setLoading(false)
+      })
+      return () => {
+        unsubscribePending()
+        unsubscribeNotifications()
+      }
     }
 
     return subscribeToEmployeeNotifications(authUser.uid, (notifications) => {
@@ -136,10 +169,14 @@ export default function NotificationsPage() {
     <main className="min-h-screen">
       <Header
         title="Thông báo"
-        subtitle={isManagement ? 'Các việc nhân viên đang chờ bạn xử lý' : 'Cập nhật từ quản lý và hệ thống'}
+        subtitle={isManagement ? 'Yêu cầu mới và kết quả xử lý theo tuần' : 'Cập nhật từ quản lý và hệ thống'}
       />
       <PageContainer>
-        {!isManagement && !!items.some((item) => !item.isRead) && (
+        <div className="mb-4 grid grid-cols-2 gap-2 rounded-2xl bg-slate-100 p-1 dark:bg-slate-800">
+            <button type="button" onClick={() => setWeekView('current')} className={`min-h-11 rounded-xl text-sm font-bold ${weekView === 'current' ? 'bg-white text-indigo-600 shadow-sm dark:bg-slate-950' : 'text-muted-foreground'}`}>Tuần này</button>
+            <button type="button" onClick={() => setWeekView('previous')} className={`min-h-11 rounded-xl text-sm font-bold ${weekView === 'previous' ? 'bg-white text-indigo-600 shadow-sm dark:bg-slate-950' : 'text-muted-foreground'}`}>Tuần trước</button>
+        </div>
+        {!isManagement && !!visibleItems.some((item) => !item.isRead) && (
           <button
             onClick={markAll}
             className="mb-4 flex min-h-11 w-full items-center justify-center gap-2 rounded-2xl border border-indigo-200 text-sm font-bold text-indigo-600"
@@ -158,7 +195,7 @@ export default function NotificationsPage() {
           </div>
         ) : isManagement ? (
           <div className="space-y-3">
-            {pendingItems.map((item) => {
+            {visiblePendingItems.map((item) => {
               const meta = managementMeta[item.type]
               const Icon = meta.icon
               return (
@@ -198,19 +235,29 @@ export default function NotificationsPage() {
                 </button>
               )
             })}
-            {!pendingItems.length && (
+            {visibleManagementHistory.map((item) => {
+              const createdAt = item.createdAt instanceof Date ? item.createdAt : item.createdAt.toDate()
+              return (
+                <button key={item.id} type="button" onClick={() => void openNotification(item)} className="mobile-card flex w-full gap-3 p-4 text-left">
+                  <div className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-emerald-50 text-emerald-600 dark:bg-emerald-500/10"><CheckCheck className="h-5 w-5" /></div>
+                  <div className="min-w-0 flex-1"><h2 className="font-extrabold">{item.title}</h2><p className="mt-1 text-sm text-muted-foreground">{item.message}</p><p className="mt-2 text-xs font-semibold text-emerald-600">{createdAt.toLocaleString('vi-VN')}</p></div>
+                  <ChevronRight className="mt-3 h-5 w-5 shrink-0 text-slate-400" />
+                </button>
+              )
+            })}
+            {!visiblePendingItems.length && !visibleManagementHistory.length && (
               <div className="mobile-card p-8 text-center">
                 <CheckCheck className="mx-auto h-8 w-8 text-emerald-600" />
-                <h2 className="mt-3 font-extrabold">Không còn việc chờ xử lý</h2>
+                <h2 className="mt-3 font-extrabold">{weekView === 'current' ? 'Tuần này chưa có thông báo' : 'Tuần trước không có thông báo'}</h2>
                 <p className="mt-1 text-sm text-muted-foreground">
-                  Các yêu cầu mới của nhân viên sẽ hiện tại đây.
+                  Yêu cầu mới và kết quả xử lý sẽ xuất hiện tại đây.
                 </p>
               </div>
             )}
           </div>
         ) : (
           <div className="space-y-3">
-            {items.map((item) => {
+            {visibleItems.map((item) => {
               const createdAt = item.createdAt instanceof Date ? item.createdAt : item.createdAt.toDate()
               return (
                 <button
@@ -238,8 +285,8 @@ export default function NotificationsPage() {
                 </button>
               )
             })}
-            {!items.length && (
-              <div className="mobile-card p-8 text-center font-bold">Chưa có thông báo.</div>
+            {!visibleItems.length && (
+              <div className="mobile-card p-8 text-center font-bold">{weekView === 'current' ? 'Tuần này chưa có thông báo.' : 'Tuần trước không có thông báo.'}</div>
             )}
           </div>
         )}

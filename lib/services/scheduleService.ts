@@ -53,6 +53,14 @@ export async function setWorkScheduleBatchEditing(ids: string[], editing: boolea
   return callWorkflowApi('setScheduleBatchEditing', { ids, editing })
 }
 
+export async function adminCancelWorkSchedules(ids: string[], reason: string): Promise<{ ids: string[] }> {
+  return callWorkflowApi('adminCancelSchedules', {
+    requestId: newWorkflowRequestId(),
+    ids,
+    reason,
+  })
+}
+
 /**
  * Get all schedules for an employee
  */

@@ -8,6 +8,8 @@ import {
   ChevronLeft,
   ChevronRight,
   Database,
+  Download,
+  Eye,
   ExternalLink,
   FlaskConical,
   Loader2,
@@ -27,6 +29,7 @@ import {
   type ArchivedRecord,
   type WeeklyArchivePayload,
 } from '@/lib/services/archiveService'
+import { auth } from '@/lib/firebase'
 
 const collectionLabels: Record<string, string> = {
   workSchedules: 'Lịch làm',
@@ -141,6 +144,38 @@ function recordSummary(record: ArchivedRecord, employeeNames: Map<string, string
   return { employee, employeeId, status, date }
 }
 
+const valueLabels: Record<string, string> = {
+  employeeId: 'Mã hệ thống',
+  date: 'Ngày',
+  leaveDate: 'Ngày nghỉ',
+  endDate: 'Đến ngày',
+  shift: 'Ca',
+  lateMinutes: 'Số phút đi trễ',
+  expectedArrival: 'Giờ dự kiến',
+  reason: 'Lý do',
+  amount: 'Số tiền',
+  status: 'Trạng thái',
+  reviewNote: 'Phản hồi quản lý',
+  createdAt: 'Gửi lúc',
+  reviewedAt: 'Xử lý lúc',
+  cancellationReason: 'Lý do hủy',
+}
+
+function readableValue(key: string, value: unknown) {
+  if (value == null || value === '') return ''
+  if (key.toLowerCase().includes('date') || key.endsWith('At')) return displayDate(value)
+  if (key === 'amount') return `${Number(value || 0).toLocaleString('vi-VN')}đ`
+  if (key === 'shift') return value === 'Morning' ? 'Ca sáng' : value === 'Afternoon' ? 'Ca chiều' : 'Ca tối'
+  if (key === 'status') return value === 'Approved' ? 'Đã duyệt' : value === 'Rejected' ? 'Từ chối' : value === 'Cancelled' ? 'Đã hủy' : value === 'Pending' ? 'Chờ duyệt' : String(value)
+  return String(value)
+}
+
+function readableFields(record: ArchivedRecord) {
+  return Object.entries(record.data || {})
+    .filter(([key, value]) => key in valueLabels && readableValue(key, value))
+    .map(([key, value]) => ({ label: valueLabels[key], value: readableValue(key, value) }))
+}
+
 function canonicalFiles(files: ArchiveFileSummary[]) {
   const byWeek = new Map<string, ArchiveFileSummary>()
   files.forEach((file) => {
@@ -176,6 +211,8 @@ export default function AdminArchivePage() {
   const [filterResults, setFilterResults] = useState<FilterResult[]>([])
   const [filtering, setFiltering] = useState(false)
   const [selectedBrowseMonth, setSelectedBrowseMonth] = useState('')
+  const [showWeeklyDetails, setShowWeeklyDetails] = useState(false)
+  const [exportingMonth, setExportingMonth] = useState(false)
   const monthRailRef = useRef<HTMLDivElement>(null)
   const centeredYearRef = useRef<number | null>(null)
   const filterRequestIdRef = useRef(0)
@@ -202,7 +239,15 @@ export default function AdminArchivePage() {
 
   const monthGroups = useMemo(() => {
     const groups = new Map<string, ArchiveFileSummary[]>()
-    files.forEach((file) => groups.set(monthKey(file), [...(groups.get(monthKey(file)) || []), file]))
+    files.forEach((file) => {
+      const startKey = monthKey(file)
+      const end = new Date(`${sourceWeekKey(file.archiveKey)}T12:00:00+07:00`)
+      end.setDate(end.getDate() + 6)
+      const endKey = localMonthKey(end)
+      ;[...new Set([startKey, endKey])].forEach((key) => {
+        groups.set(key, [...(groups.get(key) || []), file])
+      })
+    })
     return [...groups.entries()]
       .sort(([left], [right]) => right.localeCompare(left))
       .map(([key, entries]) => ({
@@ -377,27 +422,23 @@ export default function AdminArchivePage() {
     }
   }, [files, getArchive])
 
+  useEffect(() => {
+    if (!selectedBrowseMonth || loading || !files.length) return
+    const timeout = window.setTimeout(() => {
+      void runFilters({ month: selectedBrowseMonth, collection: 'all', employee: '' })
+    }, 150)
+    return () => window.clearTimeout(timeout)
+  }, [files, loading, runFilters, selectedBrowseMonth])
+
   const applyFilters = () => {
     if (!selectedBrowseMonth) return
     void runFilters({ month: selectedBrowseMonth, collection: draftCollection, employee: draftEmployee.trim() }, true)
   }
 
-  useEffect(() => {
-    if (!appliedFilter || !selectedBrowseMonth || appliedFilter.month === selectedBrowseMonth) return
-    setFiltering(true)
-    const timeout = window.setTimeout(() => {
-      void runFilters({ ...appliedFilter, month: selectedBrowseMonth })
-    }, 250)
-    return () => window.clearTimeout(timeout)
-  }, [appliedFilter, runFilters, selectedBrowseMonth])
-
   const clearFilters = () => {
-    filterRequestIdRef.current += 1
-    setAppliedFilter(null)
-    setFilterResults([])
-    setFiltering(false)
     setDraftCollection('all')
     setDraftEmployee('')
+    if (selectedBrowseMonth) void runFilters({ month: selectedBrowseMonth, collection: 'all', employee: '' })
   }
 
   const filteredEmployeeGroups = useMemo(() => {
@@ -406,6 +447,39 @@ export default function AdminArchivePage() {
     return [...groups.entries()].map(([employee, results]) => ({ employee, results }))
   }, [filterResults])
   const activeFilterCount = appliedFilter ? Number(appliedFilter.collection !== 'all') + Number(Boolean(appliedFilter.employee)) : 0
+  const monthCounts = useMemo(() => {
+    const counts: Record<string, number> = {}
+    filterResults.forEach((result) => {
+      counts[result.collection] = (counts[result.collection] || 0) + result.records.length
+    })
+    return counts
+  }, [filterResults])
+  const monthTotal = Object.values(monthCounts).reduce((sum, value) => sum + value, 0)
+
+  const exportMonthWord = async () => {
+    if (!selectedBrowseMonth || isPreviewMode) return
+    setExportingMonth(true)
+    setMessage('')
+    try {
+      const token = await auth.currentUser?.getIdToken()
+      if (!token) throw new Error('Bạn cần đăng nhập lại.')
+      const response = await fetch(`/api/exports/archive-month?month=${encodeURIComponent(selectedBrowseMonth)}`, {
+        headers: { authorization: `Bearer ${token}` },
+      })
+      if (!response.ok) throw new Error('Chưa thể xuất dữ liệu tháng.')
+      const blob = await response.blob()
+      const url = URL.createObjectURL(blob)
+      const anchor = document.createElement('a')
+      anchor.href = url
+      anchor.download = `kho-du-lieu-${selectedBrowseMonth}.docx`
+      anchor.click()
+      URL.revokeObjectURL(url)
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'Chưa thể xuất file Word.')
+    } finally {
+      setExportingMonth(false)
+    }
+  }
 
   const archiveDetails = (payload: WeeklyArchivePayload, file: ArchiveFileSummary) => {
     const employeeNames = new Map(
@@ -431,7 +505,7 @@ export default function AdminArchivePage() {
               <div className="divide-y divide-slate-100 border-t border-slate-100 px-3 dark:divide-white/10 dark:border-white/10">
                 {records.map((record) => {
                   const summary = recordSummary(record, employeeNames)
-                  return <details key={record.path} className="py-3"><summary className="cursor-pointer list-none"><div className="flex items-start justify-between gap-3"><div className="min-w-0"><p className="truncate text-sm font-bold">{summary.employee}</p><p className="mt-1 text-xs text-muted-foreground">{summary.date || record.id}</p></div>{summary.status && <Badge variant={summary.status === 'Approved' ? 'success' : summary.status === 'Rejected' ? 'destructive' : 'outline'}>{summary.status}</Badge>}</div></summary><pre className="mt-3 max-h-72 overflow-auto rounded-2xl bg-slate-950 p-3 text-[11px] leading-5 text-slate-200">{JSON.stringify(record.data, null, 2)}</pre></details>
+                  return <details key={record.path} className="py-3"><summary className="cursor-pointer list-none"><div className="flex items-start justify-between gap-3"><div className="min-w-0"><p className="truncate text-sm font-bold">{summary.employee}</p><p className="mt-1 text-xs text-muted-foreground">{summary.date || record.id}</p></div>{summary.status && <Badge variant={summary.status === 'Approved' ? 'success' : summary.status === 'Rejected' ? 'destructive' : 'outline'}>{readableValue('status', summary.status)}</Badge>}</div></summary><div className="mt-3 rounded-2xl bg-slate-100 p-3 text-sm dark:bg-slate-800">{readableFields(record).map((field) => <p key={field.label} className="mt-1 first:mt-0"><span className="font-bold">{field.label}:</span> {field.value}</p>)}</div></details>
                 })}
               </div>
             </details>
@@ -472,26 +546,28 @@ export default function AdminArchivePage() {
           </section>
         )}
 
-        {appliedFilter && (
-          <section className="mt-4 rounded-3xl border border-indigo-100 bg-indigo-50/80 p-4 dark:border-indigo-500/20 dark:bg-indigo-500/10">
-            <div className="flex items-start justify-between gap-3"><div><p className="text-[11px] font-bold uppercase tracking-wider text-indigo-600">Kết quả {monthLabel(selectedBrowseMonth)}</p><h2 className="mt-1 text-xl font-black">{filterResults.length} hoạt động · {filteredEmployeeGroups.length} nhân viên</h2></div><button type="button" onClick={clearFilters} className="shrink-0 rounded-xl bg-white px-3 py-2 text-xs font-bold text-slate-600 shadow-sm dark:bg-slate-900 dark:text-slate-300">Xóa lọc</button></div>
-            <div className="mt-3 flex flex-wrap gap-2">{appliedFilter.collection !== 'all' && <span className="rounded-full bg-indigo-600 px-3 py-1.5 text-xs font-bold text-white">{collectionLabels[appliedFilter.collection]}</span>}{appliedFilter.employee && <span className="rounded-full border border-indigo-200 bg-white px-3 py-1.5 text-xs font-bold text-indigo-700 dark:border-indigo-500/20 dark:bg-slate-900 dark:text-indigo-200">Nhân viên: {appliedFilter.employee}</span>}{appliedFilter.collection === 'all' && !appliedFilter.employee && <span className="text-xs font-semibold text-indigo-700 dark:text-indigo-200">Hiển thị tất cả dữ liệu trong tháng.</span>}</div>
-          </section>
-        )}
+        <section className="mt-4 rounded-3xl border border-indigo-100 bg-indigo-50/80 p-4 dark:border-indigo-500/20 dark:bg-indigo-500/10">
+          <div className="flex items-start justify-between gap-3"><div><p className="text-[11px] font-bold uppercase tracking-wider text-indigo-600">Tổng quan {monthLabel(selectedBrowseMonth)}</p><h2 className="mt-1 text-xl font-black">{monthTotal} mục dữ liệu · {filteredEmployeeGroups.length} nhân viên</h2></div>{activeFilterCount > 0 && <button type="button" onClick={clearFilters} className="shrink-0 rounded-xl bg-white px-3 py-2 text-xs font-bold text-slate-600 shadow-sm dark:bg-slate-900 dark:text-slate-300">Xóa lọc</button>}</div>
+          <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3">{Object.entries(monthCounts).filter(([, count]) => count > 0).map(([collection, count]) => <div key={collection} className="rounded-2xl bg-white p-3 shadow-sm dark:bg-slate-900"><p className="text-xs font-semibold text-muted-foreground">{collectionLabels[collection] || collection}</p><p className="mt-1 text-xl font-black">{count}</p></div>)}</div>
+          <div className="mt-3 grid grid-cols-2 gap-2">
+            <button type="button" onClick={() => void exportMonthWord()} disabled={exportingMonth || !monthTotal} className="flex min-h-12 items-center justify-center gap-2 rounded-2xl bg-indigo-600 px-3 text-sm font-bold text-white disabled:opacity-50">{exportingMonth ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />} Xuất Word</button>
+            <button type="button" onClick={() => setShowWeeklyDetails((current) => !current)} className="flex min-h-12 items-center justify-center gap-2 rounded-2xl bg-white px-3 text-sm font-bold text-slate-700 shadow-sm dark:bg-slate-900 dark:text-slate-200"><Eye className="h-4 w-4" /> {showWeeklyDetails ? 'Ẩn chi tiết' : 'Xem chi tiết'}</button>
+          </div>
+        </section>
 
         {loading || filtering ? (
           <div className="grid min-h-56 place-items-center"><Loader2 className="h-7 w-7 animate-spin text-indigo-600" /></div>
-        ) : appliedFilter ? (
+        ) : activeFilterCount > 0 ? (
           <section className="mt-4 space-y-3">
             {filteredEmployeeGroups.map((group) => (
               <article key={group.employee} className="mobile-card overflow-hidden">
                 <header className="flex items-center gap-3 border-b border-slate-100 p-4 dark:border-white/10"><div className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-indigo-600 text-sm font-black text-white">{group.employee.trim().charAt(0).toLocaleUpperCase('vi')}</div><div className="min-w-0 flex-1"><h3 className="truncate font-black">{group.employee}</h3><p className="mt-1 text-xs text-muted-foreground">{group.results.length} hoạt động trong {monthLabel(selectedBrowseMonth).toLocaleLowerCase('vi')}</p></div></header>
-                <div className="divide-y divide-slate-100 px-4 dark:divide-white/10">{group.results.map((result) => <details key={result.key} className="py-1"><summary className="flex cursor-pointer list-none items-center gap-3 py-3"><div className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-indigo-50 text-indigo-600 dark:bg-indigo-500/10"><Database className="h-4 w-4" /></div><div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-2"><p className="text-sm font-extrabold">{collectionLabels[result.collection] || result.collection}</p>{result.status && <Badge variant={result.status === 'Approved' ? 'success' : result.status === 'Rejected' ? 'destructive' : 'outline'}>{result.status}</Badge>}</div><p className="mt-1 text-xs text-muted-foreground">{result.collection === 'workSchedules' ? `${result.records.length} ca · ${weekRange(result.weekKey)}` : result.date || weekRange(result.weekKey)}</p></div><ChevronDown className="h-4 w-4 shrink-0 text-slate-400" /></summary><div className="pb-3"><pre className="max-h-80 overflow-auto rounded-2xl bg-slate-950 p-3 text-[11px] leading-5 text-slate-200">{JSON.stringify(result.records.map((record) => record.data), null, 2)}</pre></div></details>)}</div>
+                <div className="divide-y divide-slate-100 px-4 dark:divide-white/10">{group.results.map((result) => <details key={result.key} className="py-1"><summary className="flex cursor-pointer list-none items-center gap-3 py-3"><div className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-indigo-50 text-indigo-600 dark:bg-indigo-500/10"><Database className="h-4 w-4" /></div><div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-2"><p className="text-sm font-extrabold">{collectionLabels[result.collection] || result.collection}</p>{result.status && <Badge variant={result.status === 'Approved' ? 'success' : result.status === 'Rejected' ? 'destructive' : 'outline'}>{readableValue('status', result.status)}</Badge>}</div><p className="mt-1 text-xs text-muted-foreground">{result.collection === 'workSchedules' ? `${result.records.length} ca · ${weekRange(result.weekKey)}` : result.date || weekRange(result.weekKey)}</p></div><ChevronDown className="h-4 w-4 shrink-0 text-slate-400" /></summary><div className="space-y-2 pb-3">{result.records.map((record) => <div key={record.path} className="rounded-2xl bg-slate-50 p-3 text-sm dark:bg-slate-800">{readableFields(record).map((field) => <p key={field.label} className="mt-1 first:mt-0"><span className="font-bold">{field.label}:</span> {field.value}</p>)}</div>)}</div></details>)}</div>
               </article>
             ))}
             {!filterResults.length && <div className="mobile-card p-8 text-center"><Database className="mx-auto h-8 w-8 text-slate-400" /><h2 className="mt-3 font-extrabold">Không tìm thấy dữ liệu</h2><p className="mt-1 text-sm text-muted-foreground">Thử bỏ tên nhân viên hoặc chọn loại dữ liệu khác.</p></div>}
           </section>
-        ) : (
+        ) : showWeeklyDetails ? (
           <section className="mt-4 space-y-3">
             <div className="flex items-end justify-between gap-3 px-1"><div><h2 className="font-black">Các tuần trong {monthLabel(selectedBrowseMonth).toLocaleLowerCase('vi')}</h2><p className="mt-1 text-xs text-muted-foreground">Chạm vào một tuần để xem dữ liệu.</p></div><Badge variant="outline">{browseGroup?.weekKeys.length || 0} tuần</Badge></div>
             {browseGroup?.files.map((file) => {
@@ -501,7 +577,7 @@ export default function AdminArchivePage() {
                   })}
             {!browseGroup && <div className="mobile-card p-8 text-center"><CalendarDays className="mx-auto h-8 w-8 text-slate-300" /><h2 className="mt-3 font-extrabold">Tháng này chưa có dữ liệu</h2><p className="mt-1 text-sm leading-6 text-muted-foreground">Khi có bản lưu tuần, dữ liệu sẽ tự xuất hiện tại đây.</p></div>}
           </section>
-        )}
+        ) : null}
 
         <details className="group mt-6 overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm dark:border-slate-700 dark:bg-slate-900">
           <summary className="flex cursor-pointer list-none items-center gap-3 p-4"><div className="grid h-10 w-10 shrink-0 place-items-center rounded-2xl bg-indigo-50 text-indigo-600 dark:bg-indigo-500/10"><FlaskConical className="h-4 w-4" /></div><div className="min-w-0 flex-1"><h2 className="text-sm font-extrabold">Công cụ kiểm thử</h2><p className="mt-0.5 text-xs text-muted-foreground">Tạo bản thử bằng ngày lùi khi cần kiểm tra.</p></div><ChevronDown className="h-5 w-5 text-slate-400 transition group-open:rotate-180" /></summary>

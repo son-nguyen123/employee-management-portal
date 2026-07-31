@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import Link from 'next/link'
 import { AlertTriangle, CalendarPlus, Check, ChevronDown, CircleDollarSign, Clock3, ExternalLink, FileText, Loader2, MessageSquareText, Phone, UsersRound, X } from 'lucide-react'
 import { useAuth } from '@/lib/hooks/useAuth'
 import { subscribeToPendingLeaveRequests, updateLeaveStatus } from '@/lib/services/leaveService'
@@ -25,6 +26,10 @@ type RequestRow = {
   status: string
   shifts?: StaffRequest['shifts']
   removedShifts?: StaffRequest['removedShifts']
+  workScheduleIds?: string[]
+  penaltyIfApproved?: number
+  penaltyIfRejected?: number
+  noticeClass?: 'onTime' | 'late'
 }
 
 function buildRequestRows(
@@ -46,6 +51,10 @@ function buildRequestRows(
       title: 'Yêu cầu xin nghỉ',
       detail: `${item.reason || 'Nghỉ việc cá nhân'} · ${item.duration === 'long' ? 'Dài hạn' : 'Ngắn hạn'}`,
       status: item.status || 'Pending',
+      workScheduleIds: item.workScheduleIds || (item.workScheduleId ? [item.workScheduleId] : []),
+      penaltyIfApproved: Number(item.penaltyIfApproved ?? (item.noticeClass === 'late' ? 500 : 0)),
+      penaltyIfRejected: Number(item.penaltyIfRejected ?? (item.noticeClass === 'late' ? 1000 : 500)),
+      noticeClass: item.noticeClass || 'onTime',
     })),
     ...lates.map((item, index) => ({
       id: item.id || `late-${index}`,
@@ -396,9 +405,13 @@ export default function AdminRequestsPage() {
           </div>}
         </section>
         <section className={pageMode === 'requests' ? 'order-1' : 'hidden'}>
-        <div className="mb-3 flex items-end justify-between gap-3">
-          <div><p className="text-[11px] font-black uppercase tracking-[0.16em] text-indigo-600">Yêu cầu chờ xử lý</p><h2 className="mt-0.5 text-[1.45rem] font-black tracking-tight">Nhân viên vừa gửi</h2></div>
-          <p className="pb-1 text-xs font-bold text-slate-500 dark:text-slate-400">{rows.length} đang chờ</p>
+        <div className="mb-4 grid grid-cols-2 gap-2 rounded-2xl bg-slate-100 p-1 dark:bg-slate-800">
+          <Link href="/admin/dashboard#schedules" className="grid min-h-11 place-items-center rounded-xl text-sm font-bold text-muted-foreground">Lịch chờ duyệt</Link>
+          <div className="grid min-h-11 place-items-center rounded-xl bg-white text-sm font-bold text-indigo-600 shadow-sm dark:bg-slate-950">Yêu cầu khác</div>
+        </div>
+        <div className="mb-3 flex items-center justify-between gap-3">
+          <h2 className="text-base font-extrabold">Yêu cầu khác</h2>
+          <p className="text-xs font-bold text-slate-500 dark:text-slate-400">{rows.length} đang chờ</p>
         </div>
         <div className="-mx-3 overflow-x-auto border-y border-slate-200/80 bg-white/70 px-3 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden dark:border-white/10 dark:bg-slate-900/60 sm:mx-0 sm:rounded-2xl sm:border sm:px-2">
           <div className="flex w-max">
@@ -443,6 +456,12 @@ export default function AdminRequestsPage() {
                     <div className="mt-3 border-t border-slate-100 pt-3 text-sm leading-5 text-slate-600 dark:border-white/10 dark:text-slate-300">
                       {row.detail}
                     </div>
+                      {row.type === 'leave' && (
+                        <div className="mt-2.5 rounded-2xl border border-amber-100 bg-amber-50/80 p-3 text-xs text-amber-950 dark:border-amber-500/20 dark:bg-amber-500/10 dark:text-amber-100">
+                          <p className="font-extrabold">{row.noticeClass === 'late' ? 'Báo nghỉ dưới 24 giờ trước ca' : 'Báo nghỉ đúng hạn'} · {row.workScheduleIds?.length || 0} ca</p>
+                          <p className="mt-1">Duyệt: trừ {Number(row.penaltyIfApproved || 0).toLocaleString('vi-VN')}đ · Từ chối: trừ {Number(row.penaltyIfRejected || 0).toLocaleString('vi-VN')}đ</p>
+                        </div>
+                      )}
                       {!!row.removedShifts?.length && (
                         <div className="mt-2.5 space-y-1.5 rounded-2xl border border-rose-100 bg-rose-50/80 p-3 text-xs text-rose-950 dark:border-rose-500/20 dark:bg-rose-500/10 dark:text-rose-100">
                           <p className="font-extrabold">Ca xin hủy</p>
