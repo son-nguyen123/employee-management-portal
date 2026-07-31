@@ -95,7 +95,7 @@ export async function updateWeeklyScheduleTarget(actor: RequestActor, raw: unkno
 
 export async function getManagementContact(actor: RequestActor) {
   requireStaff(actor)
-  const snapshot = await adminDb.collection('employees').where('status', '==', 'active').get()
+  const snapshot = await adminDb.collection('employees').get()
   const managers = snapshot.docs
     .map((document): Record<string, unknown> & { uid: string } => ({
       uid: document.id,
@@ -149,6 +149,7 @@ export async function updateAuditReceiptSettings(actor: RequestActor, raw: unkno
 }
 
 export async function manageEmployeeStatus(actor: RequestActor, raw: unknown) {
+  throw new ApiError(410, 'Chức năng vô hiệu hóa tài khoản đã được tắt.')
   requireManager(actor)
   if (actor.role !== 'admin') throw new ApiError(403, 'Chỉ admin được duyệt hoặc khóa tài khoản.')
   const body = objectBody(raw)
@@ -339,7 +340,7 @@ async function sendPenaltyPush(params: {
 }
 
 async function activeManagerIds(): Promise<string[]> {
-  const snapshot = await adminDb.collection('employees').where('status', '==', 'active').get()
+  const snapshot = await adminDb.collection('employees').get()
   return snapshot.docs
     .filter((item) => ['admin', 'manager'].includes(String(item.get('role'))))
     .map((item) => item.id)

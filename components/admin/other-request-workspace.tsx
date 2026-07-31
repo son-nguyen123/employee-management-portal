@@ -4,7 +4,6 @@ import { useEffect, useMemo, useState } from 'react'
 import { ArrowLeft, Check, ChevronRight, CircleDollarSign, Clock3, FileText, Loader2, MessageSquareText, RotateCcw, UserRound, X } from 'lucide-react'
 import { useAuth, useUserRole } from '@/lib/hooks/useAuth'
 import type { Employee } from '@/lib/models/types'
-import { setEmployeeAccountStatus } from '@/lib/services/employeeService'
 import { updateLateStatus } from '@/lib/services/lateService'
 import { updateLeaveStatus } from '@/lib/services/leaveService'
 import { subscribeToManagementPendingItems, type ManagementPendingItem, type ManagementShift } from '@/lib/services/notificationService'
@@ -76,7 +75,7 @@ export function OtherRequestWorkspace({ employees }: { employees: Employee[] }) 
     }
     const weekWindow = currentWeekWindow()
     const unsubscribePending = subscribeToManagementPendingItems(
-      (items) => setPending(items.filter((item) => item.type !== 'schedule' && (item.type !== 'account' || role === 'admin'))),
+      (items) => setPending(items.filter((item) => item.type !== 'schedule' && item.type !== 'account')),
       () => setMessage('Chưa thể tải các yêu cầu khác.')
     )
     const unsubscribeHistory = subscribeToWeeklyDecisionHistory(
@@ -112,7 +111,6 @@ export function OtherRequestWorkspace({ employees }: { employees: Employee[] }) 
     setMessage('')
     try {
       if (!isPreviewMode) {
-        if (item.type === 'account') await setEmployeeAccountStatus(item.employeeId, status === 'Approved' ? 'active' : 'inactive')
         if (item.type === 'leave') await updateLeaveStatus(item.targetIds[0], status, authUser.uid, note.trim(), penaltyAmount)
         if (item.type === 'late') await updateLateStatus(item.targetIds[0], status, authUser.uid, note.trim(), penaltyAmount)
         if (item.type === 'salary') await updateSalaryAdvanceStatus(item.targetIds[0], status, authUser.uid, note.trim())

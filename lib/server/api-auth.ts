@@ -39,8 +39,7 @@ export async function authenticateRequest(request: Request): Promise<RequestActo
   }
 
   const role = profile.get('role')
-  const status = profile.get('status')
-  if (!['admin', 'manager', 'employee'].includes(role) || status !== 'active') {
+  if (!['admin', 'manager', 'employee'].includes(role)) {
     throw new ApiError(403, 'Tài khoản không hoạt động hoặc chưa được phân quyền.')
   }
 

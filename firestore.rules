@@ -70,7 +70,6 @@ service cloud.firestore {
 
     function isManagerOrAdmin() {
       return hasEmployeeProfile() &&
-        get(/databases/$(database)/documents/employees/$(request.auth.uid)).data.status == 'active' &&
         currentRole() in ['manager', 'admin'];
     }
 
@@ -235,7 +234,6 @@ service cloud.firestore {
         (
           (
             isDocOwner() &&
-            resource.data.status == 'active' &&
             request.resource.data.diff(resource.data).affectedKeys()
               .hasOnly([
                 'fullName', 'phone', 'photoURL', 'facebookUrl',

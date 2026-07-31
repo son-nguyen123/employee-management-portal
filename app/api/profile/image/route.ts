@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server'
 import { FieldValue } from 'firebase-admin/firestore'
 import sharp from 'sharp'
 import { ApiError } from '@/lib/server/api-auth'
-import { adminAuth, adminDb } from '@/lib/server/firebase-admin'
+import { adminAuth } from '@/lib/server/firebase-admin'
 import {
   deleteOtherProfileImages,
   deleteProfileImage,
@@ -29,9 +29,6 @@ export async function POST(request: Request) {
     const authorization = request.headers.get('authorization')
     if (!authorization?.startsWith('Bearer ')) throw new ApiError(401, 'Bạn cần đăng nhập để tải ảnh.')
     const token = await adminAuth.verifyIdToken(authorization.slice(7), true)
-    const profileRef = adminDb.collection('employees').doc(token.uid)
-    const profile = await profileRef.get()
-    if (profile.exists && profile.get('status') !== 'active') throw new ApiError(403, 'Tài khoản chưa hoạt động.')
     const form = await request.formData()
     const image = form.get('image')
     if (!(image instanceof File)) {

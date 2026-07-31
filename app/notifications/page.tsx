@@ -46,7 +46,7 @@ import { updateStaffRequestStatus } from '@/lib/services/staffRequestService'
 import { getManagementContact } from '@/lib/services/managementSettingsService'
 import { profileImageUrl } from '@/lib/utils/profileImage'
 import { subscribeToWeeklyDecisionHistory, type DecisionHistoryItem } from '@/lib/services/decisionHistoryService'
-import { setEmployeeAccountStatus, subscribeToAllEmployees } from '@/lib/services/employeeService'
+import { subscribeToAllEmployees } from '@/lib/services/employeeService'
 import type { Employee } from '@/lib/models/types'
 
 type CurrentSchedule = Pick<WorkSchedule, 'id' | 'shift' | 'status'> & { date: Date }
@@ -272,7 +272,7 @@ export default function NotificationsPage() {
     if (isManagement) {
       const unsubscribePending = subscribeToManagementPendingItems(
         (pending) => {
-          setPendingItems(pending)
+          setPendingItems(pending.filter((item) => item.type !== 'account'))
           setLoading(false)
           setMessage('')
         },
@@ -472,9 +472,7 @@ export default function NotificationsPage() {
     setMessage('')
     try {
       if (!isPreviewMode) {
-        if (item.type === 'account') {
-          await setEmployeeAccountStatus(item.employeeId, status === 'Approved' ? 'active' : 'inactive')
-        } else if (item.type === 'schedule') {
+        if (item.type === 'schedule') {
           await reviewWorkScheduleBatch(item.targetIds, status, note)
         } else if (item.type === 'leave') {
           await updateLeaveStatus(item.targetIds[0], status, authUser.uid, note, penaltyAmount)
