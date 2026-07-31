@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { AlertTriangle, CalendarDays, CircleDollarSign, Info, Loader2 } from 'lucide-react'
 import { Header } from '@/components/layout/header'
 import { PageContainer } from '@/components/layout/page-container'
+import { StaffBanner } from '@/components/staff/staff-banner'
 import { useAuth } from '@/lib/hooks/useAuth'
 import { subscribeToEmployeePenalties } from '@/lib/services/penaltyService'
 import type { Penalty } from '@/lib/models/types'
@@ -57,6 +58,7 @@ export default function PenaltiesPage() {
     <main className="min-h-screen">
       <Header title="Khoản phạt của tôi" subtitle="Theo dõi lý do và nguồn phát sinh" />
       <PageContainer>
+        <StaffBanner icon={AlertTriangle} tone="rose" eyebrow="Khoản phạt" title="Theo dõi rõ từng khoản trừ" description="Kiểm tra lý do, thời điểm và trạng thái của từng khoản phạt trong lịch sử làm việc." note="Khoản đã hủy sẽ không bị khấu trừ. Nếu thấy chưa đúng, hãy liên hệ quản lý để được kiểm tra." />
         <section className="mb-4 grid grid-cols-2 gap-3">
           <div className="rounded-3xl bg-rose-600 p-4 text-white">
             <CircleDollarSign className="h-5 w-5 text-rose-200" />

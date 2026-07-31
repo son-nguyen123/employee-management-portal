@@ -587,10 +587,11 @@ export default function SchedulePage() {
             <button type="button" onClick={() => { setCurrentWeekMode(false); setSubmittedChangeSummary(null); setMessage(null) }} className={`min-h-11 rounded-xl text-sm font-bold ${!currentWeekMode ? 'bg-white text-indigo-600 shadow-sm dark:bg-slate-950' : 'text-muted-foreground'}`}>Tuần sau</button>
           </div>
         )}
-        <section className="mb-4 rounded-3xl bg-gradient-to-br from-fuchsia-600 via-pink-500 to-violet-600 p-5 text-white shadow-lg shadow-fuchsia-500/20">
+        <section className="mb-4 rounded-[2rem] bg-gradient-to-br from-indigo-700 via-indigo-800 to-violet-900 p-5 text-white shadow-xl shadow-indigo-950/20">
+          <CalendarDays className="h-7 w-7 text-indigo-200" />
           <div className="flex items-start justify-between gap-4">
             <div>
-              <p className="text-xs font-semibold text-fuchsia-100">{isNewEmployee ? 'Lịch dành cho nhân viên mới' : currentWeekMode ? 'Lịch tuần này' : 'Lịch tuần sau'}</p>
+              <p className="text-xs font-semibold text-indigo-100">{isNewEmployee ? 'Lịch dành cho nhân viên mới' : currentWeekMode ? 'Lịch tuần này' : 'Lịch tuần sau'}</p>
               <h2 className="mt-1 text-xl font-extrabold">
                 {days[0].date.toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit' })}
                 {' – '}

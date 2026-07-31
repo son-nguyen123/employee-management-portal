@@ -9,6 +9,7 @@ import { getPreviewSchedules } from '@/lib/services/previewWorkflow'
 import { mockLateRequests } from '@/lib/services/mockData'
 import { Header } from '@/components/layout/header'
 import { PageContainer } from '@/components/layout/page-container'
+import { StaffBanner } from '@/components/staff/staff-banner'
 import { Badge } from '@/components/ui/badge'
 
 type ShiftName = 'Morning' | 'Afternoon' | 'Evening'
@@ -152,16 +153,7 @@ export default function LateArrivalPage() {
     <main className="min-h-screen pb-8">
       <Header title="Xin đi trễ" subtitle="Chọn ca đã được quản lý xác nhận" />
       <PageContainer>
-        <section className="mb-5 rounded-3xl bg-slate-950 p-5 text-white">
-          <Clock3 className="h-7 w-7 text-indigo-300" />
-          <h2 className="mt-4 text-2xl font-black">Lịch làm đã xác nhận</h2>
-          <p className="mt-1 text-sm leading-6 text-slate-300">
-            Chọn đúng ca bạn sẽ đi trễ, sau đó nhập giờ dự kiến có mặt.
-          </p>
-          <p className="mt-3 rounded-2xl bg-white/10 p-3 text-xs font-semibold leading-5 text-slate-100">
-            Báo trước giờ vào ca từ 60 phút: không bị trừ. Báo dưới 60 phút: ghi nhận khoản phạt 500đ.
-          </p>
-        </section>
+        <StaffBanner icon={Clock3} tone="amber" eyebrow="Xin đi trễ" title="Lịch làm đã xác nhận" description="Chọn đúng ca bạn sẽ đi trễ, sau đó nhập giờ dự kiến có mặt." note="Báo trước giờ vào ca từ 60 phút: không bị trừ. Báo dưới 60 phút: ghi nhận khoản phạt 500đ." />
 
         {message && <p className="mb-4 rounded-2xl bg-indigo-50 p-3 text-sm font-semibold text-indigo-800 dark:bg-indigo-500/10 dark:text-indigo-200">{message}</p>}
 

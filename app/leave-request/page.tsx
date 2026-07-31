@@ -9,6 +9,7 @@ import { subscribeToEmployeeSchedules } from '@/lib/services/scheduleService'
 import { getPreviewSchedules } from '@/lib/services/previewWorkflow'
 import { Header } from '@/components/layout/header'
 import { PageContainer } from '@/components/layout/page-container'
+import { StaffBanner } from '@/components/staff/staff-banner'
 import { Badge } from '@/components/ui/badge'
 
 type Duration = 'short' | 'long'
@@ -208,16 +209,7 @@ export default function LeaveRequestPage() {
     <main className="min-h-screen pb-8">
       <Header title="Xin nghỉ" subtitle="Chọn hình thức nghỉ phù hợp" />
       <PageContainer>
-        <section className="mb-4 rounded-3xl bg-gradient-to-br from-emerald-600 to-teal-700 p-5 text-white">
-          <Palmtree className="h-7 w-7 text-emerald-100" />
-          <h2 className="mt-4 text-2xl font-black">Bạn cần nghỉ khi nào?</h2>
-          <p className="mt-1 text-sm leading-6 text-emerald-50">
-            Nghỉ ngắn hạn chọn các ca cụ thể trong một hoặc nhiều ngày. Nghỉ dài hạn chọn một khoảng ngày liên tục.
-          </p>
-          <p className="mt-3 rounded-2xl bg-white/10 p-3 text-xs font-semibold leading-5 text-emerald-50">
-            Ghi lý do chính tại đây; hình ảnh hoặc giấy tờ làm bằng chứng gửi riêng cho quản lý qua Messenger.
-          </p>
-        </section>
+        <StaffBanner icon={Palmtree} tone="emerald" eyebrow="Xin nghỉ" title="Bạn cần nghỉ khi nào?" description="Nghỉ ngắn hạn chọn các ca cụ thể trong một hoặc nhiều ngày. Nghỉ dài hạn chọn một khoảng ngày liên tục." note="Ghi lý do chính tại đây; hình ảnh hoặc giấy tờ làm bằng chứng gửi riêng cho quản lý qua Messenger." />
 
         {(!hasPendingRequest || editingId) && <form onSubmit={submit} className="mobile-card min-w-0 overflow-hidden p-4 sm:p-6">
           <div className="grid grid-cols-2 gap-2 rounded-2xl bg-slate-100 p-1 dark:bg-slate-800">

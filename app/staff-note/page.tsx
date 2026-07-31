@@ -5,6 +5,7 @@ import { CheckCircle2, Loader2, MessageSquareText, Send } from 'lucide-react'
 import { useAuth } from '@/lib/hooks/useAuth'
 import { Header } from '@/components/layout/header'
 import { PageContainer } from '@/components/layout/page-container'
+import { StaffBanner } from '@/components/staff/staff-banner'
 import { submitStaffRequest } from '@/lib/services/staffRequestService'
 
 export default function StaffNotePage() {
@@ -33,16 +34,8 @@ export default function StaffNotePage() {
     <main className="min-h-screen pb-28">
       <Header title="Ghi chú cho quản lý" subtitle="Gửi một lời nhắn riêng cần quản lý xem" />
       <PageContainer>
+        <StaffBanner icon={MessageSquareText} tone="cyan" eyebrow="Lời nhắn riêng" title="Bạn muốn quản lý biết điều gì?" description="Gửi một ghi chú ngắn để quản lý nắm được việc cần lưu ý trong tuần này." note="Ghi chú sẽ xuất hiện trong danh sách yêu cầu của quản lý." />
         <section className="overflow-hidden rounded-[1.75rem] border border-cyan-100 bg-white shadow-sm dark:border-cyan-500/20 dark:bg-slate-900">
-          <div className="flex items-center gap-3 bg-gradient-to-r from-cyan-600 to-sky-600 p-5 text-white">
-            <div className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-white/15">
-              <MessageSquareText className="h-5 w-5" />
-            </div>
-            <div>
-              <p className="text-xs font-bold uppercase tracking-wider text-cyan-100">Lời nhắn riêng</p>
-              <h1 className="font-black">Bạn muốn quản lý biết điều gì?</h1>
-            </div>
-          </div>
           <form onSubmit={submit} className="p-4">
             <label className="text-sm font-extrabold">
               Nội dung ghi chú

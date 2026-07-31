@@ -1,23 +1,14 @@
 import { BellRing, BookOpenText, CalendarClock, CheckCircle2, Clock3, ShieldCheck, WalletCards } from 'lucide-react'
 import { Header } from '@/components/layout/header'
 import { PageContainer } from '@/components/layout/page-container'
+import { StaffBanner } from '@/components/staff/staff-banner'
 
 export default function RulesPage() {
   return (
     <main className="min-h-screen pb-8">
       <Header title="Điều khoản công ty" subtitle="Quy định dành cho toàn bộ nhân sự" />
       <PageContainer>
-        <section className="relative overflow-hidden rounded-[2rem] bg-gradient-to-br from-indigo-700 via-violet-700 to-fuchsia-700 p-6 text-white shadow-xl shadow-indigo-950/20">
-          <div className="absolute -right-10 -top-10 h-40 w-40 rounded-full bg-white/10 blur-2xl" />
-          <div className="relative">
-            <div className="grid h-14 w-14 place-items-center rounded-2xl bg-white/15 backdrop-blur"><BookOpenText className="h-7 w-7" /></div>
-            <p className="mt-6 text-xs font-bold uppercase tracking-[0.18em] text-indigo-100">Sổ tay nội bộ</p>
-            <h1 className="mt-2 text-3xl font-black leading-tight">Minh bạch để cùng làm việc tốt hơn</h1>
-            <p className="mt-3 max-w-md text-sm leading-6 text-indigo-100">
-              Tất cả chính sách chính thức sẽ được công bố và lưu phiên bản tại đây.
-            </p>
-          </div>
-        </section>
+        <StaffBanner icon={BookOpenText} tone="violet" eyebrow="Sổ tay nội bộ" title="Minh bạch để cùng làm việc tốt hơn" description="Tất cả chính sách chính thức sẽ được công bố và lưu phiên bản tại đây." note="Đọc kỹ quy định trước khi gửi lịch hoặc yêu cầu để tránh phát sinh khoản trừ không cần thiết." />
 
         <section className="mt-4 grid grid-cols-3 gap-2">
           {[

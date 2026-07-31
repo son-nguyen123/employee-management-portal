@@ -7,6 +7,7 @@ import { cancelSalaryAdvance, createSalaryAdvance, reviseSalaryAdvance, subscrib
 import { mockSalaryAdvances } from '@/lib/services/mockData'
 import { Header } from '@/components/layout/header'
 import { PageContainer } from '@/components/layout/page-container'
+import { StaffBanner } from '@/components/staff/staff-banner'
 import { Card } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { SkeletonLoader } from '@/components/ui/skeleton-loader'
@@ -143,10 +144,7 @@ export default function SalaryAdvancePage() {
       <Header title="Ứng lương / yêu cầu" subtitle="Gửi đề nghị cho quản lý" />
 
       <PageContainer>
-        <Link href="/staff-note" className="mb-5 block rounded-3xl bg-sky-50 p-4 text-sky-900 shadow-sm transition active:scale-[0.99] dark:bg-sky-500/10 dark:text-sky-100">
-          <p className="font-black">Gửi yêu cầu khác</p>
-          <p className="mt-1 text-sm">Dùng cho xin nghỉ việc, đề nghị riêng hoặc nội dung không phải ứng lương.</p>
-        </Link>
+        <StaffBanner icon={DollarSign} tone="sky" eyebrow="Ứng lương" title="Bạn cần hỗ trợ khoản nào?" description="Nhập số tiền muốn ứng và ghi chú ngắn để quản lý xem xét nhanh hơn." note="Số tiền sẽ tự thêm dấu chấm theo định dạng Việt Nam. Các yêu cầu khác có thể gửi riêng cho quản lý." action={<Link href="/staff-note" className="rounded-xl bg-white/15 px-3 py-2 text-xs font-extrabold text-white backdrop-blur">Gửi yêu cầu khác</Link>} />
         {message && (
           <div
             className={`mb-6 p-4 rounded-lg border flex items-gap-2 ${
