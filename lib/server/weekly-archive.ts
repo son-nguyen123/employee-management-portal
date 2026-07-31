@@ -118,6 +118,10 @@ function timestampWithin(value: unknown, window: ArchiveWindow): boolean {
   return Boolean(date && date >= window.start && date < window.end)
 }
 
+function requestActivityWithin(snapshot: DocumentSnapshot<DocumentData>, window: ArchiveWindow): boolean {
+  return ['reviewedAt', 'updatedAt', 'createdAt'].some((field) => timestampWithin(snapshot.get(field), window))
+}
+
 async function collectDocuments(window: ArchiveWindow): Promise<{
   records: Record<string, ArchivedDocument[]>
   paths: string[]
@@ -154,29 +158,18 @@ async function collectDocuments(window: ArchiveWindow): Promise<{
   ])
 
   const domainRecords = {
-    workSchedules: schedules.docs
-      .filter((doc) => FINAL_SCHEDULE_STATUSES.has(String(doc.get('status'))))
-      .map(archiveDocument),
+    workSchedules: schedules.docs.map(archiveDocument),
     leaveRequests: leaveCandidates.docs
       .filter((doc) => {
-        if (!FINAL_REQUEST_STATUSES.has(String(doc.get('status')))) return false
         return timestampWithin(doc.get('endDate') ?? doc.get('leaveDate'), window)
       })
       .map(archiveDocument),
-    lateRequests: lateRequests.docs
-      .filter((doc) => FINAL_REQUEST_STATUSES.has(String(doc.get('status'))))
-      .map(archiveDocument),
+    lateRequests: lateRequests.docs.map(archiveDocument),
     salaryAdvances: salaryAdvances.docs
-      .filter((doc) =>
-        FINAL_REQUEST_STATUSES.has(String(doc.get('status'))) &&
-        timestampWithin(doc.get('reviewedAt') ?? doc.get('updatedAt') ?? doc.get('createdAt'), window)
-      )
+      .filter((doc) => requestActivityWithin(doc, window))
       .map(archiveDocument),
     staffRequests: staffRequests.docs
-      .filter((doc) =>
-        FINAL_REQUEST_STATUSES.has(String(doc.get('status'))) &&
-        timestampWithin(doc.get('reviewedAt') ?? doc.get('updatedAt') ?? doc.get('createdAt'), window)
-      )
+      .filter((doc) => requestActivityWithin(doc, window))
       .map(archiveDocument),
     penalties: penalties.docs.map(archiveDocument),
     auditEvents: auditEvents.docs.map(archiveDocument),
@@ -202,9 +195,12 @@ async function collectDocuments(window: ArchiveWindow): Promise<{
   // they remain active in Firestore and must never be deleted by this job.
   // Audit events remain in Firestore as the tamper-evident chain. They are
   // copied to the weekly archive but are never part of the reset/delete list.
+  const deletableCollections = new Set(['workSchedules', 'leaveRequests', 'lateRequests', 'salaryAdvances', 'staffRequests', 'penalties'])
   const paths = Object.entries(domainRecords)
-    .filter(([collection]) => collection !== 'auditEvents')
-    .flatMap(([, documents]) => documents.map((record) => record.path))
+    .filter(([collection]) => deletableCollections.has(collection))
+    .flatMap(([collection, documents]) => documents
+      .filter((record) => collection === 'penalties' || (collection === 'workSchedules' ? FINAL_SCHEDULE_STATUSES : FINAL_REQUEST_STATUSES).has(String((record.data as Record<string, unknown>).status)))
+      .map((record) => record.path))
 
   const archivedDocumentCount = Object.values(records).flat().length
   if (archivedDocumentCount > MAX_ARCHIVE_DOCUMENTS) {

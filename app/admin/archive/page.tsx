@@ -38,6 +38,7 @@ const collectionLabels: Record<string, string> = {
   salaryAdvances: 'Ứng lương',
   staffRequests: 'Làm thêm và ghi chú',
   penalties: 'Khoản phạt',
+  auditEvents: 'Nhật ký thao tác',
   employeeProfiles: 'Hồ sơ tham chiếu',
 }
 
