@@ -597,13 +597,6 @@ export default function SchedulePage() {
                 {' – '}
                 {days[days.length - 1].date.toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit' })}
               </h2>
-              <p className="mt-1 text-xs text-slate-300">
-                {changeMode
-                  ? 'Chạm ca màu đỏ để xin hủy; chọn ca trống để đổi ca hoặc đăng ký thêm.'
-                  : overtimeMode
-                  ? 'Ca đã duyệt được khóa lại; bạn chỉ cần chọn những ca muốn làm thêm.'
-                  : compactMode ? 'Lịch đã được gom thành một bảng để quản lý xác nhận.' : isNewEmployee ? 'Bạn có thể soạn lịch từ hôm nay đến hết tuần sau.' : 'Bạn có thể chọn một hoặc nhiều ca trong cùng ngày.'}
-              </p>
             </div>
             <div className="rounded-2xl bg-white/10 px-3 py-2 text-center">
               <span className="block text-xl font-black">{selectedCount}</span>
@@ -629,6 +622,19 @@ export default function SchedulePage() {
             </div>
             <Badge variant="warning">Đang chờ quản lý xác nhận</Badge>
           </section>
+        )}
+
+        {!compactMode && (overtimeMode || changeMode) && (
+          <details className="group mb-4 overflow-hidden rounded-2xl border border-slate-200/80 bg-white/75 shadow-sm dark:border-white/10 dark:bg-slate-900/70">
+            <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between px-4 text-sm font-bold">
+              <span>Xem quy tắc màu và khoản phạt</span><ChevronDown className="h-4 w-4 text-slate-400 transition group-open:rotate-180" />
+            </summary>
+            <div className="border-t border-slate-100 p-3 text-xs leading-5 dark:border-white/10">
+              <div className="flex items-center gap-2"><span className="h-3 w-3 shrink-0 rounded-full bg-rose-600" /> Màu đỏ là ca đã duyệt{changeMode ? '; chạm lại để xin hủy.' : ', không thể thay đổi.'}</div>
+              <div className="mt-2 flex items-center gap-2"><span className="h-3 w-3 shrink-0 rounded-full bg-sky-600" /> Màu xanh là ca mới / ca thêm.</div>
+              {changeMode && <p className="mt-3 rounded-xl bg-amber-50 p-2 font-semibold text-amber-800">Hủy ca của hôm nay bị phạt 1.000đ. Đổi từ ngày mai hoặc chỉ đăng ký thêm ca thì không bị phạt.</p>}
+            </div>
+          </details>
         )}
 
         {compactMode ? (
@@ -739,28 +745,13 @@ export default function SchedulePage() {
               </button>
             )}
 
-            <div className="mb-4 grid gap-3 rounded-3xl border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-900">
-              <label className="text-sm font-extrabold">
-                <span className="flex items-center gap-2"><MessageSquareText className="h-4 w-4 text-indigo-600" /> {overtimeMode || changeMode ? 'Lời nhắn kèm yêu cầu' : 'Ghi chú cho quản lý'}</span>
-                <textarea value={weekNote} onChange={(event) => setWeekNote(event.target.value)} maxLength={400} className="mobile-field mt-2 min-h-24 py-3" placeholder={changeMode ? 'Ví dụ: em đổi ca sáng thứ Ba sang ca chiều...' : overtimeMode ? 'Ví dụ: em có thể hỗ trợ thêm các ca này...' : 'Ví dụ: tuần này em nghỉ 3 buổi...'} />
-              </label>
-            </div>
-
-            {overtimeMode || changeMode ? (
-              <div className="mb-4 rounded-2xl bg-slate-100 p-3 text-xs leading-5 dark:bg-slate-800">
-                <div className="flex items-center gap-2"><span className="h-3 w-3 shrink-0 rounded-full bg-rose-600" /> Màu đỏ là ca đã duyệt{changeMode ? '; chạm lại để xin hủy.' : ', không thể thay đổi.'}</div>
-                <div className="mt-2 flex items-center gap-2"><span className="h-3 w-3 shrink-0 rounded-full bg-sky-600" /> Màu xanh là ca mới / ca thêm.</div>
-                {changeMode && (
-                  <>
-                    <div className="mt-3 grid grid-cols-2 gap-2">
-                      <div className="rounded-xl bg-rose-50 p-2 font-bold text-rose-700">Ca xin hủy: {removedCount}</div>
-                      <div className="rounded-xl bg-sky-50 p-2 font-bold text-sky-700">Ca mới / ca thêm: {overtimeCount}</div>
-                    </div>
-                    <p className="mt-2 rounded-xl bg-amber-50 p-2 font-semibold text-amber-800">Hủy ca của hôm nay bị phạt 1.000đ. Đổi từ ngày mai hoặc chỉ đăng ký thêm ca thì không bị phạt.</p>
-                  </>
-                )}
+            {changeMode && (
+              <div className="mb-4 grid grid-cols-2 gap-2 text-xs">
+                <div className="rounded-xl bg-rose-50 p-2 font-bold text-rose-700">Ca xin hủy: {removedCount}</div>
+                <div className="rounded-xl bg-sky-50 p-2 font-bold text-sky-700">Ca mới / ca thêm: {overtimeCount}</div>
               </div>
-            ) : editing && (
+            )}
+            {!overtimeMode && !changeMode && editing && (
               <div className="mb-4 flex items-start gap-2 rounded-2xl bg-slate-100 p-3 text-xs leading-5 dark:bg-slate-800">
                 <span className="mt-1 h-3 w-3 shrink-0 rounded-full bg-pink-500" /> Màu hồng là lựa chọn đã gửi.
                 <span className="ml-2 mt-1 h-3 w-3 shrink-0 rounded-full bg-sky-500" /> Màu xanh là lựa chọn mới.
@@ -820,6 +811,12 @@ export default function SchedulePage() {
                   </div>
                 </article>
               ))}
+            </div>
+            <div className="mt-4 grid gap-3 rounded-3xl border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-900">
+              <label className="text-sm font-extrabold">
+                <span className="flex items-center gap-2"><MessageSquareText className="h-4 w-4 text-indigo-600" /> {overtimeMode || changeMode ? 'Lời nhắn kèm yêu cầu' : 'Ghi chú cho quản lý'}</span>
+                <textarea value={weekNote} onChange={(event) => setWeekNote(event.target.value)} maxLength={400} className="mobile-field mt-2 min-h-24 py-3" placeholder={changeMode ? 'Ví dụ: em đổi ca sáng thứ Ba sang ca chiều...' : overtimeMode ? 'Ví dụ: em có thể hỗ trợ thêm các ca này...' : 'Ví dụ: tuần này em nghỉ 3 buổi...'} />
+              </label>
             </div>
           </>
         )}

@@ -60,22 +60,22 @@ export default function PenaltiesPage() {
       <PageContainer>
         <StaffBanner icon={AlertTriangle} tone="rose" eyebrow="Khoản phạt" title="Theo dõi rõ từng khoản trừ" description="Kiểm tra lý do, thời điểm và trạng thái của từng khoản phạt trong lịch sử làm việc." note="Khoản đã hủy sẽ không bị khấu trừ. Nếu thấy chưa đúng, hãy liên hệ quản lý để được kiểm tra." />
         <section className="mb-4 grid grid-cols-2 gap-3">
-          <div className="rounded-3xl bg-rose-600 p-4 text-white">
+          <div className="rounded-3xl bg-rose-600 p-3 text-white">
             <CircleDollarSign className="h-5 w-5 text-rose-200" />
-            <p className="mt-5 text-xs font-semibold text-rose-100">Tổng khấu trừ</p>
-            <p className="mt-1 text-xl font-black">{total.toLocaleString('vi-VN')}đ</p>
+            <p className="mt-3 text-xs font-semibold text-rose-100">Tổng khấu trừ</p>
+            <p className="mt-1 text-lg font-black">{total.toLocaleString('vi-VN')}đ</p>
           </div>
-          <div className="mobile-card p-4">
+          <div className="mobile-card p-3">
             <AlertTriangle className="h-5 w-5 text-amber-500" />
-            <p className="mt-5 text-xs font-semibold text-muted-foreground">Số lần phát sinh</p>
-            <p className="mt-1 text-xl font-black">{activeCount} lần</p>
+            <p className="mt-3 text-xs font-semibold text-muted-foreground">Số lần phát sinh</p>
+            <p className="mt-1 text-lg font-black">{activeCount} lần</p>
           </div>
         </section>
 
-        <div className="mb-4 flex gap-2 rounded-2xl border border-amber-200 bg-amber-50 p-3 text-xs leading-5 text-amber-800">
-          <Info className="mt-0.5 h-4 w-4 shrink-0" />
-          Mỗi vi phạm được khấu trừ một khoản cố định vào tiền công của 1 giờ làm: đăng ký lịch trễ 1.000đ, báo đi trễ muộn 500đ.
-        </div>
+        <details className="group mb-4 overflow-hidden rounded-2xl border border-amber-200 bg-amber-50/80 text-amber-900 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-100">
+          <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-2 px-4 text-sm font-bold"><span>Xem quy tắc khấu trừ</span><Info className="h-4 w-4" /></summary>
+          <p className="border-t border-amber-200/70 px-4 py-3 text-xs leading-5 dark:border-amber-500/20">Mỗi vi phạm được khấu trừ một khoản cố định vào tiền công của 1 giờ làm: đăng ký lịch trễ 1.000đ, báo đi trễ muộn 500đ.</p>
+        </details>
 
         {message && <p className="mb-4 rounded-2xl bg-rose-50 p-3 text-sm font-semibold text-rose-700">{message}</p>}
         {loading ? (
