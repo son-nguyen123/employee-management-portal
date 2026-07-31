@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
+import Image from 'next/image'
 import {
   AlertTriangle,
   BookOpenText,
@@ -207,7 +208,7 @@ export default function Page() {
             <div className="flex items-center gap-3">
               <div className="grid h-12 w-12 shrink-0 place-items-center overflow-hidden rounded-2xl border-2 border-white bg-gradient-to-br from-fuchsia-500 to-violet-600 text-white shadow-md shadow-fuchsia-900/10 dark:border-white/15">
                 {avatarURL
-                  ? <img src={avatarURL} alt={`Ảnh đại diện của ${displayName}`} width={48} height={48} loading="eager" fetchPriority="high" decoding="async" className="h-full w-full object-cover" />
+                  ? <Image src={avatarURL} alt={`Ảnh đại diện của ${displayName}`} width={48} height={48} priority className="h-full w-full object-cover" />
                   : isAdmin ? <ShieldCheck className="h-5 w-5" /> : <UserRound className="h-5 w-5" />}
               </div>
               <div>
