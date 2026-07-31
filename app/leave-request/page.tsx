@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { CalendarDays, Check, CheckCircle2, ChevronRight, Loader2, Palmtree, Pencil, Send, Trash2, X } from 'lucide-react'
 import { useAuth } from '@/lib/hooks/useAuth'
-import { cancelLeaveRequest, createLeaveRequest, reviseLeaveRequest, subscribeToEmployeeLeaves } from '@/lib/services/leaveService'
+import { cancelLeaveRequest, createLeaveRequest, respondToLeavePenalty, reviseLeaveRequest, subscribeToEmployeeLeaves } from '@/lib/services/leaveService'
 import { mockLeaveRequests } from '@/lib/services/mockData'
 import { subscribeToEmployeeSchedules } from '@/lib/services/scheduleService'
 import { getPreviewSchedules } from '@/lib/services/previewWorkflow'
@@ -186,6 +186,22 @@ export default function LeaveRequestPage() {
     }
   }
 
+  const respondPenalty = async (id: string, accepted: boolean) => {
+    const action = accepted ? 'đồng ý' : 'từ chối'
+    if (!window.confirm(`Bạn chắc chắn muốn ${action} mức trừ này?`)) return
+    try {
+      if (!isPreviewMode) await respondToLeavePenalty(id, accepted)
+      setRequests((current) => current.map((item) => item.id === id ? {
+        ...item,
+        status: accepted ? 'Approved' : 'ConsentDeclined',
+        penaltyConsentStatus: accepted ? 'Accepted' : 'Declined',
+      } : item))
+      setMessage(accepted ? 'Đã đồng ý mức trừ; yêu cầu nghỉ được xác nhận.' : 'Đã từ chối mức trừ; yêu cầu nghỉ chưa được chấp thuận.')
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'Chưa thể gửi lựa chọn.')
+    }
+  }
+
   const hasPendingRequest = requests.some((item) => item.status === 'Pending')
 
   return (
@@ -296,13 +312,22 @@ export default function LeaveRequestPage() {
                       <p className="text-xs text-muted-foreground">{start ? new Date(start).toLocaleDateString('vi-VN') : 'Chưa rõ ngày'}{request.duration === 'long' && end ? ` – ${new Date(end).toLocaleDateString('vi-VN')}` : ''}</p>
                     </div>
                     <Badge variant={request.status === 'Approved' ? 'success' : request.status === 'Rejected' ? 'destructive' : request.status === 'Cancelled' ? 'outline' : 'warning'}>
-                      {request.status === 'Approved' ? 'Đã duyệt' : request.status === 'Rejected' ? 'Từ chối' : request.status === 'Cancelled' ? 'Đã hủy' : 'Chờ duyệt'}
+                      {request.status === 'Approved' ? 'Đã duyệt' : request.status === 'Rejected' || request.status === 'ConsentDeclined' ? 'Từ chối' : request.status === 'Cancelled' ? 'Đã hủy' : request.status === 'AwaitingEmployeeConsent' ? 'Chờ bạn xác nhận' : 'Chờ duyệt'}
                     </Badge>
                   </div>
                   {request.status === 'Pending' && (
                     <div className="mt-4 grid grid-cols-2 gap-2">
                       <button type="button" onClick={() => editRequest(request)} className="flex min-h-11 items-center justify-center gap-2 rounded-2xl bg-indigo-50 text-sm font-bold text-indigo-700 dark:bg-indigo-500/10 dark:text-indigo-200"><Pencil className="h-4 w-4" /> Điều chỉnh</button>
                       <button type="button" onClick={() => cancelRequest(request.id)} className="flex min-h-11 items-center justify-center gap-2 rounded-2xl bg-rose-50 text-sm font-bold text-rose-700 dark:bg-rose-500/10 dark:text-rose-200"><Trash2 className="h-4 w-4" /> Hủy yêu cầu</button>
+                    </div>
+                  )}
+                  {request.status === 'AwaitingEmployeeConsent' && (
+                    <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 p-3 dark:border-amber-500/30 dark:bg-amber-500/10">
+                      <p className="text-sm font-bold text-amber-900 dark:text-amber-100">Quản lý đồng ý cho nghỉ với mức trừ {Number(request.proposedPenaltyAmount || 0).toLocaleString('vi-VN')}đ. Bạn có chấp nhận không?</p>
+                      <div className="mt-3 grid grid-cols-2 gap-2">
+                        <button type="button" onClick={() => void respondPenalty(request.id, false)} className="min-h-11 rounded-xl border border-rose-200 bg-white text-sm font-bold text-rose-600 dark:bg-slate-900">Không đồng ý</button>
+                        <button type="button" onClick={() => void respondPenalty(request.id, true)} className="min-h-11 rounded-xl bg-emerald-600 text-sm font-bold text-white">Đồng ý</button>
+                      </div>
                     </div>
                   )}
                 </article>

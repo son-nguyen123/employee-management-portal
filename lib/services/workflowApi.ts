@@ -23,6 +23,7 @@ type WorkflowAction =
   | 'getAuditReceiptSettings'
   | 'updateAuditReceiptSettings'
   | 'manageEmployeeStatus'
+  | 'respondPenaltyConsent'
 
 export async function callWorkflowApi<T>(
   action: WorkflowAction,

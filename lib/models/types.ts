@@ -75,7 +75,7 @@ export interface StaffRequest {
 }
 
 // Leave Request Document
-export type LeaveStatus = 'Pending' | 'Approved' | 'Rejected' | 'Cancelled'
+export type LeaveStatus = 'Pending' | 'AwaitingEmployeeConsent' | 'Approved' | 'Rejected' | 'ConsentDeclined' | 'Cancelled'
 export type LeaveType = 'sick' | 'casual' | 'earned' | 'personal'
 
 export interface LeaveRequest {
@@ -91,6 +91,8 @@ export interface LeaveRequest {
   weeklyShiftCountAfterLeave?: number
   penaltyIfApproved?: number
   penaltyIfRejected?: number
+  proposedPenaltyAmount?: number
+  penaltyConsentStatus?: 'Pending' | 'Accepted' | 'Declined'
   leaveType: LeaveType
   reason: string
   status: LeaveStatus

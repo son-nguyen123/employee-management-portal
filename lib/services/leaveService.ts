@@ -43,6 +43,10 @@ export async function cancelLeaveRequest(id: string): Promise<void> {
   await callWorkflowApi('cancelRequest', { resource: 'leave', id })
 }
 
+export async function respondToLeavePenalty(id: string, accepted: boolean): Promise<void> {
+  await callWorkflowApi('respondPenaltyConsent', { id, accepted })
+}
+
 /**
  * Get all leave requests for an employee
  */

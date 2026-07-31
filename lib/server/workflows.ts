@@ -175,6 +175,78 @@ export async function manageEmployeeStatus(actor: RequestActor, raw: unknown) {
   return { employeeId, status }
 }
 
+export async function respondPenaltyConsent(actor: RequestActor, raw: unknown) {
+  requireStaff(actor)
+  const body = objectBody(raw)
+  const id = text(body.id, 'Mã yêu cầu nghỉ', 128)
+  if (typeof body.accepted !== 'boolean') throw new ApiError(400, 'Lựa chọn xác nhận không hợp lệ.')
+  const accepted = body.accepted
+  const leaveRef = adminDb.collection('leaveRequests').doc(id)
+  const penaltyRef = adminDb.collection('penalties').doc(`leave-decision-${id}`)
+  const managerIds = await activeManagerIds()
+  let amount = 0
+
+  await adminDb.runTransaction(async (transaction) => {
+    const leave = await transaction.get(leaveRef)
+    if (!leave.exists || leave.get('employeeId') !== actor.uid) throw new ApiError(404, 'Không tìm thấy yêu cầu nghỉ.')
+    if (leave.get('status') !== 'AwaitingEmployeeConsent' || leave.get('penaltyConsentStatus') !== 'Pending') {
+      throw new ApiError(409, 'Đề nghị mức trừ này đã được xử lý.')
+    }
+    amount = Number(leave.get('proposedPenaltyAmount') || 0)
+    if (amount <= 0) throw new ApiError(409, 'Yêu cầu này không có mức trừ cần xác nhận.')
+    const affectedSchedules = accepted && leave.get('duration') === 'long'
+      ? await transaction.get(adminDb.collection('workSchedules').where('employeeId', '==', actor.uid))
+      : null
+    const now = FieldValue.serverTimestamp()
+    if (accepted) {
+      transaction.set(penaltyRef, {
+        ...penaltyData({
+          employeeId: actor.uid,
+          title: 'Nghỉ được duyệt kèm mức trừ',
+          description: 'Nhân viên đã đồng ý mức trừ do quản lý đề xuất khi duyệt yêu cầu nghỉ.',
+          category: 'Late',
+          amount,
+          sourceType: 'leaveRequest',
+          sourceId: id,
+        }),
+        status: 'Active',
+        decisionStatus: 'Approved',
+        updatedAt: now,
+      }, { merge: true })
+      if (affectedSchedules) {
+        const start = (leave.get('leaveDate') as Timestamp).toDate()
+        const end = (leave.get('endDate') as Timestamp | undefined)?.toDate() ?? start
+        affectedSchedules.docs.forEach((snapshot) => {
+          const date = (snapshot.get('date') as Timestamp).toDate()
+          if (snapshot.get('status') === 'Approved' && vietnamDateKey(date) >= vietnamDateKey(start) && vietnamDateKey(date) <= vietnamDateKey(end)) {
+            transaction.set(snapshot.ref, { status: 'Cancelled', cancellationReason: `Tự động hủy do nghỉ dài hạn được duyệt (${id}).`, cancelledBy: actor.uid, cancelledAt: now, lockedAt: null, updatedAt: now }, { merge: true })
+          }
+        })
+      }
+    }
+    transaction.set(leaveRef, {
+      status: accepted ? 'Approved' : 'ConsentDeclined',
+      penaltyConsentStatus: accepted ? 'Accepted' : 'Declined',
+      consentRespondedAt: now,
+      updatedAt: now,
+    }, { merge: true })
+    transaction.set(adminDb.collection('notifications').doc(`leave-consent-result-${actor.uid}-${id}`), {
+      employeeId: actor.uid,
+      title: accepted ? 'Đã đồng ý mức trừ' : 'Đã từ chối mức trừ',
+      message: accepted ? `Yêu cầu nghỉ đã được chốt và ghi nhận mức trừ ${amount.toLocaleString('vi-VN')}đ.` : 'Bạn đã không đồng ý mức trừ; yêu cầu nghỉ chưa được chấp thuận.',
+      type: accepted ? 'success' : 'warning',
+      isRead: false,
+      createdAt: now,
+    })
+    managerIds.forEach((managerId) => transaction.set(
+      managerNotificationRef(managerId, `leave-consent-${id}`),
+      managerNotification(managerId, accepted ? 'Nhân viên đã đồng ý mức trừ' : 'Nhân viên từ chối mức trừ', `Mức đề xuất: ${amount.toLocaleString('vi-VN')}đ.`, accepted ? 'info' : 'warning')
+    ))
+  })
+
+  return { id, accepted, amount, status: accepted ? 'Approved' : 'ConsentDeclined' }
+}
+
 function workflowRef(actor: RequestActor, id: string) {
   return adminDb.collection('workflowRequests').doc(`${actor.uid}-${id}`)
 }
@@ -1705,6 +1777,8 @@ export async function reviewRequest(actor: RequestActor, raw: unknown) {
   let reviewedLabel: string = config.label
   let reviewedLink: string = config.link
   let reviewedEmployee = 'Nhân viên'
+  let requiresEmployeeConsent = false
+  let appliedPenaltyAmount = 0
 
   await adminDb.runTransaction(async (transaction) => {
     const [target, existingLeavePenalty] = await Promise.all([
@@ -1724,19 +1798,19 @@ export async function reviewRequest(actor: RequestActor, raw: unknown) {
     const employeeName = String(employeeSnapshot.get('fullName') || 'Nhân viên')
     const employeeCode = String(employeeSnapshot.get('employeeCode') || employeeId.slice(0, 8))
     reviewedEmployee = `${employeeName} · ${employeeCode}`
-    const longLeaveSchedules = resource === 'leave' && status === 'Approved' && data.duration === 'long'
+    const isLate = data.noticeClass === 'late'
+    const suggestedAmount = status === 'Approved'
+      ? Number(data.penaltyIfApproved ?? (isLate ? workflowPolicy.leaveLateApprovedPenalty : 0))
+      : Number(data.penaltyIfRejected ?? (isLate ? workflowPolicy.leaveLateRejectedPenalty : workflowPolicy.leaveOnTimeRejectedPenalty))
+    appliedPenaltyAmount = resource === 'leave' || resource === 'late' ? managerPenaltyAmount ?? suggestedAmount : 0
+    requiresEmployeeConsent = resource === 'leave' && status === 'Approved' && appliedPenaltyAmount > 0
+    const longLeaveSchedules = resource === 'leave' && status === 'Approved' && !requiresEmployeeConsent && data.duration === 'long'
       ? await transaction.get(adminDb.collection('workSchedules').where('employeeId', '==', employeeId))
       : null
     const now = FieldValue.serverTimestamp()
     if ((resource === 'leave' || resource === 'late') && decisionPenaltyRef) {
-      const isLate = data.noticeClass === 'late'
-      const suggestedAmount = status === 'Approved'
-        ? Number(data.penaltyIfApproved ?? (isLate ? workflowPolicy.leaveLateApprovedPenalty : 0))
-        : Number(data.penaltyIfRejected ?? (isLate
-          ? workflowPolicy.leaveLateRejectedPenalty
-          : workflowPolicy.leaveOnTimeRejectedPenalty))
-      const amount = managerPenaltyAmount ?? suggestedAmount
-      if (amount > 0) {
+      const amount = appliedPenaltyAmount
+      if (amount > 0 && !requiresEmployeeConsent) {
         transaction.set(decisionPenaltyRef, {
           ...penaltyData({
             employeeId,
@@ -1765,14 +1839,14 @@ export async function reviewRequest(actor: RequestActor, raw: unknown) {
           amount: 0,
           status: 'Cancelled',
           decisionStatus: status,
-          cancellationReason: 'Quyết định hiện tại không phát sinh khấu trừ.',
+          cancellationReason: requiresEmployeeConsent ? 'Tạm dừng chờ nhân viên đồng ý mức trừ mới.' : 'Quyết định hiện tại không phát sinh khấu trừ.',
           cancelledBy: actor.uid,
           cancelledAt: now,
           updatedAt: now,
         }, { merge: true })
       }
     }
-    if (resource === 'leave' && status === 'Approved' && data.duration === 'long') {
+    if (resource === 'leave' && status === 'Approved' && !requiresEmployeeConsent && data.duration === 'long') {
       const leaveStart = (data.leaveDate as Timestamp).toDate()
       const leaveEnd = (data.endDate as Timestamp | undefined)?.toDate() ?? leaveStart
       longLeaveSchedules?.docs.forEach((snapshot) => {
@@ -1862,7 +1936,7 @@ export async function reviewRequest(actor: RequestActor, raw: unknown) {
       })
     }
     const updates: Record<string, unknown> = {
-      status,
+      status: requiresEmployeeConsent ? 'AwaitingEmployeeConsent' : status,
       updatedAt: now,
       reviewedBy: actor.uid,
       reviewedAt: now,
@@ -1873,6 +1947,10 @@ export async function reviewRequest(actor: RequestActor, raw: unknown) {
     } else {
       updates.approvedBy = actor.uid
       updates.reviewNote = note
+      if (requiresEmployeeConsent) {
+        updates.proposedPenaltyAmount = appliedPenaltyAmount
+        updates.penaltyConsentStatus = 'Pending'
+      }
     }
     transaction.set(targetRef, updates, { merge: true })
     const requestLabel = resource === 'staff'
@@ -1883,8 +1961,10 @@ export async function reviewRequest(actor: RequestActor, raw: unknown) {
     transaction.set(notificationRef, {
       employeeId,
       title: config.title,
-      message: `${requestLabel} của bạn ${statusText(status)}.${managerPenaltyAmount && managerPenaltyAmount > 0 ? ` Mức trừ được quản lý xác nhận: ${managerPenaltyAmount.toLocaleString('vi-VN')}đ.` : ''}${note ? ` Phản hồi: ${note}` : ''}`,
-      type: status === 'Approved' ? 'success' : 'warning',
+      message: requiresEmployeeConsent
+        ? `${requestLabel} được quản lý đồng ý với mức trừ ${appliedPenaltyAmount.toLocaleString('vi-VN')}đ. Vui lòng mở mục Xin nghỉ để chấp nhận hoặc từ chối.`
+        : `${requestLabel} của bạn ${statusText(status)}.${appliedPenaltyAmount > 0 ? ` Mức trừ được quản lý xác nhận: ${appliedPenaltyAmount.toLocaleString('vi-VN')}đ.` : ''}${note ? ` Phản hồi: ${note}` : ''}`,
+      type: requiresEmployeeConsent ? 'warning' : status === 'Approved' ? 'success' : 'warning',
       isRead: false,
       createdAt: now,
     })
@@ -1902,7 +1982,7 @@ export async function reviewRequest(actor: RequestActor, raw: unknown) {
         managerNotificationRef(managerId, `${resource}-${id}`),
         managerNotification(
           managerId,
-          `${requestLabel} đã ${status === 'Approved' ? 'được duyệt' : 'bị từ chối'}`,
+          requiresEmployeeConsent ? `${requestLabel} đang chờ nhân viên đồng ý mức trừ` : `${requestLabel} đã ${status === 'Approved' ? 'được duyệt' : 'bị từ chối'}`,
           `Nhân viên: ${reviewedEmployee}.`,
           'info',
           true
@@ -1915,13 +1995,13 @@ export async function reviewRequest(actor: RequestActor, raw: unknown) {
     employeeId,
     dispatchId: dispatchRef.id,
     title: config.title,
-    body: `${reviewedLabel} của bạn ${statusText(status)}.`,
+    body: requiresEmployeeConsent ? `${reviewedLabel} đang chờ bạn đồng ý mức trừ ${appliedPenaltyAmount.toLocaleString('vi-VN')}đ.` : `${reviewedLabel} của bạn ${statusText(status)}.`,
     link: reviewedLink,
     source: config.collection,
     sourceId: id,
     status,
   })
-  return { id, status, push }
+  return { id, status: requiresEmployeeConsent ? 'AwaitingEmployeeConsent' : status, push }
 }
 
 export async function reviewScheduleBatch(actor: RequestActor, raw: unknown) {
