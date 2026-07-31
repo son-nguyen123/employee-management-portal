@@ -332,7 +332,11 @@ export default function Page() {
           </section>
         ) : (
           <section>
-            <div className="mb-3"><p className="text-xs font-bold uppercase tracking-[0.14em] text-indigo-600">Tiện ích</p><h2 className="text-xl font-extrabold tracking-tight">Bạn muốn làm gì?</h2></div>
+            <div className="mb-4 flex items-center gap-3">
+              <span className="h-2.5 w-2.5 shrink-0 rounded-full bg-gradient-to-br from-fuchsia-500 to-indigo-600 shadow-sm shadow-fuchsia-500/40" />
+              <h2 className="shrink-0 text-lg font-black tracking-tight">Tiện ích của bạn</h2>
+              <span className="h-px flex-1 bg-gradient-to-r from-fuchsia-300 via-indigo-200 to-transparent" />
+            </div>
             <div className="grid grid-cols-2 gap-3">
               {staffFeatures.map(({ title, note, href, icon: Icon, tone }, index) => (
                 <Link key={title} href={href} className={`mobile-card flex min-h-[148px] flex-col p-4 transition active:scale-[0.98] ${index === 0 ? 'col-span-2 min-h-[118px]' : ''}`}>
