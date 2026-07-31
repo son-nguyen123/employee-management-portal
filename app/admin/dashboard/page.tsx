@@ -74,6 +74,7 @@ export default function AdminDashboardPage() {
   const [processingAction, setProcessingAction] = useState<'approve' | 'reject' | ''>('')
   const [rejectingBatch, setRejectingBatch] = useState<ScheduleBatch | null>(null)
   const [rejectReason, setRejectReason] = useState('')
+  const [allowSundayResubmissionWithoutPenalty, setAllowSundayResubmissionWithoutPenalty] = useState(false)
   const [message, setMessage] = useState('')
   const [expectedEmployees, setExpectedEmployees] = useState(0)
   const [savingTarget, setSavingTarget] = useState(false)
@@ -291,7 +292,7 @@ export default function AdminDashboardPage() {
     }
   }
 
-  const review = async (batch: ScheduleBatch, status: 'Approved' | 'Rejected', reviewNote = '') => {
+  const review = async (batch: ScheduleBatch, status: 'Approved' | 'Rejected', reviewNote = '', allowSundayResubmission = false) => {
     if (status === 'Rejected' && !reviewNote.trim()) return false
     setProcessingId(batch.key)
     setProcessingAction(status === 'Approved' ? 'approve' : 'reject')
@@ -299,7 +300,7 @@ export default function AdminDashboardPage() {
     try {
       const ids = batch.schedules.map((item) => item.id)
       if (isPreviewMode) ids.forEach((id) => updatePreviewSchedule(id, { status, reviewNote }))
-      else await reviewWorkScheduleBatch(ids, status, reviewNote)
+      else await reviewWorkScheduleBatch(ids, status, reviewNote, allowSundayResubmission)
       setSchedules((prev) => prev.map((item) => ids.includes(item.id) ? { ...item, status, reviewNote } : item))
       setMessage(
         status === 'Approved'
@@ -308,6 +309,7 @@ export default function AdminDashboardPage() {
       )
       setRejectingBatch(null)
       setRejectReason('')
+      setAllowSundayResubmissionWithoutPenalty(false)
       return true
     } catch {
       setMessage('Không thể cập nhật. Kiểm tra tài khoản hiện tại có role admin trong employees/{uid}.')
@@ -463,7 +465,7 @@ export default function AdminDashboardPage() {
                 </section>
                 {weekNote && <p className="mx-4 mb-4 rounded-2xl bg-slate-50 p-3 text-sm dark:bg-slate-800"><strong>Ghi chú:</strong> {weekNote}</p>}
                 <section className="grid grid-cols-2 gap-2 border-t border-slate-100 p-4 dark:border-white/10">
-                  <button type="button" disabled={!!processingId || selectedPendingBatch.isEditing} onClick={() => { setRejectingBatch(selectedPendingBatch); setRejectReason(''); setSelectedPendingBatch(null) }} className="flex min-h-12 items-center justify-center gap-2 rounded-2xl border border-rose-200 font-extrabold text-rose-600 disabled:opacity-50"><X className="h-4 w-4" /> Từ chối</button>
+                  <button type="button" disabled={!!processingId || selectedPendingBatch.isEditing} onClick={() => { setRejectingBatch(selectedPendingBatch); setRejectReason(''); setAllowSundayResubmissionWithoutPenalty(false); setSelectedPendingBatch(null) }} className="flex min-h-12 items-center justify-center gap-2 rounded-2xl border border-rose-200 font-extrabold text-rose-600 disabled:opacity-50"><X className="h-4 w-4" /> Từ chối</button>
                   <button type="button" disabled={!!processingId || selectedPendingBatch.isEditing} onClick={async () => { if (await review(selectedPendingBatch, 'Approved')) setSelectedPendingBatch(null) }} className="flex min-h-12 items-center justify-center gap-2 rounded-2xl bg-emerald-600 font-extrabold text-white disabled:opacity-50">{processingId === selectedPendingBatch.key ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />} Duyệt</button>
                 </section>
               </article>
@@ -583,9 +585,16 @@ export default function AdminDashboardPage() {
             </label>
             <p className="mt-1 text-right text-xs text-muted-foreground">{rejectReason.length}/1000</p>
 
+            {new Date().getDay() === 0 && (
+              <label className="mt-4 flex cursor-pointer items-start gap-3 rounded-2xl border border-indigo-200 bg-indigo-50 p-3 text-sm leading-5 text-indigo-950 dark:border-indigo-500/30 dark:bg-indigo-500/10 dark:text-indigo-100">
+                <input type="checkbox" checked={allowSundayResubmissionWithoutPenalty} onChange={(event) => setAllowSundayResubmissionWithoutPenalty(event.target.checked)} className="mt-1 h-4 w-4 accent-indigo-600" />
+                <span><strong>Cho phép nhân viên ghi lại lịch vào Chủ nhật mà không trừ tiền.</strong><br />Nếu không cho phép, lịch gửi lại sẽ áp dụng khoản trừ theo luật hiện tại.</span>
+              </label>
+            )}
+
             <div className="mt-5 grid grid-cols-[.8fr_1.2fr] gap-2">
               <button type="button" disabled={!!processingId} onClick={() => setRejectingBatch(null)} className="min-h-12 rounded-2xl border border-slate-200 font-bold dark:border-slate-700">Hủy</button>
-              <button type="button" disabled={!rejectReason.trim() || !!processingId} onClick={() => review(rejectingBatch, 'Rejected', rejectReason.trim())} className="flex min-h-12 items-center justify-center gap-2 rounded-2xl bg-rose-600 px-4 font-bold text-white disabled:opacity-50">
+              <button type="button" disabled={!rejectReason.trim() || !!processingId} onClick={() => review(rejectingBatch, 'Rejected', rejectReason.trim(), allowSundayResubmissionWithoutPenalty)} className="flex min-h-12 items-center justify-center gap-2 rounded-2xl bg-rose-600 px-4 font-bold text-white disabled:opacity-50">
                 {processingId === rejectingBatch.key && processingAction === 'reject' ? <Loader2 className="h-4 w-4 animate-spin" /> : <X className="h-4 w-4" />}
                 {processingId ? 'Đang từ chối...' : 'Từ chối bảng lịch'}
               </button>

@@ -536,7 +536,7 @@ export default function SchedulePage() {
     total + originalShifts.filter((shift) => !selected[dayKey]?.includes(shift)).length, 0)
   const missingDays = days.filter((day) => !selected[day.key]?.length && dutyDay !== day.key)
   const compactMode = submittedIds.length > 0 && !editing && !overtimeMode && !changeMode
-  const canEdit = ['Pending', 'Rejected', 'Approved'].includes(submittedStatus || '')
+  const canEdit = ['Pending', 'Rejected'].includes(submittedStatus || '')
 
   if (loading) {
     return <main className="grid min-h-screen place-items-center"><Loader2 className="h-7 w-7 animate-spin text-indigo-600" /></main>

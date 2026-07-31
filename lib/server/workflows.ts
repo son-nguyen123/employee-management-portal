@@ -837,7 +837,7 @@ export async function replaceSchedules(actor: RequestActor, raw: unknown) {
     const oldData = oldSnapshots.map((snapshot) => snapshot.data()!)
     if (oldData.some((schedule) =>
       schedule.employeeId !== actor.uid ||
-      !['Pending', 'Registered', 'ChangesRequested', 'Rejected', 'Approved', 'Editing'].includes(schedule.status)
+      !['Pending', 'Registered', 'ChangesRequested', 'Rejected', 'Editing'].includes(schedule.status)
     )) {
       throw new ApiError(403, 'Bạn không thể điều chỉnh lịch này.')
     }
@@ -856,8 +856,13 @@ export async function replaceSchedules(actor: RequestActor, raw: unknown) {
       schedule.requiresReapproval === true
     )
     const revisionCount = Math.max(0, ...oldData.map((schedule) => Number(schedule.revisionCount || 0))) + 1
+    const isVietnamSunday = new Intl.DateTimeFormat('en-US', {
+      timeZone: 'Asia/Ho_Chi_Minh',
+      weekday: 'short',
+    }).format(new Date()) === 'Sun'
     penalizedRejectedResubmission = oldData.some((schedule) => schedule.status === 'Rejected') &&
-      Date.now() >= rejectedScheduleResubmissionDeadline(schedules[0].date).getTime()
+      Date.now() >= rejectedScheduleResubmissionDeadline(schedules[0].date).getTime() &&
+      !(isVietnamSunday && oldData.every((schedule) => schedule.allowSundayResubmissionWithoutPenalty === true))
     oldRefs.forEach((ref) => transaction.delete(ref))
     schedules.forEach((schedule, index) => {
       transaction.create(newRefs[index], {
@@ -956,7 +961,7 @@ export async function setScheduleBatchEditing(actor: RequestActor, raw: unknown)
     const now = FieldValue.serverTimestamp()
     const batchKey = schedules[0].batchKey || scheduleBatchKey(actor.uid, weekStart)
     if (editing) {
-      if (schedules.some((schedule) => !['Pending', 'Registered', 'Rejected', 'Approved'].includes(schedule.status))) {
+      if (schedules.some((schedule) => !['Pending', 'Registered', 'Rejected'].includes(schedule.status))) {
         throw new ApiError(409, 'Bảng lịch hiện không thể chuyển sang chế độ chỉnh sửa.')
       }
       refs.forEach((ref, index) => transaction.set(ref, {
@@ -2045,6 +2050,7 @@ export async function reviewScheduleBatch(actor: RequestActor, raw: unknown) {
   }
   const note = text(body.note ?? '', 'Phản hồi', 1000, true)
   if (status === 'Rejected' && !note) throw new ApiError(400, 'Vui lòng nhập lý do từ chối.')
+  const allowSundayResubmissionWithoutPenalty = status === 'Rejected' && body.allowSundayResubmissionWithoutPenalty === true
 
   const refs = ids.map((id) => adminDb.collection('workSchedules').doc(id))
   let employeeId = ''
@@ -2081,6 +2087,7 @@ export async function reviewScheduleBatch(actor: RequestActor, raw: unknown) {
     refs.forEach((ref) => transaction.set(ref, {
       status,
       requiresReapproval: false,
+      allowSundayResubmissionWithoutPenalty,
       reviewNote: note,
       reviewedBy: actor.uid,
       reviewedAt: now,

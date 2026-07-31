@@ -143,12 +143,14 @@ export async function reviewWorkSchedule(
 export async function reviewWorkScheduleBatch(
   ids: string[],
   status: 'Approved' | 'Rejected',
-  reviewNote = ''
+  reviewNote = '',
+  allowSundayResubmissionWithoutPenalty = false
 ): Promise<void> {
   await callWorkflowApi('reviewScheduleBatch', {
     ids,
     status,
     note: reviewNote,
+    allowSundayResubmissionWithoutPenalty,
   })
 }
 

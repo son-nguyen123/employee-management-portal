@@ -185,6 +185,7 @@ export default function NotificationsPage() {
   const [employeeSchedules, setEmployeeSchedules] = useState<Record<string, CurrentSchedule[]>>({})
   const [processingId, setProcessingId] = useState<string | null>(null)
   const [reviewNotes, setReviewNotes] = useState<Record<string, string>>({})
+  const [allowSundayResubmissionWithoutPenalty, setAllowSundayResubmissionWithoutPenalty] = useState(false)
   const [managementContact, setManagementContact] = useState<ManagementContact | null>(null)
   const [decisions, setDecisions] = useState<DecisionHistoryItem[]>([])
   const [employees, setEmployees] = useState<Employee[]>([])
@@ -473,7 +474,7 @@ export default function NotificationsPage() {
     try {
       if (!isPreviewMode) {
         if (item.type === 'schedule') {
-          await reviewWorkScheduleBatch(item.targetIds, status, note)
+          await reviewWorkScheduleBatch(item.targetIds, status, note, allowSundayResubmissionWithoutPenalty)
         } else if (item.type === 'leave') {
           await updateLeaveStatus(item.targetIds[0], status, authUser.uid, note, penaltyAmount)
         } else if (item.type === 'late') {
@@ -539,6 +540,7 @@ export default function NotificationsPage() {
                   <button
                     type="button"
                     onClick={() => {
+                      setAllowSundayResubmissionWithoutPenalty(false)
                       setSelectedPending(item)
                       setScheduleOpenId(null)
                       setMessage('')
@@ -702,6 +704,12 @@ export default function NotificationsPage() {
                 )}
 
                 <textarea value={reviewNotes[selectedPending.id] || ''} onChange={(event) => setReviewNotes((current) => ({ ...current, [selectedPending.id]: event.target.value }))} placeholder="Ghi chú phản hồi (bắt buộc nếu từ chối)" rows={3} className="w-full resize-none rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none focus:border-indigo-400 dark:border-slate-700 dark:bg-slate-900" />
+                {selectedPending.type === 'schedule' && new Date().getDay() === 0 && (
+                  <label className="flex cursor-pointer items-start gap-3 rounded-2xl border border-indigo-200 bg-indigo-50 p-3 text-sm leading-5 text-indigo-950 dark:border-indigo-500/30 dark:bg-indigo-500/10 dark:text-indigo-100">
+                    <input type="checkbox" checked={allowSundayResubmissionWithoutPenalty} onChange={(event) => setAllowSundayResubmissionWithoutPenalty(event.target.checked)} className="mt-1 h-4 w-4 accent-indigo-600" />
+                    <span><strong>Cho phép nhân viên ghi lại lịch vào Chủ nhật mà không trừ tiền.</strong><br />Nếu không cho phép, lịch gửi lại sẽ áp dụng khoản trừ theo luật hiện tại.</span>
+                  </label>
+                )}
                 <div className="grid grid-cols-2 gap-3">
                   <button type="button" disabled={processingId === selectedPending.id} onClick={() => void processPending(selectedPending, 'Rejected')} className="flex min-h-13 items-center justify-center gap-2 rounded-2xl border border-rose-200 font-extrabold text-rose-600 disabled:opacity-60"><X className="h-4 w-4" /> Từ chối</button>
                   <button type="button" disabled={processingId === selectedPending.id} onClick={() => void processPending(selectedPending, 'Approved')} className={`flex min-h-13 items-center justify-center gap-2 rounded-2xl bg-gradient-to-r ${selectedPendingMeta.gradient} font-extrabold text-white shadow-lg disabled:opacity-60`}>{processingId === selectedPending.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />} Xác nhận</button>

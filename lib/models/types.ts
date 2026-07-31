@@ -45,6 +45,7 @@ export interface WorkSchedule {
   editPreviousStatus?: ScheduleStatus
   editingAt?: Timestamp | Date
   requiresReapproval?: boolean
+  allowSundayResubmissionWithoutPenalty?: boolean
   revisionCount?: number
   createdAt: Timestamp | Date
   updatedAt: Timestamp | Date
