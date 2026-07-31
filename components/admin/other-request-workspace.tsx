@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { Fragment, useEffect, useMemo, useState } from 'react'
 import { ArrowLeft, Check, ChevronRight, CircleDollarSign, Clock3, FileText, Loader2, MessageSquareText, RotateCcw, UserRound, X } from 'lucide-react'
 import { useAuth, useUserRole } from '@/lib/hooks/useAuth'
 import type { Employee } from '@/lib/models/types'
@@ -92,7 +92,7 @@ export function OtherRequestWorkspace({ employees }: { employees: Employee[] }) 
     ...decisions.map((decision): RequestRow => ({ kind: 'decision', decision, status: decision.status, sortAt: decision.reviewedAt })),
     ...pending.map((item): RequestRow => ({ kind: 'pending', pending: item, status: 'Pending', sortAt: item.createdAt })),
   ].sort((left, right) => {
-    const rank = { Approved: 0, Pending: 1, Rejected: 2 }
+    const rank = { Pending: 0, Rejected: 1, Approved: 2 }
     return rank[left.status] - rank[right.status] || right.sortAt.getTime() - left.sortAt.getTime()
   }), [decisions, pending])
 
@@ -149,7 +149,7 @@ export function OtherRequestWorkspace({ employees }: { employees: Employee[] }) 
 
   return <section className="mt-5">
     {message && <p className="mb-3 rounded-2xl bg-indigo-50 p-3 text-sm font-semibold text-indigo-800 dark:bg-indigo-500/10 dark:text-indigo-100">{message}</p>}
-    <div className="space-y-2">{rows.map((row) => {
+    <div className="space-y-2">{rows.map((row, index) => {
       const type = row.kind === 'pending' ? row.pending.type : row.decision.resource
       const itemMeta = meta[type as keyof typeof meta]
       const Icon = itemMeta.icon
@@ -164,11 +164,13 @@ export function OtherRequestWorkspace({ employees }: { employees: Employee[] }) 
           ? 'border-l-amber-400'
           : 'border-l-rose-500'
       const textClass = row.status === 'Approved' ? 'text-emerald-600' : row.status === 'Pending' ? 'text-amber-600' : 'text-rose-600'
-      return <button key={row.kind === 'pending' ? row.pending.id : row.decision.key} type="button" onClick={() => { setSelected(row); setNote(''); setMessage('') }} className={`mobile-card flex min-h-20 w-full items-center gap-3 border-l-4 p-3 text-left ${borderClass}`}>
+      const rowKey = row.kind === 'pending' ? row.pending.id : row.decision.key
+      const showProcessedDivider = index > 0 && row.status !== 'Pending' && rows[index - 1].status === 'Pending'
+      return <Fragment key={rowKey}>{showProcessedDivider && <div className="flex items-center gap-3 py-2 text-[10px] font-black uppercase tracking-[0.16em] text-slate-400"><span className="h-px flex-1 bg-slate-200 dark:bg-slate-700" /><span>Đã xử lý</span><span className="h-px flex-1 bg-slate-200 dark:bg-slate-700" /></div>}<button type="button" onClick={() => { setSelected(row); setNote(''); setMessage('') }} className={`mobile-card flex min-h-20 w-full items-center gap-3 border-l-4 p-3 text-left ${borderClass}`}>
         <RequestIdentityAvatar name={name} photoURL={photoURL} icon={Icon} iconColor={itemMeta.color} />
         <div className="min-w-0 flex-1"><h3 className="truncate text-base font-extrabold">{name}</h3>{code && <p className="truncate text-sm font-semibold text-muted-foreground">{code}</p>}</div>
         <div className="text-right"><span className={`text-xs font-black ${textClass}`}>{row.status === 'Approved' ? 'Đã duyệt' : row.status === 'Pending' ? 'Chờ duyệt' : 'Từ chối'}</span><ChevronRight className="ml-auto mt-1 h-4 w-4 text-slate-400" /></div>
-      </button>
+      </button></Fragment>
     })}{!rows.length && <div className="mobile-card p-8 text-center"><Check className="mx-auto h-8 w-8 text-emerald-600" /><p className="mt-3 font-bold">Không có yêu cầu khác trong tuần này.</p></div>}</div>
 
     {selected && (() => {

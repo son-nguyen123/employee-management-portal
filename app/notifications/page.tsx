@@ -201,7 +201,9 @@ export default function NotificationsPage() {
     const window = weekWindow(weekView)
     return item.createdAt >= window.start && item.createdAt < window.end && (item.type !== 'account' || role === 'admin')
   })
-  const visibleManagementHistory = decisions
+  const visibleManagementHistory = [...decisions].sort((left, right) => Number(left.status === 'Approved') - Number(right.status === 'Approved'))
+  const unreadItems = visibleItems.filter((item) => !item.isRead)
+  const readItems = visibleItems.filter((item) => item.isRead)
   const employeeMap = useMemo(() => new Map(employees.map((employee) => [employee.uid, employee])), [employees])
 
   useEffect(() => {
@@ -567,6 +569,7 @@ export default function NotificationsPage() {
                 </article>
               )
             })}
+            {visiblePendingItems.length > 0 && visibleManagementHistory.length > 0 && <div className="flex items-center gap-3 py-2 text-[10px] font-black uppercase tracking-[0.16em] text-slate-400"><span className="h-px flex-1 bg-slate-200 dark:bg-slate-700" /><span>Đã xử lý</span><span className="h-px flex-1 bg-slate-200 dark:bg-slate-700" /></div>}
             {visibleManagementHistory.map((item) => {
               const employee = employeeMap.get(item.employeeId)
               const meta = managementMeta[item.resource]
@@ -601,7 +604,7 @@ export default function NotificationsPage() {
           </div>
         ) : (
           <div className="space-y-3">
-            {visibleItems.map((item) => {
+            {unreadItems.map((item) => {
               const createdAt = item.createdAt instanceof Date ? item.createdAt : item.createdAt.toDate()
               const meta = notificationMetaFor(item)
               return (
@@ -627,6 +630,18 @@ export default function NotificationsPage() {
                     <p className="mt-1 text-sm text-muted-foreground">{item.message}</p>
                     <SubmissionStamp date={createdAt} />
                   </div>
+                  <ChevronRight className="mt-3 h-5 w-5 shrink-0 text-slate-400" />
+                </button>
+              )
+            })}
+            {unreadItems.length > 0 && readItems.length > 0 && <div className="flex items-center gap-3 py-2 text-[10px] font-black uppercase tracking-[0.16em] text-slate-400"><span className="h-px flex-1 bg-slate-200 dark:bg-slate-700" /><span>Đã xem</span><span className="h-px flex-1 bg-slate-200 dark:bg-slate-700" /></div>}
+            {readItems.map((item) => {
+              const createdAt = item.createdAt instanceof Date ? item.createdAt : item.createdAt.toDate()
+              const meta = notificationMetaFor(item)
+              return (
+                <button key={item.id} type="button" onClick={() => void openNotification(item)} className="mobile-card flex w-full gap-3 p-4 text-left">
+                  <IdentityAvatar name={managementContact?.fullName || 'Quản lý'} photoURL={managementContact?.photoURL} icon={meta.icon} color={meta.color} />
+                  <div className="min-w-0 flex-1"><h2 className="font-extrabold">{item.title}</h2><p className="mt-1 text-sm text-muted-foreground">{item.message}</p><SubmissionStamp date={createdAt} /></div>
                   <ChevronRight className="mt-3 h-5 w-5 shrink-0 text-slate-400" />
                 </button>
               )
