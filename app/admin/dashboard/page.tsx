@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
-import { CalendarCheck, Check, ChevronRight, ExternalLink, Loader2, MessageSquareText, Phone, UsersRound, X } from 'lucide-react'
+import { ArrowLeft, CalendarCheck, Check, ChevronRight, ExternalLink, Loader2, MessageSquareText, Phone, RotateCcw, UsersRound, X } from 'lucide-react'
 import { useAuth, useUserRole } from '@/lib/hooks/useAuth'
 import { setEmployeeAccountStatus, subscribeToAllEmployees } from '@/lib/services/employeeService'
 import { reviewWorkScheduleBatch, subscribeToAllSchedules } from '@/lib/services/scheduleService'
@@ -15,6 +15,7 @@ import {
   getWeeklyScheduleTarget,
   updateWeeklyScheduleTarget,
 } from '@/lib/services/managementSettingsService'
+import { OtherRequestWorkspace } from '@/components/admin/other-request-workspace'
 
 type ScheduleRow = WorkSchedule & {
   id: string
@@ -33,6 +34,8 @@ type ScheduleBatch = {
   isEditing?: boolean
   requiresReapproval?: boolean
 }
+
+type ProcessedScheduleBatch = ScheduleBatch & { status: 'Approved' | 'Rejected' }
 
 function toDate(value: WorkSchedule['date']) {
   return value instanceof Date ? value : value.toDate()
@@ -64,7 +67,7 @@ export default function AdminDashboardPage() {
   const role = useUserRole()
   const [employees, setEmployees] = useState<Employee[]>([])
   const [schedules, setSchedules] = useState<ScheduleRow[]>([])
-  const [tab, setTab] = useState<'requests' | 'employees'>('requests')
+  const [tab, setTab] = useState<'schedules' | 'other' | 'employees'>('schedules')
   const [loading, setLoading] = useState(true)
   const [processingId, setProcessingId] = useState('')
   const [processingAction, setProcessingAction] = useState<'approve' | 'reject' | ''>('')
@@ -73,9 +76,14 @@ export default function AdminDashboardPage() {
   const [message, setMessage] = useState('')
   const [expectedEmployees, setExpectedEmployees] = useState(0)
   const [savingTarget, setSavingTarget] = useState(false)
+  const [selectedProcessedBatch, setSelectedProcessedBatch] = useState<ProcessedScheduleBatch | null>(null)
+  const [processedReason, setProcessedReason] = useState('')
 
   useEffect(() => {
-    if (new URLSearchParams(window.location.search).get('view') === 'employees') setTab('employees')
+    const timeout = window.setTimeout(() => {
+      if (new URLSearchParams(window.location.search).get('view') === 'employees') setTab('employees')
+    }, 0)
+    return () => window.clearTimeout(timeout)
   }, [])
 
   useEffect(() => {
@@ -167,9 +175,18 @@ export default function AdminDashboardPage() {
     setProcessingId(employee.uid)
     setMessage('')
     try {
-      await setEmployeeAccountStatus(employee.uid, status)
+      const today = new Date()
+      today.setHours(0, 0, 0, 0)
+      const result = isPreviewMode
+        ? { employeeId: employee.uid, status, releasedSchedules: status === 'inactive' ? schedules.filter((item) => item.employeeId === employee.uid && item.status !== 'Cancelled' && toDate(item.date) >= today).length : 0 }
+        : await setEmployeeAccountStatus(employee.uid, status)
       setEmployees((current) => current.map((item) => item.uid === employee.uid ? { ...item, status } : item))
-      setMessage(status === 'active' ? `Đã chấp nhận tài khoản ${employee.fullName}.` : `Đã vô hiệu hóa tài khoản ${employee.fullName}.`)
+      if (status === 'inactive' && result.releasedSchedules) {
+        setSchedules((current) => current.map((item) => item.employeeId === employee.uid && item.status !== 'Cancelled' && toDate(item.date) >= today ? { ...item, status: 'Cancelled' } : item))
+      }
+      setMessage(status === 'active'
+        ? `Đã chấp nhận tài khoản ${employee.fullName}.`
+        : `Đã vô hiệu hóa tài khoản ${employee.fullName} và giải phóng ${result.releasedSchedules} ca hiện tại hoặc tương lai.`)
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'Chưa thể đổi trạng thái tài khoản.')
     } finally {
@@ -212,6 +229,38 @@ export default function AdminDashboardPage() {
       }
     })
   }, [schedules])
+  const processedBatches = useMemo(() => {
+    const grouped = new Map<string, ProcessedScheduleBatch>()
+    schedules.filter((item) =>
+      ['Approved', 'Rejected'].includes(item.status) &&
+      mondayKey(toDate(item.date)) === nextMondayKey()
+    ).forEach((schedule) => {
+      const key = `${schedule.employeeId}-${mondayKey(toDate(schedule.date))}`
+      const current = grouped.get(key)
+      if (current) current.schedules.push(schedule)
+      else grouped.set(key, {
+        key,
+        employeeId: schedule.employeeId,
+        employeeName: schedule.employeeName,
+        employeeCode: schedule.employeeCode,
+        schedules: [schedule],
+        status: schedule.status as 'Approved' | 'Rejected',
+      })
+    })
+    return [...grouped.values()].map((batch) => ({
+      ...batch,
+      schedules: [...batch.schedules].sort((left, right) => toDate(left.date).getTime() - toDate(right.date).getTime()),
+      status: batch.schedules.some((item) => item.status === 'Rejected') ? 'Rejected' as const : 'Approved' as const,
+    })).sort((left, right) => Number(left.status === 'Rejected') - Number(right.status === 'Rejected'))
+  }, [schedules])
+  const missingEmployees = useMemo(() => {
+    const submitted = new Set(schedules.filter((item) =>
+      item.status !== 'Cancelled' && mondayKey(toDate(item.date)) === nextMondayKey()
+    ).map((item) => item.employeeId))
+    return activeEmployees.filter((employee) => !submitted.has(employee.uid))
+  }, [activeEmployees, schedules])
+  const rejectedBatches = processedBatches.filter((batch) => batch.status === 'Rejected')
+  const approvedBatches = processedBatches.filter((batch) => batch.status === 'Approved')
   const submittedEmployees = useMemo(
     () => new Set(schedules.filter((item) =>
       item.status !== 'Cancelled' && mondayKey(toDate(item.date)) === nextMondayKey()
@@ -241,7 +290,7 @@ export default function AdminDashboardPage() {
   }
 
   const review = async (batch: ScheduleBatch, status: 'Approved' | 'Rejected', reviewNote = '') => {
-    if (status === 'Rejected' && !reviewNote.trim()) return
+    if (status === 'Rejected' && !reviewNote.trim()) return false
     setProcessingId(batch.key)
     setProcessingAction(status === 'Approved' ? 'approve' : 'reject')
     setMessage('')
@@ -257,8 +306,10 @@ export default function AdminDashboardPage() {
       )
       setRejectingBatch(null)
       setRejectReason('')
+      return true
     } catch {
       setMessage('Không thể cập nhật. Kiểm tra tài khoản hiện tại có role admin trong employees/{uid}.')
+      return false
     } finally {
       setProcessingId('')
       setProcessingAction('')
@@ -319,7 +370,7 @@ export default function AdminDashboardPage() {
               <h2 className="mb-3 text-lg font-black">Tài khoản đã khóa</h2>
               <div className="space-y-2">{inactiveEmployees.map((employee) => (
                 <article key={employee.uid} className="mobile-card flex items-center gap-3 p-3">
-                  <div className="min-w-0 flex-1"><p className="truncate font-bold">{employee.fullName}</p><p className="text-xs text-muted-foreground">{employee.employeeCode}</p></div>
+                  <Link href={`/admin/employees/${employee.uid}`} className="min-w-0 flex-1"><p className="truncate font-bold">{employee.fullName}</p><p className="text-xs text-muted-foreground">{employee.employeeCode} · Xem hồ sơ</p></Link>
                   <button type="button" disabled={processingId === employee.uid} onClick={() => void changeAccountStatus(employee, 'active')} className="min-h-10 rounded-xl bg-emerald-50 px-3 text-xs font-bold text-emerald-700 disabled:opacity-50">Bật lại</button>
                 </article>
               ))}</div>
@@ -354,16 +405,17 @@ export default function AdminDashboardPage() {
           <button type="button" disabled={savingTarget} onClick={() => void saveWeeklyTarget()} className="min-h-12 rounded-2xl bg-slate-950 px-5 text-sm font-bold text-white disabled:opacity-60 dark:bg-white dark:text-slate-950">{savingTarget ? 'Đang lưu...' : 'Lưu'}</button>
         </section>
         <div className="mt-5 grid grid-cols-2 gap-2 rounded-2xl bg-slate-100 p-1 dark:bg-slate-800">
-          <button type="button" onClick={() => setTab('requests')} className={`min-h-11 rounded-xl text-sm font-bold ${tab === 'requests' ? 'bg-white text-indigo-600 shadow-sm dark:bg-slate-950' : 'text-muted-foreground'}`}>Lịch chờ duyệt</button>
-          <Link href="/notifications" className="grid min-h-11 place-items-center rounded-xl text-sm font-bold text-muted-foreground">Yêu cầu khác</Link>
+          <button type="button" onClick={() => setTab('schedules')} className={`min-h-11 rounded-xl text-sm font-bold ${tab === 'schedules' ? 'bg-white text-indigo-600 shadow-sm dark:bg-slate-950' : 'text-muted-foreground'}`}>Lịch chờ duyệt</button>
+          <button type="button" onClick={() => setTab('other')} className={`min-h-11 rounded-xl text-sm font-bold ${tab === 'other' ? 'bg-white text-violet-600 shadow-sm dark:bg-slate-950' : 'text-muted-foreground'}`}>Yêu cầu khác</button>
         </div>
 
         {message && <p className="mt-4 rounded-2xl bg-indigo-50 p-3 text-sm font-semibold text-indigo-800 dark:bg-indigo-500/10 dark:text-indigo-200">{message}</p>}
 
         {loading ? (
           <div className="grid min-h-56 place-items-center"><Loader2 className="h-7 w-7 animate-spin text-indigo-600" /></div>
-        ) : tab === 'requests' ? (
+        ) : tab === 'schedules' ? (
           <section id="schedules" className="mt-5 space-y-3">
+            <div className="flex items-end justify-between"><div><p className="text-xs font-black uppercase tracking-wider text-rose-600">Cần quản lý xử lý</p><h2 className="text-xl font-black">Chưa gửi hoặc chưa duyệt</h2></div><span className="text-xs font-bold text-muted-foreground">{pendingBatches.length + rejectedBatches.length + missingEmployees.length} nhân viên</span></div>
             {pendingBatches.map((batch) => {
               const startDate = toDate(batch.schedules[0].date)
               const endDate = toDate(batch.schedules[batch.schedules.length - 1].date)
@@ -420,27 +472,90 @@ export default function AdminDashboardPage() {
                 </article>
               )
             })}
-            {!pendingBatches.length && <div className="mobile-card p-8 text-center"><Check className="mx-auto h-8 w-8 text-emerald-600" /><h3 className="mt-3 font-extrabold">Đã xử lý hết</h3><p className="text-sm text-muted-foreground">Không còn bảng lịch chờ duyệt.</p></div>}
+            {rejectedBatches.map((batch) => <button key={batch.key} type="button" onClick={() => { setSelectedProcessedBatch(batch); setProcessedReason('') }} className="mobile-card flex w-full items-center gap-3 border-l-4 border-l-rose-500 p-3 text-left"><div className="grid h-11 w-11 place-items-center rounded-2xl bg-rose-50 font-black text-rose-600">{(batch.employeeName || 'NV').split(' ').slice(-2).map((word) => word[0]).join('')}</div><div className="min-w-0 flex-1"><h3 className="truncate font-extrabold">{batch.employeeName || batch.employeeId}</h3><p className="text-xs text-muted-foreground">{batch.employeeCode || 'Nhân viên'} · Lịch đã bị từ chối, cần gửi lại</p></div><span className="text-xs font-black text-rose-600">Chưa duyệt</span><ChevronRight className="h-4 w-4 text-slate-400" /></button>)}
+            {missingEmployees.map((employee) => <Link key={employee.uid} href={`/admin/employees/${employee.uid}`} className="mobile-card flex items-center gap-3 border-l-4 border-l-rose-500 p-3"><div className="grid h-11 w-11 place-items-center rounded-2xl bg-slate-100 font-black text-slate-600">{employee.fullName.split(' ').slice(-2).map((word) => word[0]).join('')}</div><div className="min-w-0 flex-1"><h3 className="truncate font-extrabold">{employee.fullName}</h3><p className="text-xs text-muted-foreground">{employee.employeeCode} · Chưa gửi bảng lịch</p></div><span className="text-xs font-black text-rose-600">Chưa gửi</span><ChevronRight className="h-4 w-4 text-slate-400" /></Link>)}
+            {!pendingBatches.length && !rejectedBatches.length && !missingEmployees.length && <div className="mobile-card p-6 text-center"><Check className="mx-auto h-7 w-7 text-emerald-600" /><p className="mt-2 font-bold">Không còn nhân viên chờ xử lý.</p></div>}
+
+            <div className="pt-4"><div className="flex items-end justify-between"><div><p className="text-xs font-black uppercase tracking-wider text-emerald-600">Đã hoàn tất</p><h2 className="text-xl font-black">Nhân viên đã duyệt</h2></div><span className="text-xs font-bold text-muted-foreground">{approvedBatches.length} nhân viên</span></div></div>
+            {approvedBatches.map((batch) => <button key={batch.key} type="button" onClick={() => { setSelectedProcessedBatch(batch); setProcessedReason('') }} className="mobile-card flex w-full items-center gap-3 border-l-4 border-l-emerald-500 p-3 text-left"><div className="grid h-11 w-11 place-items-center rounded-2xl bg-emerald-50 font-black text-emerald-700">{(batch.employeeName || 'NV').split(' ').slice(-2).map((word) => word[0]).join('')}</div><div className="min-w-0 flex-1"><h3 className="truncate font-extrabold">{batch.employeeName || batch.employeeId}</h3><p className="text-xs text-muted-foreground">{batch.employeeCode || 'Nhân viên'} · {batch.schedules.length} ca đã duyệt</p></div><span className="text-xs font-black text-emerald-600">Đã duyệt</span><ChevronRight className="h-4 w-4 text-slate-400" /></button>)}
+            {!approvedBatches.length && <div className="mobile-card p-6 text-center text-sm font-semibold text-muted-foreground">Chưa có bảng lịch nào được duyệt.</div>}
           </section>
         ) : (
-          <section id="employees" className="mt-5 space-y-3">
-            {activeEmployees.map((employee) => (
-              <Link key={employee.uid} href={`/admin/employees/${employee.uid}`} className="mobile-card flex min-h-20 items-center gap-3 p-3">
-                <div className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-indigo-50 font-black text-indigo-600 dark:bg-indigo-500/10">
-                  {employee.fullName.split(' ').slice(-2).map((word) => word[0]).join('')}
-                </div>
-                <div className="min-w-0 flex-1">
-                  <h3 className="truncate font-extrabold">{employee.fullName}</h3>
-                  <p className="text-xs text-muted-foreground">{employee.employeeCode} · {employee.phone || 'Chưa có SĐT'}</p>
-                </div>
-                <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-emerald-100 text-emerald-700" title="Đang hoạt động"><Check className="h-4 w-4" /></span>
-                <ChevronRight className="h-5 w-5 shrink-0 text-slate-400" />
-              </Link>
-            ))}
-          </section>
+          <OtherRequestWorkspace employees={employees} />
         )}
 
       </PageContainer>
+
+      {selectedProcessedBatch && (
+        <div className="fixed inset-0 z-[70] overflow-y-auto bg-slate-100 dark:bg-slate-950">
+          <header className="sticky top-0 z-10 border-b border-slate-200 bg-white/95 backdrop-blur-xl dark:border-white/10 dark:bg-slate-950/95">
+            <div className="mx-auto flex min-h-20 max-w-lg items-center gap-3 px-4 pt-[env(safe-area-inset-top)]">
+              <button type="button" disabled={!!processingId} onClick={() => setSelectedProcessedBatch(null)} className="grid h-11 w-11 place-items-center rounded-2xl bg-slate-100 disabled:opacity-50 dark:bg-slate-800" aria-label="Quay lại">
+                <ArrowLeft className="h-5 w-5" />
+              </button>
+              <div>
+                <h2 className="font-black">Nhân viên đã {selectedProcessedBatch.status === 'Approved' ? 'duyệt' : 'từ chối'}</h2>
+                <p className="text-sm text-muted-foreground">Chỉ xem quyết định hoặc hoàn tác</p>
+              </div>
+            </div>
+          </header>
+          <main className="mx-auto max-w-lg p-3 pb-8">
+            <article className="overflow-hidden rounded-[2rem] border border-violet-100 bg-white shadow-xl dark:border-violet-500/20 dark:bg-slate-900">
+              <section className="bg-gradient-to-r from-indigo-600 via-violet-600 to-fuchsia-600 p-5 text-white">
+                <div className="flex items-start gap-3">
+                  <div className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-white/15 text-sm font-black">
+                    {(selectedProcessedBatch.employeeName || 'NV').split(' ').slice(-2).map((word) => word[0]).join('')}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <h2 className="truncate text-xl font-black">{selectedProcessedBatch.employeeName || selectedProcessedBatch.employeeId}</h2>
+                    <p className="mt-1 text-sm text-white/80">{selectedProcessedBatch.employeeCode || 'Nhân viên'} · {selectedProcessedBatch.schedules.length} ca</p>
+                    <span className={`mt-3 inline-flex rounded-full px-3 py-1 text-xs font-black ${selectedProcessedBatch.status === 'Approved' ? 'bg-emerald-400/25 text-emerald-50' : 'bg-rose-400/25 text-rose-50'}`}>
+                      {selectedProcessedBatch.status === 'Approved' ? 'Đã duyệt' : 'Đã từ chối'}
+                    </span>
+                  </div>
+                </div>
+              </section>
+              <section className="divide-y divide-slate-100 px-4 dark:divide-white/10">
+                {Array.from(new Map(selectedProcessedBatch.schedules.map((schedule) => {
+                  const date = toDate(schedule.date)
+                  const key = localDateKey(date)
+                  return [key, { date, rows: selectedProcessedBatch.schedules.filter((item) => localDateKey(toDate(item.date)) === key) }]
+                })).values()).map(({ date, rows }) => (
+                  <div key={localDateKey(date)} className="grid grid-cols-[1fr_.8fr] gap-3 py-4 text-sm">
+                    <strong className="capitalize">{date.toLocaleDateString('vi-VN', { weekday: 'long', day: '2-digit', month: '2-digit' })}</strong>
+                    <span className="text-muted-foreground">{rows.map((item) => shortShiftLabel[item.shift]).join(' – ')}</span>
+                  </div>
+                ))}
+              </section>
+              <section className="border-t border-slate-100 p-4 dark:border-white/10">
+                {selectedProcessedBatch.status === 'Rejected' && selectedProcessedBatch.schedules.find((item) => item.reviewNote)?.reviewNote && (
+                  <p className="mb-3 rounded-2xl bg-rose-50 p-3 text-sm text-rose-900 dark:bg-rose-500/10 dark:text-rose-100"><strong>Lý do trước đó:</strong> {selectedProcessedBatch.schedules.find((item) => item.reviewNote)?.reviewNote}</p>
+                )}
+                {selectedProcessedBatch.status === 'Approved' && (
+                  <textarea value={processedReason} onChange={(event) => setProcessedReason(event.target.value)} rows={3} maxLength={1000} placeholder="Nhập lý do hoàn tác để nhân viên biết điều chỉnh..." className="w-full resize-none rounded-2xl border border-slate-200 px-4 py-3 text-sm dark:border-slate-700 dark:bg-slate-900" />
+                )}
+                <button
+                  type="button"
+                  disabled={!!processingId || (selectedProcessedBatch.status === 'Approved' && !processedReason.trim())}
+                  onClick={async () => {
+                    const next = selectedProcessedBatch.status === 'Approved' ? 'Rejected' : 'Approved'
+                    const updated = await review(selectedProcessedBatch, next, processedReason.trim())
+                    if (updated) {
+                      setSelectedProcessedBatch(null)
+                      setProcessedReason('')
+                    }
+                  }}
+                  className={`mt-3 flex min-h-12 w-full items-center justify-center gap-2 rounded-2xl font-extrabold text-white disabled:opacity-50 ${selectedProcessedBatch.status === 'Approved' ? 'bg-rose-600' : 'bg-emerald-600'}`}
+                >
+                  {processingId === selectedProcessedBatch.key ? <Loader2 className="h-4 w-4 animate-spin" /> : <RotateCcw className="h-4 w-4" />}
+                  {selectedProcessedBatch.status === 'Approved' ? 'Hoàn tác và yêu cầu gửi lại' : 'Duyệt lại bảng lịch'}
+                </button>
+                <p className="mt-3 text-center text-xs text-muted-foreground">Admin không chỉnh sửa ca của nhân viên tại màn hình này.</p>
+              </section>
+            </article>
+          </main>
+        </div>
+      )}
 
       {rejectingBatch && (
         <div className="fixed inset-0 z-50 flex items-end justify-center bg-slate-950/55 p-0 backdrop-blur-sm sm:items-center sm:p-4" onClick={() => !processingId && setRejectingBatch(null)}>

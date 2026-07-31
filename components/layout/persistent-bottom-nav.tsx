@@ -32,13 +32,13 @@ export function PersistentBottomNav() {
     }
 
     if (isManagement) {
-      return subscribeToManagementPendingCount(setPendingNotificationCount)
+      return subscribeToManagementPendingCount(setPendingNotificationCount, role === 'admin')
     }
 
     return subscribeToEmployeeNotifications(authUser.uid, (notifications) => {
       setPendingNotificationCount(notifications.filter((item) => !item.isRead).length)
     })
-  }, [authUser, isManagement, isPreviewMode])
+  }, [authUser, isManagement, isPreviewMode, role])
 
   if (isLoading || !authUser || hidden) return null
 

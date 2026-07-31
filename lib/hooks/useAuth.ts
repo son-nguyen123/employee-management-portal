@@ -3,7 +3,7 @@
 import React, { createContext, useCallback, useContext, useEffect, useState, ReactNode } from 'react'
 import { User } from 'firebase/auth'
 import { subscribeToAuthState, convertFirebaseUserToAuthUser, logOut } from '@/lib/services/authService'
-import { getEmployeeByUID } from '@/lib/services/employeeService'
+import { getEmployeeByUID, subscribeToEmployeeByUID } from '@/lib/services/employeeService'
 import { AuthUser, Employee } from '@/lib/models/types'
 import {
   DEMO_MODE,
@@ -64,32 +64,39 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
 
     // Production mode - Subscribe to Firebase auth state changes
-    const unsubscribe = subscribeToAuthState(async (firebaseUser: User | null) => {
+    let unsubscribeEmployee: undefined | (() => void)
+    const unsubscribe = subscribeToAuthState((firebaseUser: User | null) => {
       setIsLoading(true)
+      unsubscribeEmployee?.()
+      unsubscribeEmployee = undefined
 
       if (firebaseUser) {
-        try {
-          // Convert Firebase user to AuthUser
-          const authUserData = convertFirebaseUserToAuthUser(firebaseUser)
-          setAuthUser(authUserData)
-
-          // Fetch employee data from Firestore
-          const employeeData = await getEmployeeByUID(firebaseUser.uid)
-          setEmployee(employeeData)
-        } catch (error) {
-          console.error('Error fetching employee data:', error)
-          setEmployee(null)
-        }
+        const authUserData = convertFirebaseUserToAuthUser(firebaseUser)
+        setAuthUser(authUserData)
+        unsubscribeEmployee = subscribeToEmployeeByUID(
+          firebaseUser.uid,
+          (employeeData) => {
+            setEmployee(employeeData)
+            setIsLoading(false)
+          },
+          (error) => {
+            console.error('Error subscribing to employee data:', error)
+            setEmployee(null)
+            setIsLoading(false)
+          }
+        )
       } else {
         setAuthUser(null)
         setEmployee(null)
+        setIsLoading(false)
       }
-
-      setIsLoading(false)
     })
 
     // Cleanup subscription on unmount
-    return () => unsubscribe()
+    return () => {
+      unsubscribeEmployee?.()
+      unsubscribe()
+    }
   }, [demoMode])
 
   const handleLogout = async () => {

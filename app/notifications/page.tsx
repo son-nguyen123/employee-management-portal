@@ -46,7 +46,7 @@ import { updateStaffRequestStatus } from '@/lib/services/staffRequestService'
 import { getManagementContact } from '@/lib/services/managementSettingsService'
 import { profileImageUrl } from '@/lib/utils/profileImage'
 import { subscribeToWeeklyDecisionHistory, type DecisionHistoryItem } from '@/lib/services/decisionHistoryService'
-import { subscribeToAllEmployees } from '@/lib/services/employeeService'
+import { setEmployeeAccountStatus, subscribeToAllEmployees } from '@/lib/services/employeeService'
 import type { Employee } from '@/lib/models/types'
 
 type CurrentSchedule = Pick<WorkSchedule, 'id' | 'shift' | 'status'> & { date: Date }
@@ -64,6 +64,7 @@ function weekWindow(view: WeekView) {
 }
 
 const managementMeta = {
+  account: { icon: UserRound, color: 'bg-fuchsia-600', gradient: 'from-fuchsia-500 via-pink-500 to-rose-500', soft: 'bg-fuchsia-50 text-fuchsia-800 dark:bg-fuchsia-500/10 dark:text-fuchsia-100' },
   schedule: { icon: CalendarDays, color: 'bg-indigo-600', gradient: 'from-indigo-500 via-violet-500 to-fuchsia-600', soft: 'bg-indigo-50 text-indigo-800 dark:bg-indigo-500/10 dark:text-indigo-100' },
   leave: { icon: FileText, color: 'bg-emerald-600', gradient: 'from-emerald-500 via-emerald-600 to-teal-700', soft: 'bg-emerald-50 text-emerald-800 dark:bg-emerald-500/10 dark:text-emerald-100' },
   late: { icon: Clock3, color: 'bg-amber-500', gradient: 'from-amber-400 via-orange-500 to-orange-600', soft: 'bg-amber-50 text-amber-900 dark:bg-amber-500/10 dark:text-amber-100' },
@@ -197,7 +198,7 @@ export default function NotificationsPage() {
   })
   const visiblePendingItems = pendingItems.filter((item) => {
     const window = weekWindow(weekView)
-    return item.createdAt >= window.start && item.createdAt < window.end
+    return item.createdAt >= window.start && item.createdAt < window.end && (item.type !== 'account' || role === 'admin')
   })
   const visibleManagementHistory = decisions
   const employeeMap = useMemo(() => new Map(employees.map((employee) => [employee.uid, employee])), [employees])
@@ -471,7 +472,9 @@ export default function NotificationsPage() {
     setMessage('')
     try {
       if (!isPreviewMode) {
-        if (item.type === 'schedule') {
+        if (item.type === 'account') {
+          await setEmployeeAccountStatus(item.employeeId, status === 'Approved' ? 'active' : 'inactive')
+        } else if (item.type === 'schedule') {
           await reviewWorkScheduleBatch(item.targetIds, status, note)
         } else if (item.type === 'leave') {
           await updateLeaveStatus(item.targetIds[0], status, authUser.uid, note, penaltyAmount)
@@ -506,8 +509,8 @@ export default function NotificationsPage() {
       />
       <PageContainer>
         <div className="mb-4 grid grid-cols-2 gap-2 rounded-2xl bg-slate-100 p-1 dark:bg-slate-800">
-          <button type="button" onClick={() => setWeekView('current')} className={`min-h-11 rounded-xl text-sm font-bold ${weekView === 'current' ? 'bg-white text-indigo-600 shadow-sm dark:bg-slate-950' : 'text-muted-foreground'}`}>Tuần này</button>
           <button type="button" onClick={() => setWeekView('previous')} className={`min-h-11 rounded-xl text-sm font-bold ${weekView === 'previous' ? 'bg-white text-indigo-600 shadow-sm dark:bg-slate-950' : 'text-muted-foreground'}`}>Tuần trước</button>
+          <button type="button" onClick={() => setWeekView('current')} className={`min-h-11 rounded-xl text-sm font-bold ${weekView === 'current' ? 'bg-white text-indigo-600 shadow-sm dark:bg-slate-950' : 'text-muted-foreground'}`}>Tuần này</button>
         </div>
         {!isManagement && !!visibleItems.some((item) => !item.isRead) && (
           <button
@@ -690,10 +693,10 @@ export default function NotificationsPage() {
                 />
                 <SimpleShiftList title="Ca muốn hủy" items={selectedPending.removedShifts} />
 
-                <button type="button" onClick={() => void toggleCurrentSchedule(selectedPending)} className="flex min-h-12 w-full items-center justify-between rounded-2xl border border-slate-200 px-4 text-sm font-extrabold dark:border-slate-700">
+                {selectedPending.type !== 'account' && <button type="button" onClick={() => void toggleCurrentSchedule(selectedPending)} className="flex min-h-12 w-full items-center justify-between rounded-2xl border border-slate-200 px-4 text-sm font-extrabold dark:border-slate-700">
                   <span>{scheduleOpenId === selectedPending.id ? 'Ẩn lịch hiện tại' : 'Xem lịch hiện tại'}</span>
                   {scheduleLoadingId === selectedPending.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <ChevronDown className={`h-4 w-4 transition ${scheduleOpenId === selectedPending.id ? 'rotate-180' : ''}`} />}
-                </button>
+                </button>}
                 {scheduleOpenId === selectedPending.id && scheduleLoadingId !== selectedPending.id && (
                   selectedCurrentSchedules.length
                     ? <SimpleShiftList title="Lịch hiện tại" items={selectedCurrentSchedules} />

@@ -79,6 +79,31 @@ const defaultSchedules: PreviewSchedule[] = [
     note: '',
     status: 'Pending',
   },
+  {
+    id: 'preview-schedule-4',
+    employeeId: 'preview-employee-approved',
+    employeeName: 'Lê Gia Hân',
+    employeeCode: 'NV-012',
+    phone: '0912 345 678',
+    facebookUrl: 'https://facebook.com/',
+    date: nextWeekDate(3),
+    shift: 'Morning',
+    note: '',
+    status: 'Approved',
+  },
+  {
+    id: 'preview-schedule-5',
+    employeeId: 'preview-employee-rejected',
+    employeeName: 'Phạm Quốc Bảo',
+    employeeCode: 'NV-015',
+    phone: '0915 678 234',
+    facebookUrl: 'https://facebook.com/',
+    date: nextWeekDate(4),
+    shift: 'Afternoon',
+    note: '',
+    status: 'Rejected',
+    reviewNote: 'Cần đăng ký thêm ca phù hợp nhu cầu nhân sự.',
+  },
 ]
 
 export function getPreviewSchedules(): PreviewSchedule[] {

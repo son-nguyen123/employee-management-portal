@@ -157,22 +157,48 @@ export async function manageEmployeeStatus(actor: RequestActor, raw: unknown) {
   if (!['active', 'inactive'].includes(status)) throw new ApiError(400, 'Trạng thái tài khoản không hợp lệ.')
   if (employeeId === actor.uid && status === 'inactive') throw new ApiError(409, 'Bạn không thể tự khóa tài khoản admin đang dùng.')
   const employeeRef = adminDb.collection('employees').doc(employeeId)
+  let releasedSchedules = 0
   await adminDb.runTransaction(async (transaction) => {
-    const employee = await transaction.get(employeeRef)
+    const [employee, employeeSchedules] = await Promise.all([
+      transaction.get(employeeRef),
+      transaction.get(adminDb.collection('workSchedules').where('employeeId', '==', employeeId)),
+    ])
     if (!employee.exists) throw new ApiError(404, 'Không tìm thấy nhân viên.')
+    if (employee.get('role') !== 'employee') throw new ApiError(409, 'Chỉ có thể đổi trạng thái tài khoản nhân viên.')
     const now = FieldValue.serverTimestamp()
+    const todayKey = vietnamDateKey(new Date())
+    const schedulesToRelease = status === 'inactive'
+      ? employeeSchedules.docs.filter((schedule) => {
+          const date = schedule.get('date')
+          return date instanceof Timestamp &&
+            vietnamDateKey(date.toDate()) >= todayKey &&
+            ['Registered', 'Draft', 'Pending', 'Editing', 'ChangesRequested', 'Approved'].includes(String(schedule.get('status')))
+        })
+      : []
+    releasedSchedules = schedulesToRelease.length
     transaction.set(employeeRef, { status, statusChangedBy: actor.uid, statusChangedAt: now, updatedAt: now }, { merge: true })
+    schedulesToRelease.forEach((schedule) => transaction.set(schedule.ref, {
+      status: 'Cancelled',
+      lockedAt: null,
+      statusBeforeDeactivation: schedule.get('status'),
+      cancelledBy: actor.uid,
+      cancelledAt: now,
+      cancellationReason: 'Tự động giải phóng do tài khoản nhân viên bị vô hiệu hóa.',
+      updatedAt: now,
+    }, { merge: true }))
     transaction.set(adminDb.collection('notifications').doc(`account-status-${employeeId}`), {
       employeeId,
       title: status === 'active' ? 'Tài khoản đã được chấp nhận' : 'Tài khoản đã bị vô hiệu hóa',
-      message: status === 'active' ? 'Quản lý đã duyệt hồ sơ. Bạn có thể sử dụng đầy đủ các tính năng.' : 'Quản lý đã tạm khóa quyền sử dụng tài khoản này.',
+      message: status === 'active'
+        ? 'Quản lý đã duyệt hồ sơ. Bạn có thể sử dụng đầy đủ các tính năng.'
+        : `${releasedSchedules} ca hiện tại hoặc tương lai đã được giải phóng. Liên hệ quản lý nếu bạn muốn quay lại làm việc.`,
       type: status === 'active' ? 'success' : 'warning',
       isRead: false,
       createdAt: now,
     })
   })
   if (status === 'inactive') await adminAuth.revokeRefreshTokens(employeeId)
-  return { employeeId, status }
+  return { employeeId, status, releasedSchedules }
 }
 
 export async function respondPenaltyConsent(actor: RequestActor, raw: unknown) {

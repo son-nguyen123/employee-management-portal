@@ -2,9 +2,9 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import { useParams } from 'next/navigation'
-import { CalendarDays, CalendarPlus, CircleDollarSign, Clock3, ExternalLink, FileText, Loader2, MessageSquareText, Phone, UserRound } from 'lucide-react'
-import { useAuth } from '@/lib/hooks/useAuth'
-import { getEmployeeByUID } from '@/lib/services/employeeService'
+import { CalendarDays, CalendarPlus, CircleDollarSign, Clock3, ExternalLink, FileText, Loader2, MessageSquareText, Phone, Power, ShieldCheck, ShieldX, UserRound } from 'lucide-react'
+import { useAuth, useUserRole } from '@/lib/hooks/useAuth'
+import { getEmployeeByUID, setEmployeeAccountStatus } from '@/lib/services/employeeService'
 import { getEmployeeSchedules } from '@/lib/services/scheduleService'
 import { getEmployeeLeaves } from '@/lib/services/leaveService'
 import { getEmployeeLateRequests } from '@/lib/services/lateService'
@@ -113,11 +113,14 @@ function buildScheduleActivities(schedules: DetailSchedule[]): Activity[] {
 export default function EmployeeDetailPage() {
   const params = useParams<{ uid: string }>()
   const { authUser, isPreviewMode } = useAuth()
+  const role = useUserRole()
   const [employee, setEmployee] = useState<Employee | null>(null)
   const [schedules, setSchedules] = useState<DetailSchedule[]>([])
   const [otherActivities, setOtherActivities] = useState<Activity[]>([])
   const [loading, setLoading] = useState(true)
   const [message, setMessage] = useState('')
+  const [changingStatus, setChangingStatus] = useState(false)
+  const [confirmingStatus, setConfirmingStatus] = useState<'active' | 'inactive' | null>(null)
 
   useEffect(() => {
     if (!authUser) return
@@ -156,6 +159,31 @@ export default function EmployeeDetailPage() {
   }, [authUser, isPreviewMode, params.uid])
 
   const activities = useMemo(() => [...buildScheduleActivities(schedules), ...otherActivities].sort((a, b) => b.sortAt.getTime() - a.sortAt.getTime()), [schedules, otherActivities])
+
+  const changeAccountStatus = async () => {
+    if (!employee || !confirmingStatus || changingStatus) return
+    setChangingStatus(true)
+    setMessage('')
+    try {
+      const today = new Date()
+      today.setHours(0, 0, 0, 0)
+      const result = isPreviewMode
+        ? { employeeId: employee.uid, status: confirmingStatus, releasedSchedules: confirmingStatus === 'inactive' ? schedules.filter((item) => item.status !== 'Cancelled' && toDate(item.date) >= today).length : 0 }
+        : await setEmployeeAccountStatus(employee.uid, confirmingStatus)
+      setEmployee((current) => current ? { ...current, status: confirmingStatus } : current)
+      if (confirmingStatus === 'inactive' && result.releasedSchedules) {
+        setSchedules((current) => current.map((item) => item.status === 'Cancelled' || toDate(item.date) < today ? item : { ...item, status: 'Cancelled', lockedAt: null }))
+      }
+      setMessage(confirmingStatus === 'active'
+        ? `Đã bật tài khoản ${employee.fullName}. Nhân viên có thể đăng nhập và sử dụng ứng dụng.`
+        : `Đã vô hiệu hóa tài khoản và giải phóng ${result.releasedSchedules} ca hiện tại hoặc tương lai.`)
+      setConfirmingStatus(null)
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'Chưa thể đổi trạng thái tài khoản.')
+    } finally {
+      setChangingStatus(false)
+    }
+  }
   const activityMeta = {
     schedule: { icon: CalendarDays, color: 'bg-indigo-50 text-indigo-600 dark:bg-indigo-500/10' },
     leave: { icon: FileText, color: 'bg-emerald-50 text-emerald-600 dark:bg-emerald-500/10' },
@@ -171,9 +199,28 @@ export default function EmployeeDetailPage() {
       <Header title="Chi tiết nhân viên" subtitle="Hồ sơ và lịch sử yêu cầu" />
       <PageContainer>
         {loading ? <div className="grid min-h-64 place-items-center"><Loader2 className="h-7 w-7 animate-spin text-indigo-600" /></div> : !employee ? <div className="mobile-card p-8 text-center font-bold">Không tìm thấy nhân viên.</div> : <>
-          <section className="overflow-hidden rounded-3xl bg-slate-950 p-5 text-white">
-            <div className="flex items-center gap-4"><div className="grid h-16 w-16 place-items-center rounded-3xl bg-indigo-600"><UserRound className="h-7 w-7" /></div><div className="min-w-0"><h1 className="truncate text-xl font-black">{employee.fullName}</h1><p className="text-sm text-slate-300">{employee.employeeCode} · {employee.status === 'active' ? 'Đang làm việc' : 'Tạm nghỉ'}</p><p className="mt-1 truncate text-xs text-slate-400">{employee.email}</p></div></div>
-            <div className="mt-5 grid grid-cols-2 gap-2"><a href={`tel:${employee.phone}`} className="flex min-h-11 items-center justify-center gap-2 rounded-2xl bg-white/10 text-sm font-bold"><Phone className="h-4 w-4" /> Gọi điện</a><a href={employee.facebookUrl || 'https://facebook.com/'} target="_blank" rel="noreferrer" className="flex min-h-11 items-center justify-center gap-2 rounded-2xl bg-blue-600 text-sm font-bold"><ExternalLink className="h-4 w-4" /> Mở Facebook</a></div>
+          <section
+            className="overflow-hidden rounded-3xl border border-pink-200/80 bg-pink-50 p-5 text-slate-950 shadow-xl shadow-pink-950/10"
+            style={{
+              backgroundImage: "linear-gradient(120deg, rgba(255,255,255,.96), rgba(253,230,245,.84)), url('/tricandy-logo-hd.png')",
+              backgroundPosition: 'center, right -45px center',
+              backgroundRepeat: 'no-repeat',
+              backgroundSize: 'cover, 285px auto',
+            }}
+          >
+            <div className="flex items-center gap-4"><div className="grid h-16 w-16 place-items-center rounded-3xl bg-gradient-to-br from-fuchsia-500 to-violet-600 text-white shadow-lg shadow-fuchsia-900/20"><UserRound className="h-7 w-7" /></div><div className="min-w-0"><h1 className="truncate text-xl font-black">{employee.fullName}</h1><p className="text-sm font-semibold text-slate-700">{employee.employeeCode} · {employee.status === 'active' ? 'Đang làm việc' : employee.status === 'pending' ? 'Chờ duyệt' : 'Đã vô hiệu hóa'}</p><p className="mt-1 truncate text-xs text-slate-600">{employee.email}</p></div></div>
+            <div className="mt-5 grid grid-cols-2 gap-2"><a href={`tel:${employee.phone}`} className="flex min-h-11 items-center justify-center gap-2 rounded-2xl bg-white/80 text-sm font-bold shadow-sm ring-1 ring-pink-200"><Phone className="h-4 w-4" /> Gọi điện</a><a href={employee.facebookUrl || 'https://facebook.com/'} target="_blank" rel="noreferrer" className="flex min-h-11 items-center justify-center gap-2 rounded-2xl bg-blue-600 text-sm font-bold text-white shadow-sm"><ExternalLink className="h-4 w-4" /> Mở Facebook</a></div>
+            {role === 'admin' && employee.role === 'employee' && (
+              <button
+                type="button"
+                disabled={changingStatus}
+                onClick={() => setConfirmingStatus(employee.status === 'active' ? 'inactive' : 'active')}
+                className={`mt-3 flex min-h-12 w-full items-center justify-center gap-2 rounded-2xl text-sm font-extrabold text-white shadow-lg disabled:opacity-60 ${employee.status === 'active' ? 'bg-rose-600 shadow-rose-900/15' : 'bg-emerald-600 shadow-emerald-900/15'}`}
+              >
+                {changingStatus ? <Loader2 className="h-4 w-4 animate-spin" /> : employee.status === 'active' ? <ShieldX className="h-4 w-4" /> : <Power className="h-4 w-4" />}
+                {employee.status === 'active' ? 'Vô hiệu hóa tài khoản' : employee.status === 'pending' ? 'Chấp nhận tài khoản' : 'Bật lại tài khoản'}
+              </button>
+            )}
           </section>
           {message && <p className="mt-4 rounded-2xl bg-amber-50 p-3 text-sm font-semibold text-amber-900">{message}</p>}
           <section className="mt-6"><div className="mb-3 flex items-center justify-between"><h2 className="text-xl font-black">Lịch sử hoạt động</h2><Badge variant="outline">{activities.length} yêu cầu</Badge></div><div className="space-y-3">
@@ -188,6 +235,28 @@ export default function EmployeeDetailPage() {
           </div></section>
         </>}
       </PageContainer>
+      {confirmingStatus && employee && (
+        <div className="fixed inset-0 z-[80] flex items-end justify-center bg-slate-950/55 backdrop-blur-sm sm:items-center sm:p-4" onClick={() => !changingStatus && setConfirmingStatus(null)}>
+          <section className="w-full max-w-md rounded-t-[2rem] bg-white p-5 shadow-2xl dark:bg-slate-900 sm:rounded-[2rem]" onClick={(event) => event.stopPropagation()}>
+            <div className={`grid h-14 w-14 place-items-center rounded-2xl ${confirmingStatus === 'inactive' ? 'bg-rose-50 text-rose-600' : 'bg-emerald-50 text-emerald-600'}`}>
+              {confirmingStatus === 'inactive' ? <ShieldX className="h-6 w-6" /> : <ShieldCheck className="h-6 w-6" />}
+            </div>
+            <h2 className="mt-4 text-xl font-black">{confirmingStatus === 'inactive' ? 'Vô hiệu hóa tài khoản?' : employee.status === 'pending' ? 'Chấp nhận tài khoản?' : 'Bật lại tài khoản?'}</h2>
+            <p className="mt-2 text-sm leading-6 text-muted-foreground">
+              {confirmingStatus === 'inactive'
+                ? `Nhân viên ${employee.fullName} sẽ không thể dùng ứng dụng. Các ca hiện tại và tương lai sẽ được hủy để giải phóng lịch; lịch sử cũ vẫn được giữ lại.`
+                : `Nhân viên ${employee.fullName} sẽ có thể đăng nhập và sử dụng các tính năng. Các ca từng bị hủy sẽ không tự khôi phục để tránh trùng lịch.`}
+            </p>
+            <div className="mt-5 grid grid-cols-2 gap-2">
+              <button type="button" disabled={changingStatus} onClick={() => setConfirmingStatus(null)} className="min-h-12 rounded-2xl border border-slate-200 font-bold dark:border-slate-700">Hủy</button>
+              <button type="button" disabled={changingStatus} onClick={() => void changeAccountStatus()} className={`flex min-h-12 items-center justify-center gap-2 rounded-2xl font-extrabold text-white disabled:opacity-60 ${confirmingStatus === 'inactive' ? 'bg-rose-600' : 'bg-emerald-600'}`}>
+                {changingStatus && <Loader2 className="h-4 w-4 animate-spin" />}
+                {confirmingStatus === 'inactive' ? 'Vô hiệu hóa' : employee.status === 'pending' ? 'Chấp nhận' : 'Bật lại'}
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
     </main>
   )
 }

@@ -21,7 +21,7 @@ import {
 
 const NOTIFICATIONS_COLLECTION = 'notifications'
 
-export type ManagementPendingType = 'schedule' | 'leave' | 'late' | 'salary' | 'staff'
+export type ManagementPendingType = 'account' | 'schedule' | 'leave' | 'late' | 'salary' | 'staff'
 
 export interface ManagementShift {
   date: Date
@@ -216,9 +216,10 @@ export function subscribeToEmployeeNotifications(
  * notifications were introduced.
  */
 export function subscribeToManagementPendingCount(
-  callback: (count: number) => void
+  callback: (count: number) => void,
+  includeAccountApprovals = true
 ): () => void {
-  return subscribeToManagementPendingItems((items) => callback(items.length))
+  return subscribeToManagementPendingItems((items) => callback(items.filter((item) => includeAccountApprovals || item.type !== 'account').length))
 }
 
 /**
@@ -269,6 +270,23 @@ export function subscribeToManagementPendingItems(
       facebookURL: '',
     }
     const items: ManagementPendingItem[] = []
+
+    state.employees
+      .filter(({ data }) => data.status === 'pending' && data.role === 'employee')
+      .forEach(({ id, data }) => items.push({
+        id: `account-${id}`,
+        type: 'account',
+        employeeId: id,
+        employeeName: typeof data.fullName === 'string' ? data.fullName : 'Nhân viên mới',
+        employeeCode: typeof data.employeeCode === 'string' ? data.employeeCode : '',
+        employeePhotoURL: typeof data.photoURL === 'string' ? data.photoURL : '',
+        employeePhone: typeof data.phone === 'string' ? data.phone : '',
+        employeeFacebookURL: typeof data.facebookUrl === 'string' ? data.facebookUrl : '',
+        title: 'Tài khoản mới chờ duyệt',
+        detail: typeof data.email === 'string' ? data.email : 'Hồ sơ nhân viên mới',
+        createdAt: asDate(data.updatedAt || data.createdAt),
+        targetIds: [id],
+      }))
 
     const scheduleBatches = new Map<string, Array<{ id: string; data: Record<string, unknown> }>>()
     state.schedules.forEach((row) => {

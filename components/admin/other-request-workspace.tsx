@@ -1,0 +1,186 @@
+'use client'
+
+import { useEffect, useMemo, useState } from 'react'
+import { ArrowLeft, Check, ChevronRight, CircleDollarSign, Clock3, FileText, Loader2, MessageSquareText, RotateCcw, UserRound, X } from 'lucide-react'
+import { useAuth, useUserRole } from '@/lib/hooks/useAuth'
+import type { Employee } from '@/lib/models/types'
+import { setEmployeeAccountStatus } from '@/lib/services/employeeService'
+import { updateLateStatus } from '@/lib/services/lateService'
+import { updateLeaveStatus } from '@/lib/services/leaveService'
+import { subscribeToManagementPendingItems, type ManagementPendingItem, type ManagementShift } from '@/lib/services/notificationService'
+import { updateSalaryAdvanceStatus } from '@/lib/services/salaryService'
+import { updateStaffRequestStatus } from '@/lib/services/staffRequestService'
+import { subscribeToWeeklyDecisionHistory, type DecisionHistoryItem } from '@/lib/services/decisionHistoryService'
+
+type RequestRow =
+  | { kind: 'pending'; pending: ManagementPendingItem; sortAt: Date; status: 'Pending' }
+  | { kind: 'decision'; decision: DecisionHistoryItem; sortAt: Date; status: 'Approved' | 'Rejected' }
+
+const meta = {
+  account: { icon: UserRound, color: 'bg-fuchsia-600', gradient: 'from-fuchsia-500 to-rose-500' },
+  leave: { icon: FileText, color: 'bg-emerald-600', gradient: 'from-emerald-500 to-teal-700' },
+  late: { icon: Clock3, color: 'bg-amber-500', gradient: 'from-amber-400 to-orange-600' },
+  salary: { icon: CircleDollarSign, color: 'bg-sky-600', gradient: 'from-sky-500 to-indigo-600' },
+  staff: { icon: MessageSquareText, color: 'bg-violet-600', gradient: 'from-violet-500 to-fuchsia-600' },
+} as const
+
+const shiftLabel = { Morning: 'sáng', Afternoon: 'chiều', Evening: 'tối' }
+
+function currentWeekWindow() {
+  const start = new Date()
+  const weekday = start.getDay() || 7
+  start.setDate(start.getDate() - weekday + 1)
+  start.setHours(0, 0, 0, 0)
+  const end = new Date(start)
+  end.setDate(start.getDate() + 7)
+  return { start, end }
+}
+
+function ShiftRows({ title, rows }: { title: string; rows?: ManagementShift[] }) {
+  if (!rows?.length) return null
+  return <section><p className="mb-1 text-xs font-black uppercase tracking-wider text-muted-foreground">{title}</p><div className="divide-y divide-slate-100 dark:divide-white/10">{rows.map((row, index) => <div key={`${row.date.toISOString()}-${row.shift}-${index}`} className="grid grid-cols-[1fr_.8fr] gap-3 py-3 text-sm"><strong className="capitalize">{row.date.toLocaleDateString('vi-VN', { weekday: 'long', day: '2-digit', month: '2-digit' })}</strong><span className="text-muted-foreground">{shiftLabel[row.shift]}</span></div>)}</div></section>
+}
+
+export function OtherRequestWorkspace({ employees }: { employees: Employee[] }) {
+  const { authUser, isPreviewMode } = useAuth()
+  const role = useUserRole()
+  const [pending, setPending] = useState<ManagementPendingItem[]>([])
+  const [decisions, setDecisions] = useState<DecisionHistoryItem[]>([])
+  const [selected, setSelected] = useState<RequestRow | null>(null)
+  const [note, setNote] = useState('')
+  const [processing, setProcessing] = useState(false)
+  const [message, setMessage] = useState('')
+
+  useEffect(() => {
+    if (!authUser) return
+    if (isPreviewMode) {
+      const now = new Date()
+      const timeout = window.setTimeout(() => {
+        setPending([{
+          id: 'preview-leave-pending', type: 'leave', employeeId: 'demo-user-001', employeeName: 'Nguyễn Minh An', employeeCode: 'NV-001',
+          title: 'Yêu cầu xin nghỉ', detail: 'Ngày mai · việc gia đình', reason: 'Em cần nghỉ để giải quyết việc gia đình.', createdAt: now,
+          targetIds: ['preview-leave-pending'],
+        }])
+        setDecisions([{
+          key: 'preview-salary-approved', id: 'preview-salary-approved', ids: ['preview-salary-approved'], resource: 'salary',
+          employeeId: 'preview-employee-2', title: 'Yêu cầu ứng lương', detail: '500.000đ · việc cá nhân',
+          status: 'Approved', reviewNote: '', reviewedAt: new Date(now.getTime() - 60_000), reason: 'Việc cá nhân',
+        }, {
+          key: 'preview-late-rejected', id: 'preview-late-rejected', ids: ['preview-late-rejected'], resource: 'late',
+          employeeId: 'demo-user-001', title: 'Yêu cầu đi trễ', detail: '20 phút · xe hư',
+          status: 'Rejected', reviewNote: 'Báo quá sát giờ.', reviewedAt: new Date(now.getTime() - 120_000), reason: 'Xe hư',
+        }])
+      }, 0)
+      return () => window.clearTimeout(timeout)
+    }
+    const weekWindow = currentWeekWindow()
+    const unsubscribePending = subscribeToManagementPendingItems(
+      (items) => setPending(items.filter((item) => item.type !== 'schedule' && (item.type !== 'account' || role === 'admin'))),
+      () => setMessage('Chưa thể tải các yêu cầu khác.')
+    )
+    const unsubscribeHistory = subscribeToWeeklyDecisionHistory(
+      weekWindow.start,
+      new Date(weekWindow.end.getTime() - 1),
+      (items) => setDecisions(items.filter((item) => item.resource !== 'schedule')),
+      () => setMessage('Chưa thể tải lịch sử xử lý trong tuần.')
+    )
+    return () => { unsubscribePending(); unsubscribeHistory() }
+  }, [authUser, isPreviewMode, role])
+
+  const employeeMap = useMemo(() => new Map(employees.map((employee) => [employee.uid, employee])), [employees])
+  const rows = useMemo<RequestRow[]>(() => [
+    ...decisions.map((decision): RequestRow => ({ kind: 'decision', decision, status: decision.status, sortAt: decision.reviewedAt })),
+    ...pending.map((item): RequestRow => ({ kind: 'pending', pending: item, status: 'Pending', sortAt: item.createdAt })),
+  ].sort((left, right) => {
+    const rank = { Approved: 0, Pending: 1, Rejected: 2 }
+    return rank[left.status] - rank[right.status] || right.sortAt.getTime() - left.sortAt.getTime()
+  }), [decisions, pending])
+
+  const processPending = async (item: ManagementPendingItem, status: 'Approved' | 'Rejected') => {
+    if (!authUser || processing) return
+    if (status === 'Rejected' && !note.trim()) { setMessage('Vui lòng nhập lý do từ chối.'); return }
+    let penaltyAmount: number | undefined
+    if (item.type === 'leave' || item.type === 'late') {
+      const suggested = status === 'Approved' ? item.penaltyIfApproved || 0 : item.penaltyIfRejected || 0
+      const entered = window.prompt(`Nhập mức trừ muốn áp dụng (đề xuất ${suggested.toLocaleString('vi-VN')}đ, nhập 0 nếu không trừ):`, String(suggested))
+      if (entered === null) return
+      penaltyAmount = Number(entered.replace(/[^0-9]/g, ''))
+      if (!Number.isFinite(penaltyAmount)) { setMessage('Mức trừ không hợp lệ.'); return }
+    }
+    setProcessing(true)
+    setMessage('')
+    try {
+      if (!isPreviewMode) {
+        if (item.type === 'account') await setEmployeeAccountStatus(item.employeeId, status === 'Approved' ? 'active' : 'inactive')
+        if (item.type === 'leave') await updateLeaveStatus(item.targetIds[0], status, authUser.uid, note.trim(), penaltyAmount)
+        if (item.type === 'late') await updateLateStatus(item.targetIds[0], status, authUser.uid, note.trim(), penaltyAmount)
+        if (item.type === 'salary') await updateSalaryAdvanceStatus(item.targetIds[0], status, authUser.uid, note.trim())
+        if (item.type === 'staff') await updateStaffRequestStatus(item.targetIds[0], status, note.trim())
+      }
+      setPending((current) => current.filter((row) => row.id !== item.id))
+      setSelected(null)
+      setNote('')
+      setMessage(status === 'Approved' ? 'Đã duyệt yêu cầu.' : 'Đã từ chối yêu cầu.')
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'Chưa thể xử lý yêu cầu.')
+    } finally { setProcessing(false) }
+  }
+
+  const changeDecision = async (item: DecisionHistoryItem) => {
+    if (!authUser || processing) return
+    const next = item.status === 'Approved' ? 'Rejected' : 'Approved'
+    if (next === 'Rejected' && !note.trim()) { setMessage('Vui lòng nhập lý do hoàn tác.'); return }
+    setProcessing(true)
+    setMessage('')
+    try {
+      if (!isPreviewMode) {
+        if (item.resource === 'leave') await updateLeaveStatus(item.id, next, authUser.uid, note.trim())
+        if (item.resource === 'late') await updateLateStatus(item.id, next, authUser.uid, note.trim())
+        if (item.resource === 'salary') await updateSalaryAdvanceStatus(item.id, next, authUser.uid, note.trim())
+        if (item.resource === 'staff') await updateStaffRequestStatus(item.id, next, note.trim())
+      }
+      setDecisions((current) => current.map((row) => row.key === item.key ? { ...row, status: next, reviewNote: note.trim(), reviewedAt: new Date() } : row))
+      setSelected((current) => current?.kind === 'decision' ? { ...current, status: next, decision: { ...current.decision, status: next, reviewNote: note.trim(), reviewedAt: new Date() } } : current)
+      setNote('')
+      setMessage(`Đã chuyển quyết định thành ${next === 'Approved' ? 'Duyệt' : 'Từ chối'}.`)
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'Chưa thể hoàn tác quyết định.')
+    } finally { setProcessing(false) }
+  }
+
+  return <section className="mt-5">
+    {message && <p className="mb-3 rounded-2xl bg-indigo-50 p-3 text-sm font-semibold text-indigo-800 dark:bg-indigo-500/10 dark:text-indigo-100">{message}</p>}
+    <div className="mb-3 flex items-end justify-between"><div><p className="text-xs font-black uppercase tracking-wider text-violet-600">Một danh sách duy nhất</p><h2 className="text-xl font-black">Yêu cầu khác</h2></div><span className="text-xs font-bold text-muted-foreground">{rows.length} mục</span></div>
+    <div className="space-y-2">{rows.map((row) => {
+      const type = row.kind === 'pending' ? row.pending.type : row.decision.resource
+      const itemMeta = meta[type as keyof typeof meta]
+      const Icon = itemMeta.icon
+      const employeeId = row.kind === 'pending' ? row.pending.employeeId : row.decision.employeeId
+      const employee = employeeMap.get(employeeId)
+      const name = row.kind === 'pending' ? row.pending.employeeName : employee?.fullName || employeeId
+      const code = row.kind === 'pending' ? row.pending.employeeCode : employee?.employeeCode || ''
+      const title = row.kind === 'pending' ? row.pending.title : row.decision.title
+      const detail = row.kind === 'pending' ? row.pending.detail : row.decision.detail
+      return <button key={row.kind === 'pending' ? row.pending.id : row.decision.key} type="button" onClick={() => { setSelected(row); setNote(''); setMessage('') }} className={`mobile-card flex w-full items-center gap-3 border-l-4 p-3 text-left ${row.status === 'Approved' ? 'border-l-emerald-500' : 'border-l-rose-500'}`}>
+        <div className={`grid h-11 w-11 shrink-0 place-items-center rounded-2xl text-white ${itemMeta.color}`}><Icon className="h-5 w-5" /></div>
+        <div className="min-w-0 flex-1"><h3 className="truncate font-extrabold">{title}</h3><p className="truncate text-sm font-bold">{name}{code ? ` · ${code}` : ''}</p><p className="truncate text-xs text-muted-foreground">{detail}</p></div>
+        <div className="text-right"><span className={`text-xs font-black ${row.status === 'Approved' ? 'text-emerald-600' : 'text-rose-600'}`}>{row.status === 'Approved' ? 'Đã duyệt' : row.status === 'Pending' ? 'Cần xử lý' : 'Đã từ chối'}</span><ChevronRight className="ml-auto mt-1 h-4 w-4 text-slate-400" /></div>
+      </button>
+    })}{!rows.length && <div className="mobile-card p-8 text-center"><Check className="mx-auto h-8 w-8 text-emerald-600" /><p className="mt-3 font-bold">Không có yêu cầu khác trong tuần này.</p></div>}</div>
+
+    {selected && (() => {
+      const type = selected.kind === 'pending' ? selected.pending.type : selected.decision.resource
+      const itemMeta = meta[type as keyof typeof meta]
+      const employeeId = selected.kind === 'pending' ? selected.pending.employeeId : selected.decision.employeeId
+      const employee = employeeMap.get(employeeId)
+      const name = selected.kind === 'pending' ? selected.pending.employeeName : employee?.fullName || employeeId
+      const title = selected.kind === 'pending' ? selected.pending.title : selected.decision.title
+      const detail = selected.kind === 'pending' ? selected.pending.detail : selected.decision.detail
+      const reason = selected.kind === 'pending' ? selected.pending.reason : selected.decision.reason
+      const shifts = selected.kind === 'pending' ? selected.pending.shifts : selected.decision.shifts
+      const removed = selected.kind === 'pending' ? selected.pending.removedShifts : selected.decision.removedShifts
+      const next = selected.kind === 'decision' ? selected.decision.status === 'Approved' ? 'Rejected' : 'Approved' : null
+      return <div className="fixed inset-0 z-[75] overflow-y-auto bg-slate-100 dark:bg-slate-950"><header className="sticky top-0 z-10 border-b bg-white/95 backdrop-blur-xl dark:border-white/10 dark:bg-slate-950/95"><div className="mx-auto flex min-h-20 max-w-lg items-center gap-3 px-4 pt-[env(safe-area-inset-top)]"><button type="button" onClick={() => setSelected(null)} className="grid h-11 w-11 place-items-center rounded-2xl bg-slate-100 dark:bg-slate-800" aria-label="Quay lại"><ArrowLeft className="h-5 w-5" /></button><div><h2 className="font-black">Chi tiết yêu cầu</h2><p className="text-sm text-muted-foreground">Xem, xử lý hoặc hoàn tác</p></div></div></header><main className="mx-auto max-w-lg p-3"><article className="overflow-hidden rounded-[2rem] bg-white shadow-xl dark:bg-slate-900"><section className={`bg-gradient-to-r ${itemMeta.gradient} p-5 text-white`}><h2 className="text-xl font-black">{title}</h2><p className="mt-2 font-extrabold">{name}</p><p className="mt-1 text-sm text-white/85">{detail}</p><span className="mt-3 inline-flex rounded-full bg-white/20 px-3 py-1 text-xs font-black">{selected.status === 'Approved' ? 'Đã duyệt' : selected.status === 'Pending' ? 'Cần xử lý' : 'Đã từ chối'}</span></section><section className="space-y-4 p-4">{reason && <p className="rounded-2xl bg-slate-50 p-3 text-sm leading-6 dark:bg-slate-800"><strong>Ghi chú:</strong> {reason}</p>}<ShiftRows title="Ca mới / ca thêm" rows={shifts} /><ShiftRows title="Ca muốn hủy" rows={removed} />{selected.kind === 'decision' && selected.decision.reviewNote && <p className="rounded-2xl bg-amber-50 p-3 text-sm text-amber-900"><strong>Phản hồi cũ:</strong> {selected.decision.reviewNote}</p>}<textarea value={note} onChange={(event) => setNote(event.target.value)} rows={3} placeholder={selected.kind === 'pending' ? 'Lý do từ chối (nếu từ chối)...' : next === 'Rejected' ? 'Nhập lý do hoàn tác...' : 'Ghi chú mới (không bắt buộc)...'} className="w-full resize-none rounded-2xl border border-slate-200 px-4 py-3 text-sm dark:border-slate-700 dark:bg-slate-900" />{selected.kind === 'pending' ? <div className="grid grid-cols-2 gap-2"><button type="button" disabled={processing || !note.trim()} onClick={() => void processPending(selected.pending, 'Rejected')} className="flex min-h-12 items-center justify-center gap-2 rounded-2xl border border-rose-200 font-extrabold text-rose-600 disabled:opacity-50"><X className="h-4 w-4" /> Từ chối</button><button type="button" disabled={processing} onClick={() => void processPending(selected.pending, 'Approved')} className="flex min-h-12 items-center justify-center gap-2 rounded-2xl bg-emerald-600 font-extrabold text-white disabled:opacity-50">{processing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />} Duyệt</button></div> : <button type="button" disabled={processing || (next === 'Rejected' && !note.trim())} onClick={() => void changeDecision(selected.decision)} className={`flex min-h-12 w-full items-center justify-center gap-2 rounded-2xl font-extrabold text-white disabled:opacity-50 ${next === 'Rejected' ? 'bg-rose-600' : 'bg-emerald-600'}`}><RotateCcw className="h-4 w-4" /> Hoàn tác thành {next === 'Rejected' ? 'Từ chối' : 'Duyệt'}</button>}</section></article></main></div>
+    })()}
+  </section>
+}

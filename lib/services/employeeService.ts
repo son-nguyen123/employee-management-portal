@@ -35,6 +35,18 @@ export async function getEmployeeByUID(uid: string): Promise<Employee | null> {
   }
 }
 
+export function subscribeToEmployeeByUID(
+  uid: string,
+  callback: (employee: Employee | null) => void,
+  onError?: (error: Error) => void
+): () => void {
+  return onSnapshot(
+    doc(db, EMPLOYEES_COLLECTION, uid),
+    (snapshot) => callback(snapshot.exists() ? snapshot.data() as Employee : null),
+    (error) => onError?.(error)
+  )
+}
+
 /**
  * Create new employee
  */
@@ -138,6 +150,6 @@ export function subscribeToActiveEmployees(
   )
 }
 
-export async function setEmployeeAccountStatus(employeeId: string, status: 'active' | 'inactive'): Promise<void> {
-  await callWorkflowApi('manageEmployeeStatus', { employeeId, status })
+export async function setEmployeeAccountStatus(employeeId: string, status: 'active' | 'inactive'): Promise<{ employeeId: string; status: 'active' | 'inactive'; releasedSchedules: number }> {
+  return callWorkflowApi('manageEmployeeStatus', { employeeId, status })
 }

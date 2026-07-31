@@ -180,7 +180,15 @@ export default function Page() {
 
   return (
     <main className="min-h-screen pb-24 md:pb-8">
-      <section className="overflow-hidden rounded-b-[2rem] bg-gradient-to-br from-rose-50 via-white to-indigo-100 px-4 pb-7 pt-[max(1rem,env(safe-area-inset-top))] text-slate-950 dark:from-slate-950 dark:via-slate-950 dark:to-indigo-950 dark:text-white">
+      <section
+        className="overflow-hidden rounded-b-[2rem] border-b border-pink-200/70 bg-pink-50 px-4 pb-7 pt-[max(1rem,env(safe-area-inset-top))] text-slate-950 shadow-sm"
+        style={{
+          backgroundImage: "linear-gradient(115deg, rgba(255,255,255,.96), rgba(253,230,245,.82)), url('/tricandy-logo-hd.png')",
+          backgroundPosition: 'center, right -70px top -25px',
+          backgroundRepeat: 'no-repeat',
+          backgroundSize: 'cover, 360px auto',
+        }}
+      >
         <div className="mx-auto max-w-2xl">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
@@ -190,21 +198,21 @@ export default function Page() {
                   : isAdmin ? <ShieldCheck className="h-5 w-5" /> : <UserRound className="h-5 w-5" />}
               </div>
               <div>
-                <p className="text-xs font-bold text-fuchsia-600 dark:text-fuchsia-300">{isAdmin ? 'Tài khoản quản lý · Trí Candy' : 'Trí Candy'}</p>
+                <p className="text-xs font-bold text-fuchsia-600">{isAdmin ? 'Tài khoản quản lý · Trí Candy' : 'Trí Candy'}</p>
                 <h1 className="max-w-[190px] truncate text-lg font-bold">{displayName}</h1>
               </div>
             </div>
             <div className="flex gap-1">
               <button
                 onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
-                className="grid h-11 w-11 place-items-center rounded-2xl bg-white/80 text-slate-700 shadow-sm ring-1 ring-fuchsia-100 dark:bg-white/10 dark:text-white dark:ring-white/10"
+                className="grid h-11 w-11 place-items-center rounded-2xl bg-white/85 text-slate-700 shadow-sm ring-1 ring-fuchsia-100"
                 aria-label="Đổi giao diện sáng tối"
               >
                 {theme === 'dark' ? <Sun className="h-5 w-5" /> : <Moon className="h-5 w-5" />}
               </button>
               <button
                 onClick={async () => { await logout(); router.push('/auth/login') }}
-                className="grid h-11 w-11 place-items-center rounded-2xl bg-white/80 text-rose-500 shadow-sm ring-1 ring-rose-100 dark:bg-white/10 dark:text-rose-300 dark:ring-white/10"
+                className="grid h-11 w-11 place-items-center rounded-2xl bg-white/85 text-rose-500 shadow-sm ring-1 ring-rose-100"
                 aria-label="Đăng xuất"
               >
                 <LogOut className="h-5 w-5" />
