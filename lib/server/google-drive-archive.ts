@@ -97,6 +97,23 @@ async function findFile(
   return result.files?.[0] ?? null
 }
 
+async function findFiles(
+  accessToken: string,
+  query: string,
+): Promise<DriveFile[]> {
+  const params = new URLSearchParams({
+    q: `${query} and trashed = false`,
+    spaces: 'drive',
+    pageSize: '100',
+    fields: 'files(id,name,size,md5Checksum,webViewLink,appProperties)',
+  })
+  const result = await driveRequest<{ files?: DriveFile[] }>(
+    accessToken,
+    `/files?${params.toString()}`,
+  )
+  return result.files ?? []
+}
+
 async function ensureArchiveFolder(accessToken: string): Promise<string> {
   const existing = await findFile(
     accessToken,
@@ -148,17 +165,12 @@ export async function storeProfileImage(params: {
 }): Promise<{ id: string; url: string }> {
   const accessToken = await googleAccessToken()
   const folderId = await ensureProfileImageFolder(accessToken)
-  const safeEmployeeId = escapeDriveQuery(params.employeeId)
-  const existing = await findFile(
-    accessToken,
-    `appProperties has { key='portalProfileImage' and value='true' } and appProperties has { key='employeeId' and value='${safeEmployeeId}' }`,
-  )
   const extension = params.contentType === 'image/png' ? 'png' : params.contentType === 'image/webp' ? 'webp' : 'jpg'
   const boundary = `codex-profile-${crypto.randomUUID()}`
   const metadata = JSON.stringify({
-    name: `profile-${params.employeeId}.${extension}`,
+    name: `profile-${params.employeeId}-${Date.now()}.${extension}`,
     mimeType: params.contentType,
-    ...(existing ? {} : { parents: [folderId] }),
+    parents: [folderId],
     appProperties: {
       portalProfileImage: 'true',
       employeeId: params.employeeId,
@@ -171,11 +183,8 @@ export async function storeProfileImage(params: {
     params.bytes,
     Buffer.from(`\r\n--${boundary}--`),
   ])
-  const endpoint = existing
-    ? `${DRIVE_UPLOAD_API}/files/${encodeURIComponent(existing.id)}?uploadType=multipart&fields=id`
-    : `${DRIVE_UPLOAD_API}/files?uploadType=multipart&fields=id`
-  const response = await fetch(endpoint, {
-    method: existing ? 'PATCH' : 'POST',
+  const response = await fetch(`${DRIVE_UPLOAD_API}/files?uploadType=multipart&fields=id`, {
+    method: 'POST',
     headers: {
       authorization: `Bearer ${accessToken}`,
       'content-type': `multipart/related; boundary=${boundary}`,
@@ -215,6 +224,58 @@ export async function storeProfileImage(params: {
     id: file.id,
     url: `https://drive.google.com/uc?export=view&id=${encodeURIComponent(file.id)}`,
   }
+}
+
+export async function deleteProfileImage(
+  employeeId: string,
+  fileId: string,
+): Promise<void> {
+  if (!/^[a-zA-Z0-9_-]{10,200}$/.test(fileId)) return
+  const accessToken = await googleAccessToken()
+  const metadata = await driveRequest<DriveFile>(
+    accessToken,
+    `/files/${encodeURIComponent(fileId)}?fields=id,appProperties`,
+  )
+  if (
+    metadata.appProperties?.application !== 'employee-management-portal' ||
+    metadata.appProperties.portalProfileImage !== 'true' ||
+    metadata.appProperties.employeeId !== employeeId
+  ) {
+    throw new Error('The requested file is not owned by this employee profile.')
+  }
+  const response = await fetch(`${DRIVE_API}/files/${encodeURIComponent(fileId)}`, {
+    method: 'DELETE',
+    headers: { authorization: `Bearer ${accessToken}` },
+    cache: 'no-store',
+  })
+  if (!response.ok && response.status !== 404) {
+    const details = (await response.text()).slice(0, 500)
+    throw new Error(`Google Drive profile delete failed (${response.status}): ${details}`)
+  }
+}
+
+export async function deleteOtherProfileImages(
+  employeeId: string,
+  keepFileId: string,
+): Promise<void> {
+  const accessToken = await googleAccessToken()
+  const safeEmployeeId = escapeDriveQuery(employeeId)
+  const files = await findFiles(
+    accessToken,
+    `appProperties has { key='portalProfileImage' and value='true' } and appProperties has { key='employeeId' and value='${safeEmployeeId}' }`,
+  )
+  const staleFiles = files.filter((file) => file.id !== keepFileId)
+  await Promise.all(staleFiles.map(async (file) => {
+    const response = await fetch(`${DRIVE_API}/files/${encodeURIComponent(file.id)}`, {
+      method: 'DELETE',
+      headers: { authorization: `Bearer ${accessToken}` },
+      cache: 'no-store',
+    })
+    if (!response.ok && response.status !== 404) {
+      const details = (await response.text()).slice(0, 500)
+      throw new Error(`Google Drive profile cleanup failed (${response.status}): ${details}`)
+    }
+  }))
 }
 
 export async function readProfileImage(fileId: string): Promise<{

@@ -1,6 +1,13 @@
 import { NextResponse } from 'next/server'
-import { authenticateRequest } from '@/lib/server/api-auth'
-import { readProfileImage, storeProfileImage } from '@/lib/server/google-drive-archive'
+import { FieldValue } from 'firebase-admin/firestore'
+import { ApiError, authenticateRequest } from '@/lib/server/api-auth'
+import { adminAuth, adminDb } from '@/lib/server/firebase-admin'
+import {
+  deleteOtherProfileImages,
+  deleteProfileImage,
+  readProfileImage,
+  storeProfileImage,
+} from '@/lib/server/google-drive-archive'
 
 export const runtime = 'nodejs'
 
@@ -31,17 +38,48 @@ export async function POST(request: Request) {
     if (!hasValidSignature(bytes, image.type)) {
       return NextResponse.json({ error: 'Nội dung tệp không đúng định dạng ảnh.' }, { status: 400 })
     }
-    const result = await storeProfileImage({
+    const uploadedFile = await storeProfileImage({
       employeeId: actor.uid,
       contentType: image.type as 'image/jpeg' | 'image/png' | 'image/webp',
       bytes: Buffer.from(bytes),
     })
     const displayUrl = new URL('/api/profile/image', request.url)
-    displayUrl.searchParams.set('fileId', result.id)
-    return NextResponse.json({ ok: true, url: displayUrl.toString() })
+    displayUrl.searchParams.set('fileId', uploadedFile.id)
+    const photoURL = displayUrl.toString()
+
+    try {
+      await adminDb.collection('employees').doc(actor.uid).update({
+        photoURL,
+        updatedAt: FieldValue.serverTimestamp(),
+      })
+    } catch (error) {
+      await deleteProfileImage(actor.uid, uploadedFile.id).catch((cleanupError) => {
+        console.error('Failed to roll back a new Google Drive profile image:', cleanupError)
+      })
+      throw error
+    }
+
+    await adminAuth.updateUser(actor.uid, { photoURL }).catch((error) => {
+      console.error('Firebase Auth profile image sync failed:', error)
+    })
+    let oldImagesDeleted = true
+    try {
+      await deleteOtherProfileImages(actor.uid, uploadedFile.id)
+    } catch (error) {
+      oldImagesDeleted = false
+      console.error('Old Google Drive profile image cleanup failed:', error)
+    }
+
+    return NextResponse.json(
+      { ok: true, url: photoURL, oldImagesDeleted },
+      { headers: { 'cache-control': 'no-store' } },
+    )
   } catch (error) {
     console.error('Google Drive profile image upload failed:', error)
-    return NextResponse.json({ error: 'Chưa thể tải ảnh lên Google Drive.' }, { status: 500 })
+    if (error instanceof ApiError) {
+      return NextResponse.json({ error: error.message }, { status: error.status })
+    }
+    return NextResponse.json({ error: 'Chưa thể lưu ảnh mới. Ảnh cũ vẫn được giữ nguyên.' }, { status: 500 })
   }
 }
 

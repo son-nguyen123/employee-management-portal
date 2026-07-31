@@ -111,10 +111,13 @@ export default function ProfileSetupPage() {
         headers: { authorization: `Bearer ${token}` },
         body,
       })
-      const data = await response.json().catch(() => null) as { ok?: boolean; url?: string; error?: string } | null
+      const data = await response.json().catch(() => null) as { ok?: boolean; url?: string; oldImagesDeleted?: boolean; error?: string } | null
       if (!response.ok || !data?.url) throw new Error(data?.error || 'Chưa thể tải ảnh lên.')
       setValue('photoURL', data.url)
-      setMessage('Ảnh đã được căn chỉnh và lưu trên Google Drive.')
+      await refreshEmployee()
+      setMessage(data.oldImagesDeleted === false
+        ? 'Ảnh mới đã được lưu. Chưa thể dọn ảnh cũ trên Google Drive, hệ thống sẽ thử lại ở lần đổi ảnh tiếp theo.'
+        : 'Ảnh mới đã được lưu. Ảnh đại diện cũ đã được xóa khỏi Google Drive.')
       closeImageEditor()
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'Chưa thể tải ảnh lên Google Drive.')
