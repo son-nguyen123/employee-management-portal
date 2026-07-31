@@ -207,12 +207,20 @@ export default function ProfileSetupPage() {
   return (
     <main className="min-h-screen bg-gradient-to-b from-indigo-50 via-background to-background px-3 py-7 dark:from-indigo-950/30">
       <section className="mx-auto max-w-md overflow-hidden rounded-[2rem] border border-white/80 bg-white shadow-xl shadow-indigo-950/10 dark:border-white/10 dark:bg-slate-900">
-        <div className="bg-slate-950 p-6 text-center text-white">
-          <div className="mx-auto grid h-16 w-16 place-items-center overflow-hidden rounded-3xl bg-indigo-600">
+        <div
+          className="relative overflow-hidden bg-pink-50 p-6 text-center text-slate-950"
+          style={{
+            backgroundImage: "linear-gradient(115deg, rgba(255,255,255,.96), rgba(253,230,245,.82)), url('/tricandy-logo-hd.png')",
+            backgroundPosition: 'center, right -55px center',
+            backgroundRepeat: 'no-repeat',
+            backgroundSize: 'cover, 280px auto',
+          }}
+        >
+          <div className="mx-auto grid h-16 w-16 place-items-center overflow-hidden rounded-3xl border-2 border-white bg-gradient-to-br from-fuchsia-500 to-violet-600 text-white shadow-lg shadow-fuchsia-900/15">
             {form.photoURL ? <img src={profileImageUrl(form.photoURL)} alt="" className="h-full w-full object-cover" /> : <UserRound className="h-7 w-7" />}
           </div>
           <h1 className="mt-4 text-2xl font-black">Hoàn thiện hồ sơ</h1>
-          <p className="mt-1 text-sm leading-6 text-slate-300">Chỉ cần làm một lần để quản lý nhận diện đúng tài khoản của bạn.</p>
+          <p className="mt-1 text-sm leading-6 text-slate-600">Chỉ cần làm một lần để quản lý nhận diện đúng tài khoản của bạn.</p>
         </div>
 
         <form onSubmit={submit} className="space-y-4 p-5">

@@ -119,8 +119,16 @@ export default function ProfilePage() {
       />
       <PageContainer>
         <section className="mobile-card overflow-hidden">
-          <div className="bg-slate-950 p-6 text-center text-white">
-            <div className="mx-auto grid h-20 w-20 place-items-center overflow-hidden rounded-[1.75rem] bg-indigo-600">
+          <div
+            className="relative overflow-hidden bg-pink-50 p-6 text-center text-slate-950"
+            style={{
+              backgroundImage: "linear-gradient(115deg, rgba(255,255,255,.96), rgba(253,230,245,.82)), url('/tricandy-logo-hd.png')",
+              backgroundPosition: 'center, right -55px center',
+              backgroundRepeat: 'no-repeat',
+              backgroundSize: 'cover, 280px auto',
+            }}
+          >
+            <div className="mx-auto grid h-20 w-20 place-items-center overflow-hidden rounded-[1.75rem] border-2 border-white bg-gradient-to-br from-fuchsia-500 to-violet-600 text-white shadow-lg shadow-fuchsia-900/15">
               {employee?.photoURL || authUser?.photoURL
                 ? <img src={profileImageUrl(employee?.photoURL || authUser?.photoURL)} alt="" className="h-full w-full object-cover" />
                 : <UserRound className="h-9 w-9" />}
@@ -128,7 +136,7 @@ export default function ProfilePage() {
             <h2 className="mt-4 text-xl font-extrabold">
               {employee?.fullName || authUser?.displayName || 'Nhân viên'}
             </h2>
-            <p className="mt-1 text-sm text-slate-300">
+            <p className="mt-1 text-sm text-slate-600">
               {employee?.role === 'admin'
                 ? 'Quản lý'
                 : employee?.role === 'manager'
