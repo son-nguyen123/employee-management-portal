@@ -149,7 +149,6 @@ export async function updateAuditReceiptSettings(actor: RequestActor, raw: unkno
 }
 
 export async function manageEmployeeStatus(actor: RequestActor, raw: unknown) {
-  throw new ApiError(410, 'Chức năng vô hiệu hóa tài khoản đã được tắt.')
   requireManager(actor)
   if (actor.role !== 'admin') throw new ApiError(403, 'Chỉ admin được duyệt hoặc khóa tài khoản.')
   const body = objectBody(raw)
@@ -200,6 +199,34 @@ export async function manageEmployeeStatus(actor: RequestActor, raw: unknown) {
   })
   if (status === 'inactive') await adminAuth.revokeRefreshTokens(employeeId)
   return { employeeId, status, releasedSchedules }
+}
+
+export async function getAccountRegistrationWindow(actor: RequestActor) {
+  requireManager(actor)
+  const snapshot = await adminDb.collection('managementSettings').doc('accountRegistration').get()
+  const closesAt = snapshot.get('closesAt')
+  const closesAtDate = closesAt instanceof Timestamp ? closesAt.toDate() : null
+  return {
+    isOpen: snapshot.get('isOpen') === true && !!closesAtDate && closesAtDate.getTime() > Date.now(),
+    closesAt: closesAtDate?.toISOString() || null,
+  }
+}
+
+export async function updateAccountRegistrationWindow(actor: RequestActor, raw: unknown) {
+  requireManager(actor)
+  if (actor.role !== 'admin') throw new ApiError(403, 'Chỉ admin được mở cổng đăng ký tài khoản.')
+  const body = objectBody(raw)
+  if (typeof body.open !== 'boolean') throw new ApiError(400, 'Trạng thái mở đăng ký không hợp lệ.')
+  const now = new Date()
+  const closesAt = body.open ? new Date(now.getTime() + 60 * 60 * 1000) : now
+  await adminDb.collection('managementSettings').doc('accountRegistration').set({
+    isOpen: body.open,
+    openedAt: body.open ? Timestamp.fromDate(now) : null,
+    closesAt: Timestamp.fromDate(closesAt),
+    updatedBy: actor.uid,
+    updatedAt: FieldValue.serverTimestamp(),
+  }, { merge: true })
+  return { isOpen: body.open, closesAt: closesAt.toISOString() }
 }
 
 export async function respondPenaltyConsent(actor: RequestActor, raw: unknown) {

@@ -163,6 +163,19 @@ export default function Page() {
   }
   if (!authUser) return null
 
+  if (employee && role === 'employee' && employee.status !== 'active') {
+    return (
+      <main className="grid min-h-screen place-items-center bg-slate-50 px-4 dark:bg-slate-950">
+        <section className="w-full max-w-md rounded-[2rem] border border-fuchsia-100 bg-transparent p-6 text-center shadow-xl shadow-fuchsia-950/5 dark:border-fuchsia-500/20">
+          <div className={`mx-auto grid h-16 w-16 place-items-center rounded-3xl ${employee.status === 'inactive' ? 'bg-rose-100 text-rose-600' : 'bg-fuchsia-100 text-fuchsia-600'}`}><ShieldCheck className="h-8 w-8" /></div>
+          <h1 className="mt-5 text-2xl font-black">{employee.status === 'inactive' ? 'Tài khoản đã bị vô hiệu hóa' : 'Hồ sơ đang chờ admin duyệt'}</h1>
+          <p className="mt-3 text-sm leading-6 text-muted-foreground">{employee.status === 'inactive' ? 'Vui lòng liên hệ quản lý nếu bạn cho rằng đây là nhầm lẫn.' : 'Bạn đã tạo tài khoản thành công. Các tiện ích sẽ mở ngay sau khi admin chấp nhận hồ sơ.'}</p>
+          <button type="button" onClick={async () => { await logout(); router.push('/auth/login') }} className="mt-6 min-h-12 w-full rounded-2xl bg-slate-950 font-extrabold text-white dark:bg-white dark:text-slate-950">Đăng xuất</button>
+        </section>
+      </main>
+    )
+  }
+
   const displayName = employee?.fullName || authUser.displayName || 'Nhân viên'
   const avatarURL = profileImageUrl(employee?.photoURL || authUser.photoURL)
   const isAdmin = role === 'admin' || role === 'manager'

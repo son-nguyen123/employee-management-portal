@@ -35,3 +35,16 @@ export function getAuditReceiptSettings(): Promise<AuditReceiptSettings> {
 export function updateAuditReceiptSettings(emailEnabled: boolean): Promise<AuditReceiptSettings> {
   return callWorkflowApi('updateAuditReceiptSettings', { emailEnabled })
 }
+
+export interface AccountRegistrationWindow {
+  isOpen: boolean
+  closesAt: string | null
+}
+
+export function getAccountRegistrationWindow(): Promise<AccountRegistrationWindow> {
+  return callWorkflowApi('getAccountRegistrationWindow', {})
+}
+
+export function updateAccountRegistrationWindow(open: boolean): Promise<AccountRegistrationWindow> {
+  return callWorkflowApi('updateAccountRegistrationWindow', { open })
+}

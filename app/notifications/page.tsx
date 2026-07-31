@@ -46,7 +46,7 @@ import { updateStaffRequestStatus } from '@/lib/services/staffRequestService'
 import { getManagementContact } from '@/lib/services/managementSettingsService'
 import { profileImageUrl } from '@/lib/utils/profileImage'
 import { subscribeToWeeklyDecisionHistory, type DecisionHistoryItem } from '@/lib/services/decisionHistoryService'
-import { subscribeToAllEmployees } from '@/lib/services/employeeService'
+import { setEmployeeAccountStatus, subscribeToAllEmployees } from '@/lib/services/employeeService'
 import type { Employee } from '@/lib/models/types'
 
 type CurrentSchedule = Pick<WorkSchedule, 'id' | 'shift' | 'status'> & { date: Date }
@@ -275,7 +275,7 @@ export default function NotificationsPage() {
     if (isManagement) {
       const unsubscribePending = subscribeToManagementPendingItems(
         (pending) => {
-          setPendingItems(pending.filter((item) => item.type !== 'account'))
+          setPendingItems(pending.filter((item) => item.type !== 'account' || role === 'admin'))
           setLoading(false)
           setMessage('')
         },
@@ -475,7 +475,10 @@ export default function NotificationsPage() {
     setMessage('')
     try {
       if (!isPreviewMode) {
-        if (item.type === 'schedule') {
+        if (item.type === 'account') {
+          if (role !== 'admin') throw new Error('Chá»‰ admin Ä‘Æ°á»£c duyá»‡t tÃ i khoáº£n.')
+          await setEmployeeAccountStatus(item.employeeId, status === 'Approved' ? 'active' : 'inactive')
+        } else if (item.type === 'schedule') {
           await reviewWorkScheduleBatch(item.targetIds, status, note, allowSundayResubmissionWithoutPenalty)
         } else if (item.type === 'leave') {
           await updateLeaveStatus(item.targetIds[0], status, authUser.uid, note, penaltyAmount)
@@ -538,7 +541,7 @@ export default function NotificationsPage() {
                 ? [...(item.shifts || []), ...(item.removedShifts || [])].map((shift) => shift.date)
                 : []
               return (
-                <article key={item.id} className="mobile-card overflow-hidden transition active:scale-[0.99]">
+                <article key={item.id} className={`mobile-card overflow-hidden transition active:scale-[0.99] ${item.type === 'account' ? 'border-dashed bg-transparent' : ''}`}>
                   <button
                     type="button"
                     onClick={() => {

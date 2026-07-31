@@ -43,6 +43,12 @@ export async function authenticateRequest(request: Request): Promise<RequestActo
     throw new ApiError(403, 'Tài khoản không hoạt động hoặc chưa được phân quyền.')
   }
 
+  if (role === 'employee' && profile.get('status') !== 'active') {
+    throw new ApiError(403, profile.get('status') === 'inactive'
+      ? 'Tài khoản đã bị vô hiệu hóa. Vui lòng liên hệ quản lý.'
+      : 'Hồ sơ đang chờ admin duyệt. Tiện ích sẽ mở sau khi được chấp nhận.')
+  }
+
   return { token, uid: token.uid, role: role as AppRole }
 }
 

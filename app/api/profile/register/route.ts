@@ -10,6 +10,11 @@ function clean(value: unknown, max: number): string {
 
 export async function POST(request: Request) {
   try {
+    const registrationSetting = await adminDb.collection('managementSettings').doc('accountRegistration').get()
+    const closesAt = registrationSetting.get('closesAt')
+    if (registrationSetting.get('isOpen') !== true || !(closesAt instanceof Timestamp) || closesAt.toDate().getTime() <= Date.now()) {
+      return NextResponse.json({ error: 'Cổng tạo tài khoản đã đóng. Vui lòng liên hệ admin để được mở lại.' }, { status: 403 })
+    }
     const authorization = request.headers.get('authorization')
     if (!authorization?.startsWith('Bearer ')) return NextResponse.json({ error: 'Bạn cần đăng nhập.' }, { status: 401 })
     const token = await adminAuth.verifyIdToken(authorization.slice(7), true)

@@ -11,6 +11,14 @@ import {
 import { auth } from '@/lib/firebase'
 import { AuthUser } from '@/lib/models/types'
 
+export async function assertAccountRegistrationOpen(): Promise<void> {
+  const response = await fetch('/api/account-registration', { cache: 'no-store' })
+  const result = await response.json().catch(() => null) as { isOpen?: boolean } | null
+  if (!response.ok || !result?.isOpen) {
+    throw Object.assign(new Error('Cổng tạo tài khoản hiện đang đóng. Vui lòng thử lại khi admin mở đăng ký.'), { code: 'account-registration-closed' })
+  }
+}
+
 /**
  * Sign up a new user with email and password
  */

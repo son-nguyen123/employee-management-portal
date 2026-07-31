@@ -14,7 +14,7 @@ const hiddenPrefixes = ['/auth', '/profile/setup']
 
 export function PersistentBottomNav() {
   const pathname = usePathname()
-  const { authUser, isLoading, isPreviewMode } = useAuth()
+  const { authUser, employee, isLoading, isPreviewMode } = useAuth()
   const role = useUserRole()
   const isManagement = role === 'admin' || role === 'manager'
   const [pendingNotificationCount, setPendingNotificationCount] = useState(0)
@@ -40,7 +40,7 @@ export function PersistentBottomNav() {
     })
   }, [authUser, isManagement, isPreviewMode, role])
 
-  if (isLoading || !authUser || hidden) return null
+  if (isLoading || !authUser || hidden || (employee?.role === 'employee' && employee.status !== 'active')) return null
 
   return (
     <>

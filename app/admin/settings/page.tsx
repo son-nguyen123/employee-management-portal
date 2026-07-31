@@ -1,13 +1,15 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { Loader2, MailCheck, ShieldCheck } from 'lucide-react'
+import { Clock3, Loader2, MailCheck, ShieldCheck, UserPlus } from 'lucide-react'
 import { Header } from '@/components/layout/header'
 import { PageContainer } from '@/components/layout/page-container'
 import { useAuth, useUserRole } from '@/lib/hooks/useAuth'
 import {
   getAuditReceiptSettings,
+  getAccountRegistrationWindow,
   updateAuditReceiptSettings,
+  updateAccountRegistrationWindow,
 } from '@/lib/services/managementSettingsService'
 
 type ReceiptSettings = {
@@ -29,6 +31,8 @@ export default function AdminSettingsPage() {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [message, setMessage] = useState('')
+  const [registration, setRegistration] = useState<{ isOpen: boolean; closesAt: string | null }>({ isOpen: false, closesAt: null })
+  const [registrationSaving, setRegistrationSaving] = useState(false)
 
   useEffect(() => {
     if (!authUser) return
@@ -36,8 +40,8 @@ export default function AdminSettingsPage() {
       setLoading(false)
       return
     }
-    void getAuditReceiptSettings()
-      .then(setSettings)
+    void Promise.all([getAuditReceiptSettings(), getAccountRegistrationWindow()])
+      .then(([receipt, accountWindow]) => { setSettings(receipt); setRegistration(accountWindow) })
       .catch(() => setMessage('Chưa tải được cài đặt email biên nhận.'))
       .finally(() => setLoading(false))
   }, [authUser, isPreviewMode])
@@ -59,6 +63,22 @@ export default function AdminSettingsPage() {
       setMessage(error instanceof Error ? error.message : 'Chưa thể lưu cài đặt.')
     } finally {
       setSaving(false)
+    }
+  }
+
+  const toggleRegistration = async () => {
+    setRegistrationSaving(true)
+    setMessage('')
+    try {
+      const next = isPreviewMode
+        ? { isOpen: !registration.isOpen, closesAt: !registration.isOpen ? new Date(Date.now() + 60 * 60 * 1000).toISOString() : new Date().toISOString() }
+        : await updateAccountRegistrationWindow(!registration.isOpen)
+      setRegistration(next)
+      setMessage(next.isOpen ? 'Đã mở tạo tài khoản trong 1 giờ.' : 'Đã đóng tạo tài khoản mới.')
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'Chưa thể cập nhật cổng tạo tài khoản.')
+    } finally {
+      setRegistrationSaving(false)
     }
   }
 
@@ -89,6 +109,30 @@ export default function AdminSettingsPage() {
             </button>
           </div>
         </section>
+        {role === 'admin' && (
+          <section className="mt-4 overflow-hidden rounded-3xl border border-fuchsia-200 bg-transparent shadow-sm dark:border-fuchsia-500/30">
+            <div className="flex items-center gap-3 p-4">
+              <div className={`grid h-12 w-12 shrink-0 place-items-center rounded-2xl ${registration.isOpen ? 'bg-fuchsia-100 text-fuchsia-700' : 'bg-slate-100 text-slate-500'}`}>
+                {loading ? <Loader2 className="h-5 w-5 animate-spin" /> : <UserPlus className="h-5 w-5" />}
+              </div>
+              <div className="min-w-0 flex-1">
+                <h2 className="font-extrabold">Mở tạo tài khoản trong 1 giờ</h2>
+                <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                  {registration.isOpen && registration.closesAt
+                    ? `Đang mở · tự đóng lúc ${new Date(registration.closesAt).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}`
+                    : 'Đang đóng · nhân viên mới chưa thể đăng ký'}
+                </p>
+              </div>
+              <button type="button" disabled={loading || registrationSaving} onClick={() => void toggleRegistration()} className={`min-h-11 rounded-xl px-4 text-xs font-extrabold text-white disabled:opacity-45 ${registration.isOpen ? 'bg-rose-600' : 'bg-fuchsia-600'}`}>
+                {registrationSaving ? <Loader2 className="mx-2 h-4 w-4 animate-spin" /> : registration.isOpen ? 'Đóng cổng' : 'Mở trong 1 giờ'}
+              </button>
+            </div>
+            <div className="flex items-start gap-2 border-t border-fuchsia-100 px-4 py-3 text-xs leading-5 text-muted-foreground dark:border-fuchsia-500/20">
+              <Clock3 className="mt-0.5 h-4 w-4 shrink-0 text-fuchsia-600" />
+              <span>Trong thời gian mở, mọi người có thể tạo hồ sơ. Tài khoản vẫn chờ admin duyệt trước khi dùng tiện ích.</span>
+            </div>
+          </section>
+        )}
         <section className="mt-4 flex gap-3 rounded-3xl border border-indigo-100 bg-indigo-50 p-4 text-indigo-900">
           <ShieldCheck className="mt-0.5 h-5 w-5 shrink-0" />
           <div>

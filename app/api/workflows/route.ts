@@ -15,6 +15,8 @@ import {
   getAuditReceiptSettings,
   updateAuditReceiptSettings,
   manageEmployeeStatus,
+  getAccountRegistrationWindow,
+  updateAccountRegistrationWindow,
   respondPenaltyConsent,
   replaceSchedules,
   reviseRequest,
@@ -53,6 +55,8 @@ const handlers = {
   getAuditReceiptSettings,
   updateAuditReceiptSettings,
   manageEmployeeStatus,
+  getAccountRegistrationWindow,
+  updateAccountRegistrationWindow,
   respondPenaltyConsent,
 } as const
 

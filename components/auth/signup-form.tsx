@@ -5,7 +5,7 @@ import Link from 'next/link'
 import Image from 'next/image'
 import { useRouter } from 'next/navigation'
 import { AlertCircle, Loader2, Lock, Mail } from 'lucide-react'
-import { signInWithGoogle, signUp } from '@/lib/services/authService'
+import { assertAccountRegistrationOpen, signInWithGoogle, signUp } from '@/lib/services/authService'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui/card'
 import { AuthShell } from '@/components/auth/auth-shell'
 import { useAuth } from '@/lib/hooks/useAuth'
@@ -30,11 +30,14 @@ export function SignupForm() {
     if (password.length < 6) return setError('Mật khẩu phải có ít nhất 6 ký tự')
     setLoadingAction('password')
     try {
+      await assertAccountRegistrationOpen()
       await signUp(email, password)
       router.push('/profile/setup')
     } catch (err: any) {
       setError(
-        err?.code === 'auth/email-already-in-use'
+        err?.code === 'account-registration-closed'
+          ? err.message
+          : err?.code === 'auth/email-already-in-use'
           ? 'Email này đã được sử dụng'
           : err?.code === 'auth/weak-password'
             ? 'Mật khẩu chưa đủ mạnh'
@@ -58,11 +61,14 @@ export function SignupForm() {
     setError('')
     setLoadingAction('google')
     try {
+      await assertAccountRegistrationOpen()
       await signInWithGoogle()
       router.push('/profile/setup')
     } catch (err: any) {
       setError(
-        err?.code === 'auth/popup-closed-by-user'
+        err?.code === 'account-registration-closed'
+          ? err.message
+          : err?.code === 'auth/popup-closed-by-user'
           ? 'Bạn đã đóng cửa sổ đăng nhập Google.'
           : err?.code === 'auth/sign-in-incomplete'
             ? 'Đăng nhập Google chưa hoàn tất. Vui lòng thử lại.'
