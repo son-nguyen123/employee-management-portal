@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import {
+  AlertTriangle,
   Bell,
   CalendarDays,
   Check,
@@ -13,6 +14,7 @@ import {
   FileText,
   Loader2,
   MessageSquareText,
+  UserRound,
   X,
 } from 'lucide-react'
 import { useRouter } from 'next/navigation'
@@ -37,6 +39,8 @@ import {
   reviewWorkScheduleBatch,
 } from '@/lib/services/scheduleService'
 import { updateStaffRequestStatus } from '@/lib/services/staffRequestService'
+import { getManagementContact } from '@/lib/services/managementSettingsService'
+import { profileImageUrl } from '@/lib/utils/profileImage'
 
 type CurrentSchedule = Pick<WorkSchedule, 'id' | 'shift' | 'status'> & { date: Date }
 
@@ -48,6 +52,8 @@ const managementMeta = {
   staff: { icon: MessageSquareText, color: 'bg-violet-600' },
 }
 
+type ManagementContact = Awaited<ReturnType<typeof getManagementContact>>
+
 const shiftNames = {
   Morning: 'Ca sáng',
   Afternoon: 'Ca chiều',
@@ -58,11 +64,64 @@ function asDate(value: WorkSchedule['date']): Date {
   return value instanceof Date ? value : value.toDate()
 }
 
-function notificationStamp(date: Date): string {
-  return `${date.toLocaleDateString('vi-VN')} · ${date.toLocaleTimeString('vi-VN', {
+function startOfWeek(date: Date): Date {
+  const result = new Date(date)
+  const weekday = result.getDay() || 7
+  result.setDate(result.getDate() - weekday + 1)
+  result.setHours(0, 0, 0, 0)
+  return result
+}
+
+function SubmissionStamp({ date, targetDates = [] }: { date: Date; targetDates?: Date[] }) {
+  const validTargets = targetDates.filter((target) => target.getTime())
+  const firstTarget = validTargets.sort((left, right) => left.getTime() - right.getTime())[0]
+  const submittedInTargetWeek = firstTarget && date >= startOfWeek(firstTarget)
+  const warning = date.getDay() === 0 || submittedInTargetWeek
+  const weekday = date.toLocaleDateString('vi-VN', { weekday: 'long' })
+  const dayAndTime = `${date.toLocaleDateString('vi-VN')} · ${date.toLocaleTimeString('vi-VN', {
     hour: '2-digit',
     minute: '2-digit',
   })}`
+
+  return (
+    <p className="mt-2 flex flex-wrap items-center gap-x-1.5 gap-y-1 text-xs font-semibold">
+      <span className="text-muted-foreground">Gửi lúc</span>
+      <span className={`inline-flex items-center gap-1 ${warning ? 'text-rose-600' : 'text-sky-600'}`}>
+        {warning && <AlertTriangle className="h-3.5 w-3.5" />}
+        {weekday}
+      </span>
+      <span className="font-medium text-muted-foreground">({dayAndTime})</span>
+    </p>
+  )
+}
+
+function initials(name: string): string {
+  return name.trim().split(/\s+/).slice(-2).map((part) => part[0]).join('').toLocaleUpperCase('vi') || 'NV'
+}
+
+function IdentityAvatar({
+  name,
+  photoURL,
+  icon: Icon,
+  color,
+}: {
+  name: string
+  photoURL?: string
+  icon: typeof Bell
+  color: string
+}) {
+  return (
+    <div className="relative h-12 w-12 shrink-0">
+      <div className="grid h-12 w-12 place-items-center overflow-hidden rounded-2xl bg-slate-900 text-sm font-black text-white shadow-sm">
+        {photoURL
+          ? <img src={profileImageUrl(photoURL)} alt={`Ảnh đại diện của ${name}`} className="h-full w-full object-cover" />
+          : name ? initials(name) : <UserRound className="h-5 w-5" />}
+      </div>
+      <span className={`absolute -bottom-1 -right-1 grid h-6 w-6 place-items-center rounded-lg border-2 border-white text-white shadow-sm dark:border-slate-900 ${color}`}>
+        <Icon className="h-3.5 w-3.5" />
+      </span>
+    </div>
+  )
 }
 
 function shiftStamp(item: ManagementShift | CurrentSchedule): string {
@@ -118,6 +177,7 @@ export default function NotificationsPage() {
   const [employeeSchedules, setEmployeeSchedules] = useState<Record<string, CurrentSchedule[]>>({})
   const [processingId, setProcessingId] = useState<string | null>(null)
   const [reviewNotes, setReviewNotes] = useState<Record<string, string>>({})
+  const [managementContact, setManagementContact] = useState<ManagementContact | null>(null)
 
   const weekWindow = (view: typeof weekView) => {
     const now = new Date()
@@ -209,6 +269,17 @@ export default function NotificationsPage() {
   }, [authUser, isManagement, isPreviewMode])
 
   useEffect(() => {
+    if (!authUser || isManagement) return
+    if (isPreviewMode) {
+      setManagementContact({ uid: 'demo-admin-001', fullName: 'Quản lý Minh Sơn', photoURL: '', facebookUrl: '' })
+      return
+    }
+    void getManagementContact()
+      .then(setManagementContact)
+      .catch(() => setManagementContact({ uid: '', fullName: 'Quản lý', photoURL: '', facebookUrl: '' }))
+  }, [authUser, isManagement, isPreviewMode])
+
+  useEffect(() => {
     setExpandedId(null)
     setScheduleOpenId(null)
   }, [weekView])
@@ -220,6 +291,16 @@ export default function NotificationsPage() {
     if (content.includes('ứng lương')) return '/salary-advance'
     if (content.includes('phạt')) return '/penalties'
     return '/schedule'
+  }
+
+  const notificationMetaFor = (item: Notification) => {
+    const content = `${item.title} ${item.message}`.toLocaleLowerCase('vi')
+    if (content.includes('nghỉ')) return managementMeta.leave
+    if (content.includes('trễ')) return managementMeta.late
+    if (content.includes('ứng lương')) return managementMeta.salary
+    if (content.includes('phạt')) return { icon: AlertTriangle, color: 'bg-rose-600' }
+    if (content.includes('lịch')) return managementMeta.schedule
+    return managementMeta.staff
   }
 
   const openNotification = async (item: Notification) => {
@@ -360,11 +441,13 @@ export default function NotificationsPage() {
           <div className="space-y-3">
             {visiblePendingItems.map((item) => {
               const meta = managementMeta[item.type]
-              const Icon = meta.icon
               const expanded = expandedId === item.id
               const currentSchedules = employeeSchedules[item.employeeId] || []
+              const targetDates = item.type === 'schedule' || item.staffRequestType === 'scheduleChange' || item.staffRequestType === 'overtime'
+                ? [...(item.shifts || []), ...(item.removedShifts || [])].map((shift) => shift.date)
+                : []
               return (
-                <article key={item.id} className="mobile-card overflow-hidden">
+                <article key={item.id} className={`mobile-card overflow-hidden transition ${expanded ? 'ring-2 ring-indigo-100 dark:ring-indigo-500/20' : ''}`}>
                   <button
                     type="button"
                     aria-expanded={expanded}
@@ -375,9 +458,7 @@ export default function NotificationsPage() {
                     }}
                     className="flex w-full items-start gap-3 p-4 text-left"
                   >
-                    <div className={`grid h-11 w-11 shrink-0 place-items-center rounded-2xl text-white ${meta.color}`}>
-                      <Icon className="h-5 w-5" />
-                    </div>
+                    <IdentityAvatar name={item.employeeName} photoURL={item.employeePhotoURL} icon={meta.icon} color={meta.color} />
                     <div className="min-w-0 flex-1">
                       <div className="flex items-start justify-between gap-2">
                         <h2 className="font-extrabold">{item.title}</h2>
@@ -390,9 +471,7 @@ export default function NotificationsPage() {
                         {item.employeeCode ? ` · ${item.employeeCode}` : ''}
                       </p>
                       <p className="mt-1 text-sm text-muted-foreground">{item.detail}</p>
-                      <p className="mt-2 text-xs font-semibold text-indigo-600">
-                        Gửi lúc {notificationStamp(item.createdAt)}
-                      </p>
+                      <SubmissionStamp date={item.createdAt} targetDates={targetDates} />
                     </div>
                     <ChevronDown className={`mt-3 h-5 w-5 shrink-0 text-slate-400 transition ${expanded ? 'rotate-180' : ''}`} />
                   </button>
@@ -490,7 +569,7 @@ export default function NotificationsPage() {
                     <div className="min-w-0 flex-1">
                       <h2 className="font-extrabold">{item.title}</h2>
                       <p className={`mt-1 text-sm text-muted-foreground ${expanded ? '' : 'line-clamp-2'}`}>{item.message}</p>
-                      <p className="mt-2 text-xs font-semibold text-emerald-600">{notificationStamp(createdAt)}</p>
+                      <SubmissionStamp date={createdAt} />
                     </div>
                     <ChevronDown className={`mt-3 h-5 w-5 shrink-0 text-slate-400 transition ${expanded ? 'rotate-180' : ''}`} />
                   </button>
@@ -511,6 +590,7 @@ export default function NotificationsPage() {
           <div className="space-y-3">
             {visibleItems.map((item) => {
               const createdAt = item.createdAt instanceof Date ? item.createdAt : item.createdAt.toDate()
+              const meta = notificationMetaFor(item)
               return (
                 <button
                   key={item.id}
@@ -520,18 +600,19 @@ export default function NotificationsPage() {
                     !item.isRead ? 'border-indigo-200 bg-indigo-50/50 dark:bg-indigo-500/5' : ''
                   }`}
                 >
-                  <div className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-indigo-100 text-indigo-600 dark:bg-indigo-500/15">
-                    <Bell className="h-5 w-5" />
-                  </div>
+                  <IdentityAvatar
+                    name={managementContact?.fullName || 'Quản lý'}
+                    photoURL={managementContact?.photoURL}
+                    icon={meta.icon}
+                    color={meta.color}
+                  />
                   <div className="min-w-0 flex-1">
                     <div className="flex items-start justify-between gap-2">
                       <h2 className="font-extrabold">{item.title}</h2>
                       {!item.isRead && <span className="mt-1 h-2 w-2 shrink-0 rounded-full bg-indigo-600" />}
                     </div>
                     <p className="mt-1 text-sm text-muted-foreground">{item.message}</p>
-                    <p className="mt-2 text-xs font-semibold text-indigo-600">
-                      {notificationStamp(createdAt)}
-                    </p>
+                    <SubmissionStamp date={createdAt} />
                   </div>
                   <ChevronRight className="mt-3 h-5 w-5 shrink-0 text-slate-400" />
                 </button>

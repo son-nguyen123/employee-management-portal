@@ -74,7 +74,7 @@ export default function LateArrivalPage() {
     if (!authUser || !selectedShift || !arrivalTime || !reason.trim()) return
     const [hour, minute] = arrivalTime.split(':').map(Number)
     const startMinutes = shiftMeta[selectedShift.shift].startMinutes
-    let arrivalMinutes = hour * 60 + minute
+    const arrivalMinutes = hour * 60 + minute
     const lateMinutes = Math.max(1, arrivalMinutes - startMinutes)
     setSubmitting(true)
     try {

@@ -18,7 +18,6 @@ import { profileImageUrl } from '@/lib/utils/profileImage'
 import { Header } from '@/components/layout/header'
 import { PageContainer } from '@/components/layout/page-container'
 import {
-  disablePushNotifications,
   enablePushNotifications,
   getPushPermissionState,
   isPushDeviceRegistered,
@@ -102,27 +101,6 @@ export default function ProfilePage() {
         error instanceof Error
           ? error.message
           : 'Không thể bật thông báo trên thiết bị này.'
-      )
-    } finally {
-      setIsSaving(false)
-    }
-  }
-
-  const handleDisableNotifications = async () => {
-    if (!authUser || isPreviewMode) return
-
-    setIsSaving(true)
-    setMessage('')
-    try {
-      await disablePushNotifications(authUser.uid)
-      setPermission(await getPushPermissionState())
-      setIsRegistered(false)
-      setMessage('Đã ngừng nhận thông báo trên thiết bị này.')
-    } catch (error) {
-      setMessage(
-        error instanceof Error
-          ? error.message
-          : 'Không thể tắt thông báo trên thiết bị này.'
       )
     } finally {
       setIsSaving(false)
@@ -234,9 +212,9 @@ export default function ProfilePage() {
             </p>
           )}
 
-          {isRegistered && employee?.role === 'employee' && !isPreviewMode ? (
+          {isRegistered && !isPreviewMode ? (
             <div className="mt-4 flex min-h-12 items-center justify-center gap-2 rounded-2xl bg-emerald-50 px-4 text-sm font-extrabold text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-300">
-              <BellRing className="h-4 w-4" /> Thông báo bắt buộc đang bật
+              <BellRing className="h-4 w-4" /> Thông báo công việc luôn bật
             </div>
           ) : (
             <button
@@ -246,21 +224,11 @@ export default function ProfilePage() {
                 isPreviewMode ||
                 cannotEnable
               }
-              onClick={
-                isRegistered
-                  ? handleDisableNotifications
-                  : handleEnableNotifications
-              }
-              className={`mt-4 flex min-h-12 w-full items-center justify-center gap-2 rounded-2xl px-4 text-sm font-extrabold text-white transition disabled:cursor-not-allowed disabled:opacity-50 ${
-                isRegistered
-                  ? 'bg-slate-700 hover:bg-slate-800'
-                  : 'bg-indigo-600 hover:bg-indigo-700'
-              }`}
+              onClick={handleEnableNotifications}
+              className="mt-4 flex min-h-12 w-full items-center justify-center gap-2 rounded-2xl bg-indigo-600 px-4 text-sm font-extrabold text-white transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-50"
             >
               {isSaving && <LoaderCircle className="h-4 w-4 animate-spin" />}
-              {isRegistered
-                ? 'Tắt thông báo trên thiết bị này'
-                : permission === 'granted'
+              {permission === 'granted'
                   ? 'Hoàn tất đăng ký thiết bị'
                 : permission === 'denied'
                   ? 'Mở quyền trong cài đặt trình duyệt'

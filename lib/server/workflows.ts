@@ -97,14 +97,19 @@ export async function getManagementContact(actor: RequestActor) {
   requireStaff(actor)
   const snapshot = await adminDb.collection('employees').where('status', '==', 'active').get()
   const managers = snapshot.docs
-    .map((document) => document.data())
+    .map((document): Record<string, unknown> & { uid: string } => ({
+      uid: document.id,
+      ...(document.data() as Record<string, unknown>),
+    }))
     .filter((employee) => ['manager', 'admin'].includes(String(employee.role)))
     .sort((left, right) => Number(right.role === 'manager') - Number(left.role === 'manager'))
   const contact = managers.find((employee) =>
     typeof employee.facebookUrl === 'string' && /^https?:\/\//i.test(employee.facebookUrl)
   )
   return {
+    uid: contact?.uid || '',
     fullName: contact && typeof contact.fullName === 'string' ? contact.fullName : 'Quản lý',
+    photoURL: contact && typeof contact.photoURL === 'string' ? contact.photoURL : '',
     facebookUrl: contact && typeof contact.facebookUrl === 'string' ? contact.facebookUrl : '',
   }
 }

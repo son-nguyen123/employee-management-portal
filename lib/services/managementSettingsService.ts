@@ -16,7 +16,7 @@ export function updateWeeklyScheduleTarget(
   return callWorkflowApi('updateWeeklyScheduleTarget', { weekStart, expectedEmployees })
 }
 
-export function getManagementContact(): Promise<{ fullName: string; facebookUrl: string }> {
+export function getManagementContact(): Promise<{ uid: string; fullName: string; photoURL: string; facebookUrl: string }> {
   return callWorkflowApi('getManagementContact', {})
 }
 
