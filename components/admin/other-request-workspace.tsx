@@ -11,6 +11,7 @@ import { subscribeToManagementPendingItems, type ManagementPendingItem, type Man
 import { updateSalaryAdvanceStatus } from '@/lib/services/salaryService'
 import { updateStaffRequestStatus } from '@/lib/services/staffRequestService'
 import { subscribeToWeeklyDecisionHistory, type DecisionHistoryItem } from '@/lib/services/decisionHistoryService'
+import { RequestIdentityAvatar } from '@/components/admin/request-identity-avatar'
 
 type RequestRow =
   | { kind: 'pending'; pending: ManagementPendingItem; sortAt: Date; status: 'Pending' }
@@ -150,7 +151,6 @@ export function OtherRequestWorkspace({ employees }: { employees: Employee[] }) 
 
   return <section className="mt-5">
     {message && <p className="mb-3 rounded-2xl bg-indigo-50 p-3 text-sm font-semibold text-indigo-800 dark:bg-indigo-500/10 dark:text-indigo-100">{message}</p>}
-    <div className="mb-3 flex items-end justify-between"><div><p className="text-xs font-black uppercase tracking-wider text-violet-600">Một danh sách duy nhất</p><h2 className="text-xl font-black">Yêu cầu khác</h2></div><span className="text-xs font-bold text-muted-foreground">{rows.length} mục</span></div>
     <div className="space-y-2">{rows.map((row) => {
       const type = row.kind === 'pending' ? row.pending.type : row.decision.resource
       const itemMeta = meta[type as keyof typeof meta]
@@ -159,12 +159,17 @@ export function OtherRequestWorkspace({ employees }: { employees: Employee[] }) 
       const employee = employeeMap.get(employeeId)
       const name = row.kind === 'pending' ? row.pending.employeeName : employee?.fullName || employeeId
       const code = row.kind === 'pending' ? row.pending.employeeCode : employee?.employeeCode || ''
-      const title = row.kind === 'pending' ? row.pending.title : row.decision.title
-      const detail = row.kind === 'pending' ? row.pending.detail : row.decision.detail
-      return <button key={row.kind === 'pending' ? row.pending.id : row.decision.key} type="button" onClick={() => { setSelected(row); setNote(''); setMessage('') }} className={`mobile-card flex w-full items-center gap-3 border-l-4 p-3 text-left ${row.status === 'Approved' ? 'border-l-emerald-500' : 'border-l-rose-500'}`}>
-        <div className={`grid h-11 w-11 shrink-0 place-items-center rounded-2xl text-white ${itemMeta.color}`}><Icon className="h-5 w-5" /></div>
-        <div className="min-w-0 flex-1"><h3 className="truncate font-extrabold">{title}</h3><p className="truncate text-sm font-bold">{name}{code ? ` · ${code}` : ''}</p><p className="truncate text-xs text-muted-foreground">{detail}</p></div>
-        <div className="text-right"><span className={`text-xs font-black ${row.status === 'Approved' ? 'text-emerald-600' : 'text-rose-600'}`}>{row.status === 'Approved' ? 'Đã duyệt' : row.status === 'Pending' ? 'Cần xử lý' : 'Đã từ chối'}</span><ChevronRight className="ml-auto mt-1 h-4 w-4 text-slate-400" /></div>
+      const photoURL = row.kind === 'pending' ? row.pending.employeePhotoURL || employee?.photoURL : employee?.photoURL
+      const borderClass = row.status === 'Approved'
+        ? 'border-l-emerald-500'
+        : row.status === 'Pending'
+          ? 'border-l-amber-400'
+          : 'border-l-rose-500'
+      const textClass = row.status === 'Approved' ? 'text-emerald-600' : row.status === 'Pending' ? 'text-amber-600' : 'text-rose-600'
+      return <button key={row.kind === 'pending' ? row.pending.id : row.decision.key} type="button" onClick={() => { setSelected(row); setNote(''); setMessage('') }} className={`mobile-card flex min-h-20 w-full items-center gap-3 border-l-4 p-3 text-left ${borderClass}`}>
+        <RequestIdentityAvatar name={name} photoURL={photoURL} icon={Icon} iconColor={itemMeta.color} />
+        <div className="min-w-0 flex-1"><h3 className="truncate text-base font-extrabold">{name}</h3>{code && <p className="truncate text-sm font-semibold text-muted-foreground">{code}</p>}</div>
+        <div className="text-right"><span className={`text-xs font-black ${textClass}`}>{row.status === 'Approved' ? 'Đã duyệt' : row.status === 'Pending' ? 'Chờ duyệt' : 'Từ chối'}</span><ChevronRight className="ml-auto mt-1 h-4 w-4 text-slate-400" /></div>
       </button>
     })}{!rows.length && <div className="mobile-card p-8 text-center"><Check className="mx-auto h-8 w-8 text-emerald-600" /><p className="mt-3 font-bold">Không có yêu cầu khác trong tuần này.</p></div>}</div>
 
