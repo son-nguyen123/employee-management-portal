@@ -337,13 +337,14 @@ export default function NextWeekStaffPage() {
         )}
       </PageContainer>
       {editor && (
-        <div className="fixed inset-0 z-50 flex items-end justify-center bg-slate-950/55 backdrop-blur-sm sm:items-center sm:p-4" onClick={() => !savingEdit && setEditor(null)}>
-          <section role="dialog" aria-modal="true" aria-labelledby="schedule-editor-title" className="max-h-[90vh] w-full max-w-lg overflow-y-auto rounded-t-[2rem] bg-white p-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] shadow-2xl dark:bg-slate-900 sm:rounded-[2rem]" onClick={(event) => event.stopPropagation()}>
-            <div className="flex items-start gap-3">
+        <div className="fixed inset-0 z-[80] flex items-end justify-center bg-slate-950/55 backdrop-blur-sm sm:items-center sm:p-4" onClick={() => !savingEdit && setEditor(null)}>
+          <section role="dialog" aria-modal="true" aria-labelledby="schedule-editor-title" className="flex max-h-[92dvh] w-full max-w-lg flex-col overflow-hidden rounded-t-[2rem] bg-white shadow-2xl dark:bg-slate-900 sm:rounded-[2rem]" onClick={(event) => event.stopPropagation()}>
+            <div className="flex items-start gap-3 border-b border-slate-100 p-5 dark:border-white/10">
               <div className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-rose-50 text-rose-600 dark:bg-rose-500/10"><Pencil className="h-5 w-5" /></div>
               <div className="min-w-0 flex-1"><p className="text-xs font-bold uppercase tracking-wider text-rose-600">Điều chỉnh lịch</p><h2 id="schedule-editor-title" className="truncate text-xl font-black">{editor.name}</h2></div>
               <button type="button" onClick={() => setEditor(null)} className="grid h-11 w-11 place-items-center rounded-2xl bg-slate-100 dark:bg-slate-800"><X className="h-5 w-5" /></button>
             </div>
+            <div className="overflow-y-auto px-5 pb-5">
             <p className="mt-5 text-sm font-extrabold">Bạn muốn hủy như thế nào?</p>
             <div className="mt-2 grid grid-cols-2 gap-2">
               {([
@@ -370,9 +371,12 @@ export default function NextWeekStaffPage() {
             )}
             <div className="mt-4 rounded-2xl bg-rose-50 p-3 text-sm text-rose-800 dark:bg-rose-500/10 dark:text-rose-200"><strong>{selectedIds.length} ca sẽ bị hủy.</strong> Dữ liệu vẫn được giữ trong lịch sử và nhân viên sẽ nhận thông báo.</div>
             <label className="mt-4 block text-sm font-bold">Lý do điều chỉnh<textarea value={editReason} onChange={(event) => setEditReason(event.target.value)} maxLength={500} className="mobile-field mt-2 min-h-24 py-3" placeholder="Nhập lý do để nhân viên hiểu..." /></label>
-            <button type="button" onClick={() => void submitEdit()} disabled={savingEdit || !selectedIds.length || !editReason.trim()} className="mt-4 flex min-h-12 w-full items-center justify-center gap-2 rounded-2xl bg-rose-600 px-4 font-bold text-white disabled:opacity-50">
+            </div>
+            <div className="border-t border-slate-100 bg-white p-4 pb-[max(1rem,env(safe-area-inset-bottom))] dark:border-white/10 dark:bg-slate-900">
+            <button type="button" onClick={() => void submitEdit()} disabled={savingEdit || !selectedIds.length || !editReason.trim()} className="flex min-h-12 w-full items-center justify-center gap-2 rounded-2xl bg-rose-600 px-4 font-bold text-white disabled:opacity-50">
               {savingEdit ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />} {savingEdit ? 'Đang lưu...' : `Xác nhận hủy ${selectedIds.length} ca`}
             </button>
+            </div>
           </section>
         </div>
       )}

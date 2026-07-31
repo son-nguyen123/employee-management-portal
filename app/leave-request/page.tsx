@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
-import { CalendarDays, Check, CheckCircle2, Info, Loader2, Palmtree, Pencil, Send, Trash2 } from 'lucide-react'
+import { CalendarDays, Check, CheckCircle2, ChevronRight, Loader2, Palmtree, Pencil, Send, Trash2, X } from 'lucide-react'
 import { useAuth } from '@/lib/hooks/useAuth'
 import { cancelLeaveRequest, createLeaveRequest, reviseLeaveRequest, subscribeToEmployeeLeaves } from '@/lib/services/leaveService'
 import { mockLeaveRequests } from '@/lib/services/mockData'
@@ -32,6 +32,8 @@ export default function LeaveRequestPage() {
   const [submitting, setSubmitting] = useState(false)
   const [message, setMessage] = useState('')
   const [editingId, setEditingId] = useState<string | null>(null)
+  const [schedulePickerOpen, setSchedulePickerOpen] = useState(false)
+  const [draftScheduleIds, setDraftScheduleIds] = useState<string[]>([])
 
   useEffect(() => {
     if (!authUser) return
@@ -71,10 +73,42 @@ export default function LeaveRequestPage() {
     }
   }, [authUser, isPreviewMode])
 
-  const dayShifts = useMemo(() => {
-    if (!startDate) return []
-    return approvedShifts.filter((item) => item.date.toISOString().slice(0, 10) === startDate)
-  }, [approvedShifts, startDate])
+  const groupedApprovedShifts = useMemo(() => {
+    const groups = new Map<string, ApprovedShift[]>()
+    approvedShifts.forEach((shift) => {
+      const key = `${shift.date.getFullYear()}-${String(shift.date.getMonth() + 1).padStart(2, '0')}-${String(shift.date.getDate()).padStart(2, '0')}`
+      groups.set(key, [...(groups.get(key) || []), shift])
+    })
+    return [...groups.entries()].sort(([left], [right]) => left.localeCompare(right))
+  }, [approvedShifts])
+
+  const selectedShortShifts = approvedShifts.filter((shift) => selectedScheduleIds.includes(shift.id))
+
+  const openSchedulePicker = () => {
+    setDraftScheduleIds(selectedScheduleIds)
+    setSchedulePickerOpen(true)
+  }
+
+  const toggleDraftShift = (shift: ApprovedShift) => {
+    const shiftDate = `${shift.date.getFullYear()}-${String(shift.date.getMonth() + 1).padStart(2, '0')}-${String(shift.date.getDate()).padStart(2, '0')}`
+    const currentDate = approvedShifts.find((item) => draftScheduleIds.includes(item.id))
+    const currentKey = currentDate
+      ? `${currentDate.date.getFullYear()}-${String(currentDate.date.getMonth() + 1).padStart(2, '0')}-${String(currentDate.date.getDate()).padStart(2, '0')}`
+      : ''
+    setDraftScheduleIds((current) => {
+      if (current.includes(shift.id)) return current.filter((id) => id !== shift.id)
+      return currentKey && currentKey !== shiftDate ? [shift.id] : [...current, shift.id]
+    })
+  }
+
+  const confirmSchedulePicker = () => {
+    const selected = approvedShifts.filter((item) => draftScheduleIds.includes(item.id))
+    if (!selected.length) return
+    const date = selected[0].date
+    setStartDate(`${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`)
+    setSelectedScheduleIds(draftScheduleIds)
+    setSchedulePickerOpen(false)
+  }
 
   const longLeaveShifts = useMemo(() => {
     if (duration !== 'long' || !startDate || !endDate) return []
@@ -177,7 +211,7 @@ export default function LeaveRequestPage() {
               <button
                 key={item.value}
                 type="button"
-                onClick={() => { setDuration(item.value); setStartDate(''); setSelectedScheduleIds([]) }}
+                onClick={() => { setDuration(item.value); setStartDate(''); setEndDate(''); setSelectedScheduleIds([]) }}
                 className={`min-h-14 rounded-xl px-2 text-sm transition ${duration === item.value ? 'bg-white font-extrabold text-indigo-600 shadow-sm dark:bg-slate-950' : 'text-muted-foreground'}`}
               >
                 <span className="block">{item.label}</span>
@@ -188,48 +222,23 @@ export default function LeaveRequestPage() {
 
           {duration === 'short' && (
             <div className="mt-5">
-              <label className="block text-sm font-bold">
-                Chọn một ngày trong tuần cần nghỉ
-                <input type="date" value={startDate} onChange={(event) => { setStartDate(event.target.value); setSelectedScheduleIds([]) }} className="mobile-field mt-2 min-w-0" required />
-              </label>
+              <p className="text-sm font-bold">Ca muốn xin nghỉ</p>
+              <button type="button" onClick={openSchedulePicker} className="mt-2 flex min-h-16 w-full items-center gap-3 rounded-2xl border border-slate-200 bg-slate-50 p-3 text-left dark:border-slate-700 dark:bg-slate-800">
+                <div className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-white text-emerald-600 shadow-sm dark:bg-slate-900"><CalendarDays className="h-5 w-5" /></div>
+                <div className="min-w-0 flex-1">
+                  <p className="font-extrabold">{selectedShortShifts.length ? `${selectedShortShifts.length} ca đã chọn` : 'Chọn từ lịch đã đăng ký'}</p>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    {selectedShortShifts.length
+                      ? `${selectedShortShifts[0].date.toLocaleDateString('vi-VN', { weekday: 'long', day: '2-digit', month: '2-digit' })} · ${selectedShortShifts.map((item) => shiftLabels[item.shift]).join(', ')}`
+                      : 'Hiển thị các ca đã được quản lý duyệt'}
+                  </p>
+                </div>
+                <ChevronRight className="h-5 w-5 shrink-0 text-slate-400" />
+              </button>
             </div>
           )}
 
-          {duration === 'short' && startDate && dayShifts.length > 0 ? (
-            <div className="mt-5">
-              <div className="mb-3 flex items-center justify-between">
-                <div>
-                  <p className="text-sm font-extrabold">Ca đã đăng ký trong ngày</p>
-                  <p className="text-xs text-muted-foreground">Có thể chọn một hoặc nhiều ca muốn nghỉ</p>
-                </div>
-                <Badge variant="success">{selectedScheduleIds.length}/{dayShifts.length} ca</Badge>
-              </div>
-              <div className="space-y-2">
-                {dayShifts.map((shift) => {
-                  const active = selectedScheduleIds.includes(shift.id)
-                  return (
-                    <button key={shift.id} type="button" onClick={() => setSelectedScheduleIds((current) =>
-                      current.includes(shift.id) ? current.filter((id) => id !== shift.id) : [...current, shift.id]
-                    )} className={`flex min-h-16 w-full items-center gap-3 rounded-2xl border p-3 text-left transition ${active ? 'border-emerald-600 bg-emerald-600 text-white shadow-lg shadow-emerald-600/20' : 'border-slate-200 bg-slate-50 dark:border-slate-700 dark:bg-slate-800'}`}>
-                      <div className={`grid h-10 w-10 place-items-center rounded-xl ${active ? 'bg-white/15' : 'bg-white text-emerald-600 dark:bg-slate-900'}`}><CalendarDays className="h-4 w-4" /></div>
-                      <div className="min-w-0 flex-1">
-                        <p className="font-extrabold">{shiftLabels[shift.shift]}</p>
-                        <p className={`text-xs ${active ? 'text-emerald-50' : 'text-muted-foreground'}`}>{shift.date.toLocaleDateString('vi-VN', { weekday: 'long', day: '2-digit', month: '2-digit' })}</p>
-                      </div>
-                      {active && <Check className="h-5 w-5" />}
-                    </button>
-                  )
-                })}
-              </div>
-            </div>
-          ) : duration === 'short' && startDate ? (
-            <>
-              <div className="mt-5 flex gap-3 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm leading-6 text-amber-800 dark:bg-amber-500/10 dark:text-amber-200">
-                <Info className="mt-0.5 h-5 w-5 shrink-0" />
-                <div><p className="font-extrabold">Ngày này không có ca đã được duyệt.</p><p>Hãy chọn ngày khác hoặc liên hệ quản lý.</p></div>
-              </div>
-            </>
-          ) : duration === 'long' ? (
+          {duration === 'long' ? (
             <>
               <div className="mt-5 grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2">
                 <label className="min-w-0 text-sm font-bold">
@@ -301,6 +310,42 @@ export default function LeaveRequestPage() {
           </div>
         </section>
       </PageContainer>
+      {schedulePickerOpen && (
+        <div className="fixed inset-0 z-[80] flex items-end justify-center bg-slate-950/55 backdrop-blur-sm sm:items-center sm:p-4" onClick={() => setSchedulePickerOpen(false)}>
+          <section role="dialog" aria-modal="true" aria-labelledby="leave-shift-picker-title" className="flex max-h-[min(82vh,42rem)] w-full max-w-lg flex-col overflow-hidden rounded-t-[2rem] bg-white shadow-2xl dark:bg-slate-900 sm:rounded-[2rem]" onClick={(event) => event.stopPropagation()}>
+            <header className="flex items-center gap-3 border-b border-slate-100 p-4 dark:border-white/10">
+              <div className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-emerald-50 text-emerald-600 dark:bg-emerald-500/10"><CalendarDays className="h-5 w-5" /></div>
+              <div className="min-w-0 flex-1"><p className="text-xs font-bold uppercase tracking-wider text-emerald-600">Lịch đã được duyệt</p><h2 id="leave-shift-picker-title" className="text-xl font-black">Chọn ca muốn nghỉ</h2></div>
+              <button type="button" onClick={() => setSchedulePickerOpen(false)} aria-label="Đóng bảng chọn ca" className="grid h-11 w-11 place-items-center rounded-2xl bg-slate-100 dark:bg-slate-800"><X className="h-5 w-5" /></button>
+            </header>
+            <div className="overflow-y-auto p-4">
+              <p className="mb-3 text-xs leading-5 text-muted-foreground">Bạn có thể chọn một hoặc nhiều ca trong cùng một ngày. Chọn ngày khác sẽ thay lựa chọn hiện tại.</p>
+              <div className="space-y-3">
+                {groupedApprovedShifts.map(([dateKey, shifts]) => (
+                  <section key={dateKey} className="rounded-2xl border border-slate-200 p-3 dark:border-slate-700">
+                    <p className="font-extrabold capitalize">{shifts[0].date.toLocaleDateString('vi-VN', { weekday: 'long', day: '2-digit', month: '2-digit', year: 'numeric' })}</p>
+                    <div className="mt-2 grid gap-2">
+                      {shifts.map((shift) => {
+                        const active = draftScheduleIds.includes(shift.id)
+                        return (
+                          <button key={shift.id} type="button" onClick={() => toggleDraftShift(shift)} className={`flex min-h-12 items-center gap-3 rounded-xl px-3 text-left ${active ? 'bg-emerald-600 text-white' : 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-200'}`}>
+                            <span className={`grid h-6 w-6 place-items-center rounded-lg ${active ? 'bg-white/20' : 'bg-white dark:bg-slate-900'}`}>{active && <Check className="h-4 w-4" />}</span>
+                            <span className="font-bold">{shiftLabels[shift.shift]}</span>
+                          </button>
+                        )
+                      })}
+                    </div>
+                  </section>
+                ))}
+                {!groupedApprovedShifts.length && <div className="rounded-2xl bg-amber-50 p-5 text-center text-sm font-semibold text-amber-800">Hiện chưa có ca nào đã được quản lý duyệt để xin nghỉ.</div>}
+              </div>
+            </div>
+            <footer className="border-t border-slate-100 bg-white p-4 pb-[max(1rem,env(safe-area-inset-bottom))] dark:border-white/10 dark:bg-slate-900">
+              <button type="button" onClick={confirmSchedulePicker} disabled={!draftScheduleIds.length} className="mobile-primary-button bg-emerald-600 disabled:opacity-50">Xác nhận {draftScheduleIds.length ? `${draftScheduleIds.length} ca` : ''}</button>
+            </footer>
+          </section>
+        </div>
+      )}
     </main>
   )
 }

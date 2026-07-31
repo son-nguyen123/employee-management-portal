@@ -9,6 +9,21 @@ export async function createForgottenDutyPenalty(employeeId: string, date: strin
   return callWorkflowApi('createForgottenDutyPenalty', { employeeId, date, note })
 }
 
+export async function createManualPenalty(
+  employeeId: string,
+  date: string,
+  amount: number,
+  reason: string
+): Promise<{ id: string; amount: number }> {
+  return callWorkflowApi('createManualPenalty', {
+    requestId: newWorkflowRequestId(),
+    employeeId,
+    date,
+    amount,
+    reason,
+  })
+}
+
 export async function adjustPenalty(id: string, amount: number, reason: string): Promise<void> {
   await callWorkflowApi('managePenalty', {
     requestId: newWorkflowRequestId(),

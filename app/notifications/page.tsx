@@ -63,7 +63,9 @@ export default function NotificationsPage() {
   })
   const visibleManagementHistory = visibleItems.filter((item) => {
     const text = `${item.title} ${item.message}`.toLocaleLowerCase('vi')
-    return !text.includes('chờ') && !text.includes('đang sửa')
+    return !text.includes('chờ') &&
+      !text.includes('đang sửa') &&
+      text.includes('nhân viên:')
   })
 
   useEffect(() => {
@@ -127,6 +129,7 @@ export default function NotificationsPage() {
   }, [authUser, isManagement, isPreviewMode])
 
   const destinationFor = (item: Notification) => {
+    if (isManagement) return '/admin/history'
     const content = `${item.title} ${item.message}`.toLocaleLowerCase('vi')
     if (content.includes('nghỉ')) return '/leave-request'
     if (content.includes('trễ')) return '/late-arrival'

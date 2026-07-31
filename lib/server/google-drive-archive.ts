@@ -3,6 +3,7 @@ import 'server-only'
 const DRIVE_API = 'https://www.googleapis.com/drive/v3'
 const DRIVE_UPLOAD_API = 'https://www.googleapis.com/upload/drive/v3'
 const ARCHIVE_FOLDER_NAME = 'Employee Portal - Weekly Archives'
+const PROFILE_IMAGE_FOLDER_NAME = 'Employee Portal - Profile Images'
 
 export interface DriveFile {
   id: string
@@ -115,6 +116,104 @@ async function ensureArchiveFolder(accessToken: string): Promise<string> {
     }),
   })
   return folder.id
+}
+
+async function ensureProfileImageFolder(accessToken: string): Promise<string> {
+  const existing = await findFile(
+    accessToken,
+    `mimeType = 'application/vnd.google-apps.folder' and appProperties has { key='portalProfileImageFolder' and value='true' }`,
+  )
+  if (existing) return existing.id
+
+  const folder = await driveRequest<DriveFile>(accessToken, '/files?fields=id,name', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      name: PROFILE_IMAGE_FOLDER_NAME,
+      mimeType: 'application/vnd.google-apps.folder',
+      appProperties: {
+        portalProfileImageFolder: 'true',
+        application: 'employee-management-portal',
+      },
+    }),
+  })
+  return folder.id
+}
+
+export async function storeProfileImage(params: {
+  employeeId: string
+  contentType: 'image/jpeg' | 'image/png' | 'image/webp'
+  bytes: Buffer
+}): Promise<{ id: string; url: string }> {
+  const accessToken = await googleAccessToken()
+  const folderId = await ensureProfileImageFolder(accessToken)
+  const safeEmployeeId = escapeDriveQuery(params.employeeId)
+  const existing = await findFile(
+    accessToken,
+    `appProperties has { key='portalProfileImage' and value='true' } and appProperties has { key='employeeId' and value='${safeEmployeeId}' }`,
+  )
+  const extension = params.contentType === 'image/png' ? 'png' : params.contentType === 'image/webp' ? 'webp' : 'jpg'
+  const boundary = `codex-profile-${crypto.randomUUID()}`
+  const metadata = JSON.stringify({
+    name: `profile-${params.employeeId}.${extension}`,
+    mimeType: params.contentType,
+    ...(existing ? {} : { parents: [folderId] }),
+    appProperties: {
+      portalProfileImage: 'true',
+      employeeId: params.employeeId,
+      application: 'employee-management-portal',
+    },
+  })
+  const body = Buffer.concat([
+    Buffer.from(`--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${metadata}\r\n`),
+    Buffer.from(`--${boundary}\r\nContent-Type: ${params.contentType}\r\n\r\n`),
+    params.bytes,
+    Buffer.from(`\r\n--${boundary}--`),
+  ])
+  const endpoint = existing
+    ? `${DRIVE_UPLOAD_API}/files/${encodeURIComponent(existing.id)}?uploadType=multipart&fields=id`
+    : `${DRIVE_UPLOAD_API}/files?uploadType=multipart&fields=id`
+  const response = await fetch(endpoint, {
+    method: existing ? 'PATCH' : 'POST',
+    headers: {
+      authorization: `Bearer ${accessToken}`,
+      'content-type': `multipart/related; boundary=${boundary}`,
+      'content-length': String(body.length),
+    },
+    body,
+    cache: 'no-store',
+  })
+  if (!response.ok) {
+    const details = (await response.text()).slice(0, 500)
+    throw new Error(`Google Drive profile upload failed (${response.status}): ${details}`)
+  }
+  const file = await response.json() as { id: string }
+  const permissions = await driveRequest<{ permissions?: Array<{ type?: string; role?: string }> }>(
+    accessToken,
+    `/files/${encodeURIComponent(file.id)}/permissions?fields=permissions(type,role)`,
+  )
+  const alreadyPublic = permissions.permissions?.some(
+    (permission) => permission.type === 'anyone' && permission.role === 'reader',
+  )
+  if (!alreadyPublic) {
+    const permission = await fetch(`${DRIVE_API}/files/${encodeURIComponent(file.id)}/permissions`, {
+      method: 'POST',
+      headers: {
+        authorization: `Bearer ${accessToken}`,
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify({ type: 'anyone', role: 'reader' }),
+      cache: 'no-store',
+    })
+    if (!permission.ok) {
+      const details = (await permission.text()).slice(0, 500)
+      throw new Error(`Google Drive profile permission failed (${permission.status}): ${details}`)
+    }
+  }
+  return {
+    id: file.id,
+    url: `https://drive.google.com/uc?export=view&id=${encodeURIComponent(file.id)}`,
+  }
 }
 
 async function uploadJsonFile(

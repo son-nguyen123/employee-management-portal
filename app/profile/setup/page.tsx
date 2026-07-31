@@ -2,8 +2,9 @@
 
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Camera, CreditCard, IdCard, Landmark, Link as LinkIcon, Loader2, LogOut, Phone, Save, UserRound } from 'lucide-react'
+import { Camera, CreditCard, IdCard, ImageUp, Landmark, Link as LinkIcon, Loader2, LogOut, Phone, Save, UserRound } from 'lucide-react'
 import { useAuth } from '@/lib/hooks/useAuth'
+import { auth } from '@/lib/firebase'
 import { createEmployee, updateEmployee } from '@/lib/services/employeeService'
 import { updateUserProfile } from '@/lib/services/authService'
 
@@ -22,6 +23,7 @@ export default function ProfileSetupPage() {
   })
   const [saving, setSaving] = useState(false)
   const [signingOut, setSigningOut] = useState(false)
+  const [uploadingImage, setUploadingImage] = useState(false)
   const [message, setMessage] = useState('')
 
   useEffect(() => {
@@ -41,6 +43,31 @@ export default function ProfileSetupPage() {
 
   const setValue = (field: keyof typeof form, value: string) =>
     setForm((current) => ({ ...current, [field]: value }))
+
+  const uploadProfileImage = async (file?: File) => {
+    if (!authUser || !file) return
+    setUploadingImage(true)
+    setMessage('')
+    try {
+      const token = await auth.currentUser?.getIdToken()
+      if (!token) throw new Error('Phiên đăng nhập đã hết hạn.')
+      const body = new FormData()
+      body.set('image', file)
+      const response = await fetch('/api/profile/image', {
+        method: 'POST',
+        headers: { authorization: `Bearer ${token}` },
+        body,
+      })
+      const data = await response.json().catch(() => null) as { ok?: boolean; url?: string; error?: string } | null
+      if (!response.ok || !data?.url) throw new Error(data?.error || 'Chưa thể tải ảnh lên.')
+      setValue('photoURL', data.url)
+      setMessage('Ảnh đã được lưu trên Google Drive.')
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'Chưa thể tải ảnh lên Google Drive.')
+    } finally {
+      setUploadingImage(false)
+    }
+  }
 
   const submit = async (event: React.FormEvent) => {
     event.preventDefault()
@@ -107,7 +134,6 @@ export default function ProfileSetupPage() {
   }
 
   const fields = [
-    { key: 'photoURL' as const, label: 'Ảnh đại diện', placeholder: 'https://.../avatar.jpg', icon: Camera },
     { key: 'fullName' as const, label: 'Họ và tên', placeholder: 'Nguyễn Văn An', icon: UserRound },
     { key: 'employeeCode' as const, label: 'Mã nhân viên', placeholder: 'NV-001', icon: IdCard },
     { key: 'phone' as const, label: 'Số điện thoại', placeholder: '0901 234 567', icon: Phone },
@@ -134,6 +160,19 @@ export default function ProfileSetupPage() {
 
         <form onSubmit={submit} className="space-y-4 p-5">
           {message && <p className="rounded-2xl border border-rose-200 bg-rose-50 p-3 text-sm font-semibold text-rose-700">{message}</p>}
+          <div className="rounded-3xl border border-indigo-100 bg-indigo-50/70 p-4 dark:border-indigo-500/20 dark:bg-indigo-500/10">
+            <div className="flex items-center gap-3">
+              <div className="grid h-12 w-12 shrink-0 place-items-center overflow-hidden rounded-2xl bg-white text-indigo-600 shadow-sm dark:bg-slate-900">
+                {form.photoURL ? <img src={form.photoURL} alt="" className="h-full w-full object-cover" /> : <Camera className="h-5 w-5" />}
+              </div>
+              <div className="min-w-0 flex-1"><h2 className="font-extrabold">Ảnh đại diện</h2><p className="mt-1 text-xs leading-5 text-muted-foreground">JPG, PNG hoặc WebP · tối đa 5 MB. Ảnh lưu trên Google Drive, Firebase chỉ giữ đường dẫn.</p></div>
+            </div>
+            <label className="mt-3 flex min-h-12 cursor-pointer items-center justify-center gap-2 rounded-2xl bg-indigo-600 px-4 text-sm font-bold text-white">
+              {uploadingImage ? <Loader2 className="h-4 w-4 animate-spin" /> : <ImageUp className="h-4 w-4" />}
+              {uploadingImage ? 'Đang tải lên...' : form.photoURL ? 'Đổi ảnh' : 'Chọn ảnh'}
+              <input type="file" accept="image/jpeg,image/png,image/webp" className="hidden" disabled={uploadingImage || saving || signingOut} onChange={(event) => void uploadProfileImage(event.target.files?.[0])} />
+            </label>
+          </div>
           {fields.map(({ key, label, placeholder, icon: Icon }) => (
             <label key={key} className="block text-sm font-bold">
               {label}

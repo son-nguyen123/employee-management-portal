@@ -1378,6 +1378,66 @@ export async function createForgottenDutyPenalty(actor: RequestActor, raw: unkno
   return { id: penaltyRef.id, amount: 1000, push }
 }
 
+export async function createManualPenalty(actor: RequestActor, raw: unknown) {
+  requireManager(actor)
+  const body = objectBody(raw)
+  const operationId = requestId(body)
+  const employeeId = text(body.employeeId, 'Nhân viên', 128)
+  const penaltyDate = dateValue(body.date, 'Ngày phạt')
+  const amount = numberValue(body.amount, 'Số tiền phạt', 1, 1_000_000_000)
+  const reason = text(body.reason, 'Lý do phạt', 1000)
+  const employeeRef = adminDb.collection('employees').doc(employeeId)
+  const penaltyRef = adminDb.collection('penalties').doc()
+  const notificationRef = adminDb.collection('notifications').doc(`manual-penalty-${operationId}`)
+  const workflow = workflowRef(actor, operationId)
+
+  await adminDb.runTransaction(async (transaction) => {
+    const [employee, existingWorkflow] = await Promise.all([
+      transaction.get(employeeRef),
+      transaction.get(workflow),
+    ])
+    if (existingWorkflow.exists) throw new ApiError(409, 'Khoản phạt này đã được ghi nhận trước đó.')
+    if (!employee.exists || employee.get('status') !== 'active') {
+      throw new ApiError(404, 'Không tìm thấy nhân viên đang hoạt động.')
+    }
+    const now = FieldValue.serverTimestamp()
+    transaction.create(penaltyRef, {
+      employeeId,
+      title: 'Phạt do quản lý ghi nhận',
+      description: reason,
+      category: 'Other',
+      amount,
+      penaltyDate: Timestamp.fromDate(penaltyDate),
+      createdBy: actor.uid,
+      sourceType: 'manual',
+      status: 'Active',
+      createdAt: now,
+      updatedAt: now,
+    })
+    transaction.create(notificationRef, warningNotification(
+      employeeId,
+      'Quản lý đã ghi nhận khoản phạt',
+      `${amount.toLocaleString('vi-VN')}đ · Lý do: ${reason}`
+    ))
+    transaction.create(workflow, {
+      employeeId,
+      action: 'createManualPenalty',
+      targetIds: [penaltyRef.id],
+      amount,
+      createdAt: now,
+    })
+  })
+
+  const push = await sendPenaltyPush({
+    employeeId,
+    penaltyId: penaltyRef.id,
+    event: 'created',
+    title: 'Quản lý đã ghi nhận khoản phạt',
+    body: `${amount.toLocaleString('vi-VN')}đ · ${reason}`,
+  })
+  return { id: penaltyRef.id, amount, push }
+}
+
 export async function managePenalty(actor: RequestActor, raw: unknown) {
   requireManager(actor)
   const body = objectBody(raw)
@@ -1554,6 +1614,7 @@ export async function reviewRequest(actor: RequestActor, raw: unknown) {
   let employeeId = ''
   let reviewedLabel: string = config.label
   let reviewedLink: string = config.link
+  let reviewedEmployee = 'Nhân viên'
 
   await adminDb.runTransaction(async (transaction) => {
     const [target, existingLeavePenalty] = await Promise.all([
@@ -1569,6 +1630,10 @@ export async function reviewRequest(actor: RequestActor, raw: unknown) {
       throw new ApiError(409, 'Yêu cầu đã ở trạng thái này.')
     }
     employeeId = data.employeeId
+    const employeeSnapshot = await transaction.get(adminDb.collection('employees').doc(employeeId))
+    const employeeName = String(employeeSnapshot.get('fullName') || 'Nhân viên')
+    const employeeCode = String(employeeSnapshot.get('employeeCode') || employeeId.slice(0, 8))
+    reviewedEmployee = `${employeeName} · ${employeeCode}`
     const now = FieldValue.serverTimestamp()
     if (resource === 'leave' && leaveDecisionPenaltyRef) {
       const isLate = data.noticeClass === 'late'
@@ -1718,7 +1783,13 @@ export async function reviewRequest(actor: RequestActor, raw: unknown) {
     managerIds.forEach((managerId) => {
       transaction.set(
         managerNotificationRef(managerId, `${resource}-${id}`),
-        managerNotification(managerId, 'Yêu cầu đã được xử lý', `${requestLabel} đã ${status === 'Approved' ? 'được xác nhận' : 'bị từ chối'}.`, 'info', true)
+        managerNotification(
+          managerId,
+          `${requestLabel} đã ${status === 'Approved' ? 'được duyệt' : 'bị từ chối'}`,
+          `Nhân viên: ${reviewedEmployee}.`,
+          'info',
+          true
+        )
       )
     })
   })
@@ -1756,6 +1827,7 @@ export async function reviewScheduleBatch(actor: RequestActor, raw: unknown) {
   const notificationRef = adminDb.collection('notifications').doc(`schedule-status-${ids[0]}`)
   const dispatchRef = adminDb.collection('pushDispatches').doc(`schedule-batch-${ids[0]}-${status}`)
   const managerIds = await activeManagerIds()
+  let reviewedEmployee = 'Nhân viên'
 
   await adminDb.runTransaction(async (transaction) => {
     const snapshots = await Promise.all(refs.map((ref) => transaction.get(ref)))
@@ -1764,6 +1836,10 @@ export async function reviewScheduleBatch(actor: RequestActor, raw: unknown) {
     }
     const schedules = snapshots.map((snapshot) => snapshot.data()!)
     employeeId = schedules[0].employeeId
+    const employeeSnapshot = await transaction.get(adminDb.collection('employees').doc(employeeId))
+    const employeeName = String(employeeSnapshot.get('fullName') || 'Nhân viên')
+    const employeeCode = String(employeeSnapshot.get('employeeCode') || employeeId.slice(0, 8))
+    reviewedEmployee = `${employeeName} · ${employeeCode}`
     const week = mondayFor((schedules[0].date as Timestamp).toDate()).toISOString()
     const batchKey = schedules[0].batchKey || scheduleBatchKey(employeeId, mondayFor((schedules[0].date as Timestamp).toDate()))
     if (schedules.some((schedule) =>
@@ -1809,7 +1885,13 @@ export async function reviewScheduleBatch(actor: RequestActor, raw: unknown) {
     managerIds.forEach((managerId) => {
       transaction.set(
         managerNotificationRef(managerId, `schedule-${batchKey}`),
-        managerNotification(managerId, 'Bảng lịch đã được xử lý', `Bảng lịch đã ${status === 'Approved' ? 'được xác nhận' : 'bị từ chối'}.`, 'info', true)
+        managerNotification(
+          managerId,
+          `Bảng lịch đã ${status === 'Approved' ? 'được duyệt' : 'bị từ chối'}`,
+          `Nhân viên: ${reviewedEmployee}.`,
+          'info',
+          true
+        )
       )
     })
   })

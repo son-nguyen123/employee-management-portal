@@ -23,6 +23,7 @@ const EMAIL_RECEIPT_ACTIONS = new Set([
   'cancelRequest',
   'cancelScheduleBatch',
   'createForgottenDutyPenalty',
+  'createManualPenalty',
   'managePenalty',
   'reviewRequest',
   'reviewScheduleBatch',
@@ -40,6 +41,7 @@ const actionLabels: Record<string, string> = {
   cancelRequest: 'Hủy yêu cầu',
   cancelScheduleBatch: 'Hủy bảng lịch',
   createForgottenDutyPenalty: 'Ghi nhận khoản phạt quên trực',
+  createManualPenalty: 'Ghi nhận khoản phạt thủ công',
   managePenalty: 'Điều chỉnh khoản phạt',
   reviewRequest: 'Quản lý xử lý yêu cầu',
   reviewScheduleBatch: 'Quản lý xử lý bảng lịch',
@@ -98,7 +100,7 @@ async function subjectEmployeeId(
   } else if (action === 'managePenalty') {
     collection = 'penalties'
     id = String(payload.id || '')
-  } else if (action === 'createForgottenDutyPenalty') {
+  } else if (action === 'createForgottenDutyPenalty' || action === 'createManualPenalty') {
     return String(payload.employeeId || actor.uid)
   }
 

@@ -2,16 +2,18 @@
 
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
-import { AlertTriangle, CalendarPlus, Check, ChevronDown, CircleDollarSign, Clock3, ExternalLink, FileText, Loader2, MessageSquareText, Phone, UsersRound, X } from 'lucide-react'
+import { AlertTriangle, CalendarPlus, Check, ChevronDown, CircleDollarSign, Clock3, Download, ExternalLink, FileText, Loader2, MessageSquareText, Phone, Plus, UsersRound, X } from 'lucide-react'
 import { useAuth } from '@/lib/hooks/useAuth'
+import { auth } from '@/lib/firebase'
 import { subscribeToPendingLeaveRequests, updateLeaveStatus } from '@/lib/services/leaveService'
 import { subscribeToPendingLateRequests, updateLateStatus } from '@/lib/services/lateService'
 import { subscribeToPendingSalaryAdvances, updateSalaryAdvanceStatus } from '@/lib/services/salaryService'
 import { mockLateRequests, mockLeaveRequests, mockSalaryAdvances } from '@/lib/services/mockData'
 import { Header } from '@/components/layout/header'
 import { PageContainer } from '@/components/layout/page-container'
+import { ManagementOverview } from '@/components/admin/management-overview'
 import { subscribeToActiveEmployees } from '@/lib/services/employeeService'
-import { adjustPenalty, cancelPenalty, createForgottenDutyPenalty, getAllPenalties } from '@/lib/services/penaltyService'
+import { adjustPenalty, cancelPenalty, createManualPenalty, getAllPenalties } from '@/lib/services/penaltyService'
 import { subscribeToPendingStaffRequests, updateStaffRequestStatus } from '@/lib/services/staffRequestService'
 import type { Employee, Penalty, StaffRequest } from '@/lib/models/types'
 
@@ -101,6 +103,7 @@ export default function AdminRequestsPage() {
   const [employees, setEmployees] = useState<Employee[]>([])
   const [penaltyEmployeeId, setPenaltyEmployeeId] = useState('')
   const [penaltyDate, setPenaltyDate] = useState(new Date().toISOString().slice(0, 10))
+  const [penaltyAmount, setPenaltyAmount] = useState('500')
   const [penaltyNote, setPenaltyNote] = useState('')
   const [penaltySubmitting, setPenaltySubmitting] = useState(false)
   const [penalties, setPenalties] = useState<Penalty[]>([])
@@ -114,6 +117,8 @@ export default function AdminRequestsPage() {
   const [manualPenaltyOpen, setManualPenaltyOpen] = useState(false)
   const [pageMode, setPageMode] = useState<'requests' | 'penalties'>('requests')
   const [penaltyTab, setPenaltyTab] = useState<'employees' | 'list'>('employees')
+  const [penaltyExportMonth, setPenaltyExportMonth] = useState(new Date().toISOString().slice(0, 7))
+  const [exportingPenalties, setExportingPenalties] = useState(false)
 
   useEffect(() => {
     setPageMode(new URLSearchParams(window.location.search).get('view') === 'penalties' ? 'penalties' : 'requests')
@@ -190,7 +195,14 @@ export default function AdminRequestsPage() {
     ]
 
     getAllPenalties()
-      .then(setPenalties)
+      .then((items) => {
+        setPenalties(items)
+        const latest = items[0]?.penaltyDate
+        if (latest) {
+          const date = latest instanceof Date ? latest : latest.toDate()
+          setPenaltyExportMonth(`${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`)
+        }
+      })
       .catch(() => setMessage('Chưa tải được danh sách khoản phạt.'))
 
     return () => unsubscribers.forEach((unsubscribe) => unsubscribe())
@@ -216,21 +228,52 @@ export default function AdminRequestsPage() {
     }
   }
 
-  const addForgottenDutyPenalty = async (event: React.FormEvent) => {
+  const addManualPenalty = async (event: React.FormEvent) => {
     event.preventDefault()
-    if (!penaltyEmployeeId || !penaltyDate) return
+    const amount = Number(penaltyAmount)
+    if (!penaltyEmployeeId || !penaltyDate || !Number.isFinite(amount) || amount < 1 || !penaltyNote.trim()) return
     setPenaltySubmitting(true)
     try {
       if (!isPreviewMode) {
-        await createForgottenDutyPenalty(penaltyEmployeeId, `${penaltyDate}T12:00:00`, penaltyNote)
+        await createManualPenalty(penaltyEmployeeId, `${penaltyDate}T12:00:00`, amount, penaltyNote.trim())
         setPenalties(await getAllPenalties())
       }
       setPenaltyNote('')
-      setMessage('Đã ghi nhận phạt quên trực: khấu trừ 1.000đ vào tiền công của 1 giờ làm.')
+      setPenaltyAmount('500')
+      setManualPenaltyOpen(false)
+      setMessage(`Đã ghi nhận khoản phạt ${amount.toLocaleString('vi-VN')}đ và gửi thông báo cho nhân viên.`)
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'Chưa thể ghi nhận khoản phạt.')
     } finally {
       setPenaltySubmitting(false)
+    }
+  }
+
+  const exportPenalties = async () => {
+    if (!authUser || !penaltyExportMonth) return
+    setExportingPenalties(true)
+    setMessage('')
+    try {
+      const token = await auth.currentUser?.getIdToken()
+      if (!token) throw new Error('Phiên đăng nhập đã hết hạn.')
+      const response = await fetch(`/api/exports/penalties?month=${encodeURIComponent(penaltyExportMonth)}`, {
+        headers: { authorization: `Bearer ${token}` },
+      })
+      if (!response.ok) {
+        const data = await response.json().catch(() => null) as { error?: string } | null
+        throw new Error(data?.error || 'Chưa thể xuất bảng phạt.')
+      }
+      const blob = await response.blob()
+      const url = URL.createObjectURL(blob)
+      const anchor = document.createElement('a')
+      anchor.href = url
+      anchor.download = `bang-phat-${penaltyExportMonth}.docx`
+      anchor.click()
+      URL.revokeObjectURL(url)
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'Chưa thể xuất bảng phạt.')
+    } finally {
+      setExportingPenalties(false)
     }
   }
 
@@ -298,15 +341,25 @@ export default function AdminRequestsPage() {
     <main className="min-h-screen pb-8">
       <Header title={pageMode === 'penalties' ? 'Quản lý phạt' : 'Yêu cầu khác'} subtitle={pageMode === 'penalties' ? 'Theo dõi theo nhân viên và từng khoản phạt' : 'Tất cả yêu cầu ngoài lịch đăng ký tuần'} />
       <PageContainer>
+        {pageMode === 'requests' && <ManagementOverview employees={employees} />}
         <div className="flex flex-col">
         {pageMode === 'penalties' && (
-          <div className="order-1 mb-4 grid grid-cols-2 gap-2 rounded-2xl bg-slate-100 p-1 dark:bg-slate-800">
-            <button type="button" onClick={() => setPenaltyTab('employees')} className={`min-h-11 rounded-xl text-sm font-bold ${penaltyTab === 'employees' ? 'bg-white text-rose-600 shadow-sm dark:bg-slate-950' : 'text-muted-foreground'}`}>Nhân viên</button>
-            <button type="button" onClick={() => setPenaltyTab('list')} className={`min-h-11 rounded-xl text-sm font-bold ${penaltyTab === 'list' ? 'bg-white text-rose-600 shadow-sm dark:bg-slate-950' : 'text-muted-foreground'}`}>Danh sách phạt</button>
+          <div className="order-1 mb-4 space-y-3">
+            <div className="grid grid-cols-2 gap-2 rounded-2xl bg-slate-100 p-1 dark:bg-slate-800">
+              <button type="button" onClick={() => setPenaltyTab('employees')} className={`min-h-11 rounded-xl text-sm font-bold ${penaltyTab === 'employees' ? 'bg-white text-rose-600 shadow-sm dark:bg-slate-950' : 'text-muted-foreground'}`}>Theo nhân viên</button>
+              <button type="button" onClick={() => setPenaltyTab('list')} className={`min-h-11 rounded-xl text-sm font-bold ${penaltyTab === 'list' ? 'bg-white text-rose-600 shadow-sm dark:bg-slate-950' : 'text-muted-foreground'}`}>Từng khoản phạt</button>
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <button type="button" onClick={() => setManualPenaltyOpen((current) => !current)} className="flex min-h-12 items-center justify-center gap-2 rounded-2xl bg-rose-600 px-3 text-sm font-bold text-white"><Plus className="h-4 w-4" /> Ghi phạt</button>
+              <button type="button" onClick={() => void exportPenalties()} disabled={exportingPenalties} className="flex min-h-12 items-center justify-center gap-2 rounded-2xl border border-rose-200 bg-white px-3 text-sm font-bold text-rose-700 disabled:opacity-50 dark:bg-slate-900"><Download className="h-4 w-4" /> {exportingPenalties ? 'Đang xuất...' : 'Xuất phạt'}</button>
+            </div>
+            <label className="block text-xs font-bold text-muted-foreground">Tháng xuất
+              <input type="month" value={penaltyExportMonth} onChange={(event) => setPenaltyExportMonth(event.target.value)} className="mobile-field mt-2" />
+            </label>
           </div>
         )}
         {pageMode === 'penalties' && penaltyTab === 'employees' && (
-          <section className="order-2 space-y-3">
+          <section className="order-3 space-y-3">
             {penalizedEmployees.map((employee) => {
               const employeePenalties = activePenalties.filter((penalty) => penalty.employeeId === employee.uid)
               return (
@@ -337,31 +390,34 @@ export default function AdminRequestsPage() {
             {!penalizedEmployees.length && <div className="mobile-card p-8 text-center text-sm font-semibold text-muted-foreground">Chưa có nhân viên bị phạt.</div>}
           </section>
         )}
-        <form onSubmit={addForgottenDutyPenalty} className={`${pageMode === 'penalties' && penaltyTab === 'employees' ? 'order-3' : 'hidden'} mt-5 overflow-hidden rounded-3xl border border-rose-200 bg-white shadow-sm dark:border-rose-500/20 dark:bg-slate-900`}>
-          <button type="button" onClick={() => setManualPenaltyOpen((current) => !current)} className="flex w-full items-center gap-3 bg-gradient-to-r from-rose-600 to-fuchsia-600 p-4 text-left text-white" aria-expanded={manualPenaltyOpen}>
+        <form onSubmit={addManualPenalty} className={`${pageMode === 'penalties' && manualPenaltyOpen ? 'order-2' : 'hidden'} mb-5 overflow-hidden rounded-3xl border border-rose-200 bg-white shadow-sm dark:border-rose-500/20 dark:bg-slate-900`}>
+          <div className="flex items-center gap-3 bg-gradient-to-r from-rose-600 to-fuchsia-600 p-4 text-white">
             <div className="grid h-11 w-11 place-items-center rounded-2xl bg-white/15"><AlertTriangle className="h-5 w-5" /></div>
-            <div className="min-w-0 flex-1"><p className="text-xs font-bold uppercase tracking-wider text-rose-100">Ghi phạt thủ công</p><h2 className="font-black">Quên trực · 1.000đ</h2></div>
-            <ChevronDown className={`h-5 w-5 transition-transform ${manualPenaltyOpen ? 'rotate-180' : ''}`} />
-          </button>
-          {manualPenaltyOpen && <div className="grid gap-3 p-4 sm:grid-cols-2">
+            <div className="min-w-0 flex-1"><p className="text-xs font-bold uppercase tracking-wider text-rose-100">Quản lý tự ghi nhận</p><h2 className="font-black">Thêm khoản phạt</h2></div>
+            <button type="button" onClick={() => setManualPenaltyOpen(false)} aria-label="Đóng form ghi phạt" className="grid h-10 w-10 place-items-center rounded-xl bg-white/15"><X className="h-4 w-4" /></button>
+          </div>
+          <div className="grid gap-3 p-4 sm:grid-cols-2">
             <label className="text-sm font-bold">Nhân viên
               <select value={penaltyEmployeeId} onChange={(event) => setPenaltyEmployeeId(event.target.value)} className="mobile-field mt-2" required>
                 <option value="">Chọn nhân viên</option>
                 {employees.map((employee) => <option key={employee.uid} value={employee.uid}>{employee.fullName} · {employee.employeeCode}</option>)}
               </select>
             </label>
-            <label className="text-sm font-bold">Ngày quên trực
+            <label className="text-sm font-bold">Ngày ghi phạt
               <input type="date" value={penaltyDate} onChange={(event) => setPenaltyDate(event.target.value)} className="mobile-field mt-2" required />
             </label>
-            <label className="text-sm font-bold sm:col-span-2">Ghi chú <span className="font-normal text-muted-foreground">(không bắt buộc)</span>
-              <textarea value={penaltyNote} onChange={(event) => setPenaltyNote(event.target.value)} className="mobile-field mt-2 min-h-20 py-3" placeholder="Ví dụ: Không có mặt trong ca trực chiều..." />
+            <label className="text-sm font-bold sm:col-span-2">Số tiền phạt
+              <input type="number" min="1" step="500" inputMode="numeric" value={penaltyAmount} onChange={(event) => setPenaltyAmount(event.target.value)} className="mobile-field mt-2" required />
+            </label>
+            <label className="text-sm font-bold sm:col-span-2">Lý do
+              <textarea value={penaltyNote} onChange={(event) => setPenaltyNote(event.target.value)} maxLength={1000} className="mobile-field mt-2 min-h-24 py-3" placeholder="Ghi rõ lý do để nhân viên hiểu..." required />
             </label>
             <button type="submit" disabled={penaltySubmitting || (!isPreviewMode && !employees.length)} className="mobile-primary-button bg-rose-600 sm:col-span-2">
-              {penaltySubmitting && <Loader2 className="h-4 w-4 animate-spin" />} Ghi nhận phạt 1.000đ
+              {penaltySubmitting && <Loader2 className="h-4 w-4 animate-spin" />} Xác nhận ghi phạt
             </button>
-          </div>}
+          </div>
         </form>
-        <section className={`${pageMode === 'penalties' && penaltyTab === 'list' ? 'order-2' : 'hidden'} mt-5 overflow-hidden rounded-3xl border border-rose-100 bg-white shadow-sm dark:border-rose-500/20 dark:bg-slate-900`}>
+        <section className={`${pageMode === 'penalties' && penaltyTab === 'list' ? 'order-3' : 'hidden'} mt-5 overflow-hidden rounded-3xl border border-rose-100 bg-white shadow-sm dark:border-rose-500/20 dark:bg-slate-900`}>
           <button type="button" onClick={() => setPenaltiesOpen((current) => !current)} className="flex w-full items-center justify-between gap-3 p-4 text-left" aria-expanded={penaltiesOpen}>
             <div>
               <p className="text-xs font-bold uppercase tracking-wider text-rose-600">{penalizedEmployees.length} nhân viên bị phạt</p>
