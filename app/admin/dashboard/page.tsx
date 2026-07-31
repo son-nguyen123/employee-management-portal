@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
+import Image from 'next/image'
 import { ArrowLeft, CalendarCheck, Check, ChevronRight, ExternalLink, Loader2, MessageSquareText, Phone, RotateCcw, UsersRound, X } from 'lucide-react'
 import { useAuth, useUserRole } from '@/lib/hooks/useAuth'
 import { setEmployeeAccountStatus, subscribeToAllEmployees } from '@/lib/services/employeeService'
@@ -17,6 +18,7 @@ import {
 } from '@/lib/services/managementSettingsService'
 import { OtherRequestWorkspace } from '@/components/admin/other-request-workspace'
 import { RequestIdentityAvatar } from '@/components/admin/request-identity-avatar'
+import { profileImageUrl } from '@/lib/utils/profileImage'
 
 type ScheduleRow = WorkSchedule & {
   id: string
@@ -370,8 +372,8 @@ export default function AdminDashboardPage() {
             <section id="employees" className="grid gap-2 sm:grid-cols-2">
               {activeEmployees.map((employee) => (
                 <Link key={employee.uid} href={`/admin/employees/${employee.uid}`} className="flex min-h-18 items-center gap-3 rounded-2xl border border-slate-200/80 bg-white p-3 shadow-sm transition active:scale-[.99] dark:border-white/10 dark:bg-slate-900">
-                  <div className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-indigo-50 text-sm font-black text-indigo-600 dark:bg-indigo-500/10">
-                    {employee.fullName.split(' ').slice(-2).map((word) => word[0]).join('')}
+                  <div className="grid h-11 w-11 shrink-0 place-items-center overflow-hidden rounded-2xl bg-indigo-50 text-sm font-black text-indigo-600 dark:bg-indigo-500/10">
+                    {employee.photoURL ? <Image src={profileImageUrl(employee.photoURL)} alt={`Ảnh đại diện của ${employee.fullName}`} width={44} height={44} className="h-full w-full object-cover" /> : employee.fullName.split(' ').slice(-2).map((word) => word[0]).join('')}
                   </div>
                   <div className="min-w-0 flex-1">
                     <h2 className="truncate text-sm font-extrabold">{employee.fullName}</h2>
@@ -388,7 +390,7 @@ export default function AdminDashboardPage() {
               <h2 className="mb-3 text-lg font-black">Tài khoản đã khóa</h2>
               <div className="space-y-2">{inactiveEmployees.map((employee) => (
                 <article key={employee.uid} className="mobile-card flex items-center gap-3 p-3">
-                  <Link href={`/admin/employees/${employee.uid}`} className="min-w-0 flex-1"><p className="truncate font-bold">{employee.fullName}</p><p className="text-xs text-muted-foreground">{employee.employeeCode} · Xem hồ sơ</p></Link>
+                  <Link href={`/admin/employees/${employee.uid}`} className="flex min-w-0 flex-1 items-center gap-3"><div className="grid h-10 w-10 shrink-0 place-items-center overflow-hidden rounded-2xl bg-indigo-50 text-xs font-black text-indigo-600 dark:bg-indigo-500/10">{employee.photoURL ? <Image src={profileImageUrl(employee.photoURL)} alt={`Ảnh đại diện của ${employee.fullName}`} width={40} height={40} className="h-full w-full object-cover" /> : employee.fullName.split(' ').slice(-2).map((word) => word[0]).join('')}</div><div className="min-w-0"><p className="truncate font-bold">{employee.fullName}</p><p className="text-xs text-muted-foreground">{employee.employeeCode} · Xem hồ sơ</p></div></Link>
                   <button type="button" disabled={processingId === employee.uid} onClick={() => void changeAccountStatus(employee, 'active')} className="min-h-10 rounded-xl bg-emerald-50 px-3 text-xs font-bold text-emerald-700 disabled:opacity-50">Bật lại</button>
                 </article>
               ))}</div>

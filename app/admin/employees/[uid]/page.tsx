@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import { useParams } from 'next/navigation'
+import Image from 'next/image'
 import { CalendarDays, CalendarPlus, CircleDollarSign, Clock3, ExternalLink, FileText, Loader2, MessageSquareText, Phone, Power, ShieldCheck, ShieldX, UserRound } from 'lucide-react'
 import { useAuth, useUserRole } from '@/lib/hooks/useAuth'
 import { getEmployeeByUID, setEmployeeAccountStatus } from '@/lib/services/employeeService'
@@ -15,6 +16,7 @@ import type { Employee, LateRequest, LeaveRequest, SalaryAdvance, StaffRequest, 
 import { Header } from '@/components/layout/header'
 import { PageContainer } from '@/components/layout/page-container'
 import { Badge } from '@/components/ui/badge'
+import { profileImageUrl } from '@/lib/utils/profileImage'
 
 type DetailSchedule = WorkSchedule & { id: string }
 type ActivityStatus = WorkSchedule['status'] | LeaveRequest['status'] | LateRequest['status'] | SalaryAdvance['status'] | StaffRequest['status']
@@ -208,7 +210,7 @@ export default function EmployeeDetailPage() {
               backgroundSize: 'cover, 285px auto',
             }}
           >
-            <div className="flex items-center gap-4"><div className="grid h-16 w-16 place-items-center rounded-3xl bg-gradient-to-br from-fuchsia-500 to-violet-600 text-white shadow-lg shadow-fuchsia-900/20"><UserRound className="h-7 w-7" /></div><div className="min-w-0"><h1 className="truncate text-xl font-black">{employee.fullName}</h1><p className="text-sm font-semibold text-slate-700">{employee.employeeCode} · {employee.status === 'active' ? 'Đang làm việc' : employee.status === 'pending' ? 'Chờ duyệt' : 'Đã vô hiệu hóa'}</p><p className="mt-1 truncate text-xs text-slate-600">{employee.email}</p></div></div>
+            <div className="flex items-center gap-4"><div className="grid h-16 w-16 shrink-0 place-items-center overflow-hidden rounded-3xl bg-gradient-to-br from-fuchsia-500 to-violet-600 text-white shadow-lg shadow-fuchsia-900/20">{employee.photoURL ? <Image src={profileImageUrl(employee.photoURL)} alt={`Ảnh đại diện của ${employee.fullName}`} width={64} height={64} className="h-full w-full object-cover" /> : <UserRound className="h-7 w-7" />}</div><div className="min-w-0"><h1 className="truncate text-xl font-black">{employee.fullName}</h1><p className="text-sm font-semibold text-slate-700">{employee.employeeCode} · {employee.status === 'active' ? 'Đang làm việc' : employee.status === 'pending' ? 'Chờ duyệt' : 'Đã vô hiệu hóa'}</p><p className="mt-1 truncate text-xs text-slate-600">{employee.email}</p></div></div>
             <div className="mt-5 grid grid-cols-2 gap-2"><a href={`tel:${employee.phone}`} className="flex min-h-11 items-center justify-center gap-2 rounded-2xl bg-white/80 text-sm font-bold shadow-sm ring-1 ring-pink-200"><Phone className="h-4 w-4" /> Gọi điện</a><a href={employee.facebookUrl || 'https://facebook.com/'} target="_blank" rel="noreferrer" className="flex min-h-11 items-center justify-center gap-2 rounded-2xl bg-blue-600 text-sm font-bold text-white shadow-sm"><ExternalLink className="h-4 w-4" /> Mở Facebook</a></div>
             {role === 'admin' && employee.role === 'employee' && (
               <button
