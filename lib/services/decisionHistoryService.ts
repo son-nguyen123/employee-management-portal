@@ -15,6 +15,9 @@ export interface DecisionHistoryItem {
   status: DecisionStatus
   reviewNote: string
   reviewedAt: Date
+  reason?: string
+  shifts?: Array<{ date: Date; shift: 'Morning' | 'Afternoon' | 'Evening' }>
+  removedShifts?: Array<{ date: Date; shift: 'Morning' | 'Afternoon' | 'Evening'; scheduleId?: string }>
 }
 
 type SnapshotRow = Record<string, unknown> & { id: string }
@@ -44,6 +47,18 @@ function processed(row: SnapshotRow): row is SnapshotRow & { status: DecisionSta
   return row.status === 'Approved' || row.status === 'Rejected'
 }
 
+function decisionShifts(value: unknown, includeScheduleId = false): Array<{ date: Date; shift: 'Morning' | 'Afternoon' | 'Evening'; scheduleId?: string }> {
+  if (!Array.isArray(value)) return []
+  return value.flatMap((entry) => {
+    if (!entry || typeof entry !== 'object') return []
+    const row = entry as Record<string, unknown>
+    const date = asDate(row.date)
+    const shift = row.shift
+    if (!date.getTime() || !['Morning', 'Afternoon', 'Evening'].includes(String(shift))) return []
+    return [{ date, shift: shift as 'Morning' | 'Afternoon' | 'Evening', ...(includeScheduleId && typeof row.scheduleId === 'string' ? { scheduleId: row.scheduleId } : {}) }]
+  })
+}
+
 function buildRows(data: Record<DecisionResource, SnapshotRow[]>): DecisionHistoryItem[] {
   const rows: DecisionHistoryItem[] = []
 
@@ -58,6 +73,7 @@ function buildRows(data: Record<DecisionResource, SnapshotRow[]>): DecisionHisto
     status: item.status,
     reviewNote: String(item.reviewNote || ''),
     reviewedAt: asDate(item.reviewedAt),
+    reason: String(item.reason || ''),
   }))
 
   data.late.filter(processed).forEach((item) => rows.push({
@@ -71,6 +87,7 @@ function buildRows(data: Record<DecisionResource, SnapshotRow[]>): DecisionHisto
     status: item.status,
     reviewNote: String(item.reviewNote || ''),
     reviewedAt: asDate(item.reviewedAt),
+    reason: String(item.reason || ''),
   }))
 
   data.salary.filter(processed).forEach((item) => rows.push({
@@ -84,6 +101,7 @@ function buildRows(data: Record<DecisionResource, SnapshotRow[]>): DecisionHisto
     status: item.status,
     reviewNote: String(item.reviewNote || ''),
     reviewedAt: asDate(item.reviewedAt),
+    reason: String(item.reason || ''),
   }))
 
   data.staff.filter(processed).forEach((item) => rows.push({
@@ -99,6 +117,9 @@ function buildRows(data: Record<DecisionResource, SnapshotRow[]>): DecisionHisto
     status: item.status,
     reviewNote: String(item.reviewNote || ''),
     reviewedAt: asDate(item.reviewedAt),
+    reason: String(item.content || ''),
+    shifts: decisionShifts(item.shifts),
+    removedShifts: decisionShifts(item.removedShifts, true),
   }))
 
   const scheduleGroups = new Map<string, SnapshotRow[]>()
@@ -127,6 +148,14 @@ function buildRows(data: Record<DecisionResource, SnapshotRow[]>): DecisionHisto
       status: first.status as DecisionStatus,
       reviewNote: String(first.reviewNote || ''),
       reviewedAt,
+      reason: String(first.note || '').replace(/\[[A-Z_]+(?::[^\]]+)?\]/g, '').trim(),
+      shifts: sorted.flatMap((item) => {
+        const date = asDate(item.date)
+        const shift = item.shift
+        return date.getTime() && ['Morning', 'Afternoon', 'Evening'].includes(String(shift))
+          ? [{ date, shift: shift as 'Morning' | 'Afternoon' | 'Evening' }]
+          : []
+      }),
     })
   })
 

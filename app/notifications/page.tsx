@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import {
   AlertTriangle,
   ArrowLeft,
@@ -19,6 +19,7 @@ import {
   Phone,
   UserRound,
   X,
+  RotateCcw,
 } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import { Header } from '@/components/layout/header'
@@ -44,8 +45,23 @@ import {
 import { updateStaffRequestStatus } from '@/lib/services/staffRequestService'
 import { getManagementContact } from '@/lib/services/managementSettingsService'
 import { profileImageUrl } from '@/lib/utils/profileImage'
+import { subscribeToWeeklyDecisionHistory, type DecisionHistoryItem } from '@/lib/services/decisionHistoryService'
+import { subscribeToAllEmployees } from '@/lib/services/employeeService'
+import type { Employee } from '@/lib/models/types'
 
 type CurrentSchedule = Pick<WorkSchedule, 'id' | 'shift' | 'status'> & { date: Date }
+type WeekView = 'current' | 'previous'
+
+function weekWindow(view: WeekView) {
+  const now = new Date()
+  const monday = new Date(now)
+  const weekday = monday.getDay() || 7
+  monday.setDate(monday.getDate() - weekday + 1 + (view === 'previous' ? -7 : 0))
+  monday.setHours(0, 0, 0, 0)
+  const end = new Date(monday)
+  end.setDate(monday.getDate() + 7)
+  return { start: monday, end }
+}
 
 const managementMeta = {
   schedule: { icon: CalendarDays, color: 'bg-indigo-600', gradient: 'from-indigo-500 via-violet-500 to-fuchsia-600', soft: 'bg-indigo-50 text-indigo-800 dark:bg-indigo-500/10 dark:text-indigo-100' },
@@ -127,15 +143,7 @@ function IdentityAvatar({
   )
 }
 
-function CompactShiftList({
-  title,
-  items,
-  className,
-}: {
-  title: string
-  items?: ManagementShift[]
-  className: string
-}) {
+function SimpleShiftList({ title, items }: { title: string; items?: ManagementShift[] }) {
   if (!items?.length) return null
   const grouped = new Map<string, { date: Date; shifts: ManagementShift['shift'][] }>()
   items.forEach((item) => {
@@ -144,20 +152,14 @@ function CompactShiftList({
     if (!current.shifts.includes(item.shift)) current.shifts.push(item.shift)
     grouped.set(key, current)
   })
-  const rows = [...grouped.values()].sort((left, right) => left.date.getTime() - right.date.getTime())
-
   return (
     <section>
-      <p className="mb-2 text-xs font-black uppercase tracking-[0.12em] text-muted-foreground">{title}</p>
-      <div className="overflow-hidden rounded-2xl border border-slate-100 dark:border-white/10">
-        {rows.map((row) => (
-          <div key={row.date.toISOString()} className="grid grid-cols-[minmax(7.5rem,.9fr)_1.1fr] items-center gap-3 border-b border-slate-100 px-3 py-3 last:border-b-0 dark:border-white/10">
-            <p className="font-extrabold">
-              {row.date.toLocaleDateString('vi-VN', { weekday: 'long', day: '2-digit', month: '2-digit' })}
-            </p>
-            <p className={`rounded-xl px-3 py-2 text-sm font-bold ${className}`}>
-              {row.shifts.map((shift) => shiftNames[shift].replace('Ca ', '')).join(' – ')}
-            </p>
+      <p className="mb-1 text-xs font-black uppercase tracking-[0.12em] text-muted-foreground">{title}</p>
+      <div className="divide-y divide-slate-100 dark:divide-white/10">
+        {[...grouped.values()].sort((a, b) => a.date.getTime() - b.date.getTime()).map((row) => (
+          <div key={row.date.toISOString()} className="grid grid-cols-[minmax(7rem,.85fr)_1.15fr] gap-3 py-4">
+            <p className="font-black capitalize">{row.date.toLocaleDateString('vi-VN', { weekday: 'long', day: '2-digit', month: '2-digit' })}</p>
+            <p className="text-slate-500 dark:text-slate-300">{row.shifts.map((shift) => shiftNames[shift].replace('Ca ', '')).join(' – ')}</p>
           </div>
         ))}
       </div>
@@ -174,7 +176,7 @@ export default function NotificationsPage() {
   const [pendingItems, setPendingItems] = useState<ManagementPendingItem[]>([])
   const [loading, setLoading] = useState(true)
   const [message, setMessage] = useState('')
-  const [weekView, setWeekView] = useState<'current' | 'previous'>('current')
+  const [weekView, setWeekView] = useState<WeekView>('current')
   const [selectedPending, setSelectedPending] = useState<ManagementPendingItem | null>(null)
   const [selectedNotification, setSelectedNotification] = useState<Notification | null>(null)
   const [scheduleOpenId, setScheduleOpenId] = useState<string | null>(null)
@@ -183,17 +185,11 @@ export default function NotificationsPage() {
   const [processingId, setProcessingId] = useState<string | null>(null)
   const [reviewNotes, setReviewNotes] = useState<Record<string, string>>({})
   const [managementContact, setManagementContact] = useState<ManagementContact | null>(null)
+  const [decisions, setDecisions] = useState<DecisionHistoryItem[]>([])
+  const [employees, setEmployees] = useState<Employee[]>([])
+  const [selectedDecision, setSelectedDecision] = useState<DecisionHistoryItem | null>(null)
+  const [undoReason, setUndoReason] = useState('')
 
-  const weekWindow = (view: typeof weekView) => {
-    const now = new Date()
-    const monday = new Date(now)
-    const weekday = monday.getDay() || 7
-    monday.setDate(monday.getDate() - weekday + 1 + (view === 'previous' ? -7 : 0))
-    monday.setHours(0, 0, 0, 0)
-    const end = new Date(monday)
-    end.setDate(monday.getDate() + 7)
-    return { start: monday, end }
-  }
   const visibleItems = items.filter((item) => {
     const createdAt = item.createdAt instanceof Date ? item.createdAt : item.createdAt.toDate()
     const window = weekWindow(weekView)
@@ -203,18 +199,43 @@ export default function NotificationsPage() {
     const window = weekWindow(weekView)
     return item.createdAt >= window.start && item.createdAt < window.end
   })
-  const visibleManagementHistory = visibleItems.filter((item) => {
-    const text = `${item.title} ${item.message}`.toLocaleLowerCase('vi')
-    return !text.includes('chờ') &&
-      !text.includes('đang sửa') &&
-      text.includes('nhân viên:')
-  })
+  const visibleManagementHistory = decisions
+  const employeeMap = useMemo(() => new Map(employees.map((employee) => [employee.uid, employee])), [employees])
 
   useEffect(() => {
     if (!authUser) return
 
     if (isPreviewMode) {
       if (isManagement) {
+        const previewNow = new Date()
+        setEmployees([{
+          uid: 'demo-user-001',
+          employeeCode: 'NV-001',
+          fullName: 'Nguyễn Minh An',
+          phone: '0901 234 567',
+          email: 'minhan@example.test',
+          role: 'employee',
+          status: 'active',
+          joinDate: previewNow,
+          createdAt: previewNow,
+          updatedAt: previewNow,
+        }])
+        setDecisions([{
+          key: 'schedule:preview-approved',
+          id: 'preview-approved',
+          ids: ['preview-approved'],
+          resource: 'schedule',
+          employeeId: 'demo-user-001',
+          title: 'Lịch làm đã duyệt',
+          detail: '6 ca · tuần hiện tại',
+          status: 'Approved',
+          reviewNote: '',
+          reviewedAt: previewNow,
+          shifts: [
+            { date: previewNow, shift: 'Morning' },
+            { date: new Date(previewNow.getTime() + 86400000), shift: 'Afternoon' },
+          ],
+        }])
         setPendingItems([{
           id: 'preview-request',
           type: 'staff',
@@ -263,9 +284,14 @@ export default function NotificationsPage() {
         setItems(notifications)
         setLoading(false)
       })
+      const window = weekWindow(weekView)
+      const unsubscribeHistory = subscribeToWeeklyDecisionHistory(window.start, new Date(window.end.getTime() - 1), setDecisions, () => setMessage('Chưa thể tải các quyết định đã xử lý.'))
+      const unsubscribeEmployees = subscribeToAllEmployees(setEmployees, () => undefined)
       return () => {
         unsubscribePending()
         unsubscribeNotifications()
+        unsubscribeHistory()
+        unsubscribeEmployees()
       }
     }
 
@@ -273,7 +299,7 @@ export default function NotificationsPage() {
       setItems(notifications)
       setLoading(false)
     })
-  }, [authUser, isManagement, isPreviewMode])
+  }, [authUser, isManagement, isPreviewMode, weekView])
 
   useEffect(() => {
     if (!authUser || isManagement) return
@@ -289,15 +315,44 @@ export default function NotificationsPage() {
   useEffect(() => {
     setSelectedPending(null)
     setSelectedNotification(null)
+    setSelectedDecision(null)
     setScheduleOpenId(null)
   }, [weekView])
 
   useEffect(() => {
-    if (!selectedPending && !selectedNotification) return
+    if (!selectedPending && !selectedNotification && !selectedDecision) return
     const previous = document.body.style.overflow
     document.body.style.overflow = 'hidden'
     return () => { document.body.style.overflow = previous }
-  }, [selectedNotification, selectedPending])
+  }, [selectedDecision, selectedNotification, selectedPending])
+
+  const changeDecision = async (item: DecisionHistoryItem) => {
+    if (!authUser || processingId) return
+    const nextStatus = item.status === 'Approved' ? 'Rejected' : 'Approved'
+    if (nextStatus === 'Rejected' && !undoReason.trim()) {
+      setMessage('Vui lòng nhập lý do trước khi chuyển thành từ chối.')
+      return
+    }
+    setProcessingId(item.key)
+    try {
+      const note = nextStatus === 'Rejected' ? undoReason.trim() : ''
+      if (!isPreviewMode) {
+        if (item.resource === 'schedule') await reviewWorkScheduleBatch(item.ids, nextStatus, note)
+        if (item.resource === 'leave') await updateLeaveStatus(item.id, nextStatus, authUser.uid, note)
+        if (item.resource === 'late') await updateLateStatus(item.id, nextStatus, authUser.uid, note)
+        if (item.resource === 'salary') await updateSalaryAdvanceStatus(item.id, nextStatus, authUser.uid, note)
+        if (item.resource === 'staff') await updateStaffRequestStatus(item.id, nextStatus, note)
+      }
+      setDecisions((current) => current.map((row) => row.key === item.key ? { ...row, status: nextStatus, reviewNote: note, reviewedAt: new Date() } : row))
+      setSelectedDecision((current) => current ? { ...current, status: nextStatus, reviewNote: note, reviewedAt: new Date() } : null)
+      setUndoReason('')
+      setMessage(`Đã hoàn tác và chuyển quyết định thành ${nextStatus === 'Approved' ? 'Duyệt' : 'Từ chối'}.`)
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'Chưa thể hoàn tác quyết định.')
+    } finally {
+      setProcessingId(null)
+    }
+  }
 
   const destinationFor = (item: Notification) => {
     const content = `${item.title} ${item.message}`.toLocaleLowerCase('vi')
@@ -510,19 +565,21 @@ export default function NotificationsPage() {
               )
             })}
             {visibleManagementHistory.map((item) => {
-              const createdAt = item.createdAt instanceof Date ? item.createdAt : item.createdAt.toDate()
+              const employee = employeeMap.get(item.employeeId)
+              const meta = managementMeta[item.resource]
               return (
-                <article key={item.id} className="mobile-card overflow-hidden">
+                <article key={item.key} className="mobile-card overflow-hidden">
                   <button
                     type="button"
-                    onClick={() => setSelectedNotification(item)}
+                    onClick={() => { setSelectedDecision(item); setUndoReason(''); setMessage('') }}
                     className="flex w-full gap-3 p-4 text-left"
                   >
-                    <div className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-emerald-50 text-emerald-600 dark:bg-emerald-500/10"><CheckCheck className="h-5 w-5" /></div>
+                    <IdentityAvatar name={employee?.fullName || 'Nhân viên'} photoURL={employee?.photoURL} icon={meta.icon} color={meta.color} />
                     <div className="min-w-0 flex-1">
                       <h2 className="font-extrabold">{item.title}</h2>
-                      <p className="mt-1 line-clamp-2 text-sm text-muted-foreground">{item.message}</p>
-                      <SubmissionStamp date={createdAt} />
+                      <p className="mt-1 font-bold">{employee?.fullName || item.employeeId}{employee?.employeeCode ? ` · ${employee.employeeCode}` : ''}</p>
+                      <p className="mt-1 line-clamp-2 text-sm text-muted-foreground">{item.detail}</p>
+                      <p className={`mt-2 text-xs font-bold ${item.status === 'Approved' ? 'text-emerald-600' : 'text-rose-600'}`}>{item.status === 'Approved' ? 'Đã duyệt' : 'Đã từ chối'} · có thể mở lại và hoàn tác</p>
                     </div>
                     <ChevronRight className="mt-3 h-5 w-5 shrink-0 text-slate-400" />
                   </button>
@@ -627,12 +684,11 @@ export default function NotificationsPage() {
                 {selectedPending.reason && (
                   <p className="rounded-2xl bg-slate-50 p-3 text-sm leading-6 text-slate-700 dark:bg-slate-800 dark:text-slate-200"><span className="font-black">Ghi chú:</span> {selectedPending.reason}</p>
                 )}
-                <CompactShiftList
+                <SimpleShiftList
                   title={selectedPending.staffRequestType === 'overtime' ? 'Ca muốn làm thêm' : selectedPending.type === 'schedule' ? 'Lịch vừa gửi' : 'Ca muốn thêm / đổi'}
                   items={selectedPending.shifts}
-                  className={selectedPendingMeta.soft}
                 />
-                <CompactShiftList title="Ca muốn hủy" items={selectedPending.removedShifts} className="bg-rose-50 text-rose-800 dark:bg-rose-500/10 dark:text-rose-100" />
+                <SimpleShiftList title="Ca muốn hủy" items={selectedPending.removedShifts} />
 
                 <button type="button" onClick={() => void toggleCurrentSchedule(selectedPending)} className="flex min-h-12 w-full items-center justify-between rounded-2xl border border-slate-200 px-4 text-sm font-extrabold dark:border-slate-700">
                   <span>{scheduleOpenId === selectedPending.id ? 'Ẩn lịch hiện tại' : 'Xem lịch hiện tại'}</span>
@@ -640,7 +696,7 @@ export default function NotificationsPage() {
                 </button>
                 {scheduleOpenId === selectedPending.id && scheduleLoadingId !== selectedPending.id && (
                   selectedCurrentSchedules.length
-                    ? <CompactShiftList title="Lịch hiện tại" items={selectedCurrentSchedules} className="bg-slate-100 text-slate-800 dark:bg-slate-800 dark:text-slate-100" />
+                    ? <SimpleShiftList title="Lịch hiện tại" items={selectedCurrentSchedules} />
                     : <p className="rounded-2xl bg-slate-50 p-4 text-sm text-muted-foreground dark:bg-slate-800">Nhân viên chưa có lịch hiện tại.</p>
                 )}
 
@@ -654,6 +710,55 @@ export default function NotificationsPage() {
           </main>
         </div>
       )}
+
+      {selectedDecision && (() => {
+        const meta = managementMeta[selectedDecision.resource]
+        const employee = employeeMap.get(selectedDecision.employeeId)
+        const nextStatus = selectedDecision.status === 'Approved' ? 'Rejected' : 'Approved'
+        return (
+          <div className="fixed inset-0 z-[75] overflow-y-auto bg-slate-100 dark:bg-slate-950">
+            <header className="sticky top-0 z-10 border-b border-slate-200/70 bg-white/95 backdrop-blur-xl dark:border-white/10 dark:bg-slate-950/95">
+              <div className="mx-auto flex min-h-20 max-w-lg items-center gap-3 px-4 pt-[env(safe-area-inset-top)]">
+                <button type="button" onClick={() => setSelectedDecision(null)} className="grid h-11 w-11 place-items-center rounded-2xl bg-slate-100 dark:bg-slate-800" aria-label="Quay lại"><ArrowLeft className="h-5 w-5" /></button>
+                <div><h1 className="text-lg font-black">Biểu mẫu đã xử lý</h1><p className="text-sm text-muted-foreground">Chỉ xem hoặc hoàn tác quyết định</p></div>
+              </div>
+            </header>
+            <main className="mx-auto max-w-lg p-3 pb-[calc(2rem+env(safe-area-inset-bottom))]">
+              <article className="overflow-hidden rounded-[2rem] border border-indigo-100 bg-white shadow-xl shadow-slate-950/10 dark:border-indigo-500/20 dark:bg-slate-900">
+                <section className={`bg-gradient-to-r ${meta.gradient} p-5 text-white`}>
+                  <div className="flex items-start gap-3">
+                    <IdentityAvatar name={employee?.fullName || 'Nhân viên'} photoURL={employee?.photoURL} icon={meta.icon} color={meta.color} />
+                    <div className="min-w-0 flex-1">
+                      <h2 className="text-xl font-black">{selectedDecision.title}</h2>
+                      <p className="mt-2 font-extrabold">{employee?.fullName || selectedDecision.employeeId}{employee?.employeeCode ? ` · ${employee.employeeCode}` : ''}</p>
+                      <p className="mt-1 text-sm text-white/85">{selectedDecision.detail}</p>
+                      <span className={`mt-3 inline-flex rounded-full px-3 py-1 text-xs font-black ${selectedDecision.status === 'Approved' ? 'bg-emerald-500 text-white' : 'bg-rose-500 text-white'}`}>{selectedDecision.status === 'Approved' ? 'Đã duyệt' : 'Đã từ chối'}</span>
+                    </div>
+                  </div>
+                  <div className="mt-5 grid grid-cols-2 gap-2">
+                    <a href={`tel:${employee?.phone || ''}`} className="flex min-h-12 items-center justify-center gap-2 rounded-2xl bg-white/15 text-sm font-extrabold"><Phone className="h-4 w-4" /> Gọi điện</a>
+                    <a href={employee?.facebookUrl || 'https://facebook.com/'} target="_blank" rel="noreferrer" className="flex min-h-12 items-center justify-center gap-2 rounded-2xl bg-blue-600 text-sm font-extrabold"><ExternalLink className="h-4 w-4" /> Facebook</a>
+                  </div>
+                </section>
+                <section className="space-y-5 p-4">
+                  <SimpleShiftList title={selectedDecision.resource === 'schedule' ? 'Lịch đã gửi' : 'Ca mới / ca thêm'} items={selectedDecision.shifts} />
+                  <SimpleShiftList title="Ca muốn hủy" items={selectedDecision.removedShifts} />
+                  {selectedDecision.reason && <p className="rounded-2xl border border-slate-100 p-3 text-sm leading-6"><strong>Ghi chú:</strong> {selectedDecision.reason}</p>}
+                  {selectedDecision.reviewNote && <p className="rounded-2xl bg-amber-50 p-3 text-sm text-amber-900 dark:bg-amber-500/10 dark:text-amber-100"><strong>Phản hồi cũ:</strong> {selectedDecision.reviewNote}</p>}
+                  <div className="border-t border-slate-100 pt-4 dark:border-white/10">
+                    <div className="flex items-center gap-2"><RotateCcw className="h-4 w-4 text-indigo-600" /><h3 className="font-black">Hoàn tác quyết định</h3></div>
+                    <p className="mt-1 text-xs text-muted-foreground">Không mở trang sửa lịch. Thao tác này chỉ đổi quyết định quản lý.</p>
+                    {nextStatus === 'Rejected' && <textarea value={undoReason} onChange={(event) => setUndoReason(event.target.value)} rows={3} placeholder="Nhập lý do chuyển thành từ chối..." className="mt-3 w-full resize-none rounded-2xl border border-slate-200 px-4 py-3 text-sm dark:border-slate-700 dark:bg-slate-900" />}
+                    <button type="button" disabled={processingId === selectedDecision.key || (nextStatus === 'Rejected' && !undoReason.trim())} onClick={() => void changeDecision(selectedDecision)} className={`mt-3 flex min-h-12 w-full items-center justify-center gap-2 rounded-2xl font-extrabold text-white disabled:opacity-50 ${nextStatus === 'Rejected' ? 'bg-rose-600' : 'bg-emerald-600'}`}>
+                      {processingId === selectedDecision.key ? <Loader2 className="h-4 w-4 animate-spin" /> : <RotateCcw className="h-4 w-4" />} Hoàn tác và chuyển thành {nextStatus === 'Rejected' ? 'Từ chối' : 'Duyệt'}
+                    </button>
+                  </div>
+                </section>
+              </article>
+            </main>
+          </div>
+        )
+      })()}
 
       {selectedNotification && selectedNotificationMeta && (
         <div className="fixed inset-0 z-[75] overflow-y-auto bg-slate-100 dark:bg-slate-950">
@@ -671,7 +776,7 @@ export default function NotificationsPage() {
                   <div className="min-w-0 flex-1"><p className="text-xs font-bold uppercase tracking-[0.14em] text-white/75">{managementContact?.fullName || 'Trí Candy'}</p><h2 className="mt-1 text-xl font-black leading-tight">{selectedNotification.title}</h2><p className="mt-2 text-xs font-semibold text-white/80">{(selectedNotification.createdAt instanceof Date ? selectedNotification.createdAt : selectedNotification.createdAt.toDate()).toLocaleDateString('vi-VN')} · {(selectedNotification.createdAt instanceof Date ? selectedNotification.createdAt : selectedNotification.createdAt.toDate()).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}</p></div>
                 </div>
               </section>
-              <section className="p-4"><p className="rounded-2xl bg-slate-50 p-4 text-sm font-medium leading-7 text-slate-700 dark:bg-slate-800 dark:text-slate-200">{selectedNotification.message}</p><button type="button" onClick={() => router.push(destinationFor(selectedNotification))} className={`mt-5 flex min-h-13 w-full items-center justify-between rounded-2xl bg-gradient-to-r ${selectedNotificationMeta.gradient} px-5 font-extrabold text-white shadow-lg`}><span>Mở tính năng liên quan</span><ChevronRight className="h-5 w-5" /></button></section>
+              <section className="p-4"><p className="rounded-2xl bg-slate-50 p-4 text-sm font-medium leading-7 text-slate-700 dark:bg-slate-800 dark:text-slate-200">{selectedNotification.message}</p>{!isManagement && <button type="button" onClick={() => router.push(destinationFor(selectedNotification))} className={`mt-5 flex min-h-13 w-full items-center justify-between rounded-2xl bg-gradient-to-r ${selectedNotificationMeta.gradient} px-5 font-extrabold text-white shadow-lg`}><span>Mở biểu mẫu liên quan</span><ChevronRight className="h-5 w-5" /></button>}</section>
             </article>
           </main>
         </div>

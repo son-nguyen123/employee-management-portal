@@ -355,7 +355,7 @@ export default function AdminDashboardPage() {
         </section>
         <div className="mt-5 grid grid-cols-2 gap-2 rounded-2xl bg-slate-100 p-1 dark:bg-slate-800">
           <button type="button" onClick={() => setTab('requests')} className={`min-h-11 rounded-xl text-sm font-bold ${tab === 'requests' ? 'bg-white text-indigo-600 shadow-sm dark:bg-slate-950' : 'text-muted-foreground'}`}>Lịch chờ duyệt</button>
-          <Link href="/admin/requests?view=requests" className="grid min-h-11 place-items-center rounded-xl text-sm font-bold text-muted-foreground">Yêu cầu khác</Link>
+          <Link href="/notifications" className="grid min-h-11 place-items-center rounded-xl text-sm font-bold text-muted-foreground">Yêu cầu khác</Link>
         </div>
 
         {message && <p className="mt-4 rounded-2xl bg-indigo-50 p-3 text-sm font-semibold text-indigo-800 dark:bg-indigo-500/10 dark:text-indigo-200">{message}</p>}
@@ -371,8 +371,8 @@ export default function AdminDashboardPage() {
               const noShifts = batch.schedules.some((item) => item.note?.includes('[NO_SHIFTS]'))
               const weekNote = batch.schedules.map((item) => item.note?.match(/\[WEEK_NOTE\]\s*([^\[]+)/)?.[1]?.trim()).find(Boolean)
               return (
-                <article key={batch.key} className={`overflow-hidden rounded-[1.75rem] border bg-white shadow-sm transition dark:bg-slate-900 ${batch.isEditing ? 'border-slate-300 opacity-55 grayscale-[.35] dark:border-slate-700' : batch.requiresReapproval ? 'border-amber-300 dark:border-amber-500/30' : 'border-indigo-100 dark:border-indigo-500/20'}`}>
-                  <div className={`p-4 text-white ${batch.isEditing ? 'bg-slate-600' : batch.requiresReapproval ? 'bg-gradient-to-r from-amber-500 to-orange-600' : 'bg-gradient-to-r from-indigo-600 to-violet-600'}`}>
+                <article key={batch.key} className={`overflow-hidden rounded-[1.75rem] border bg-white shadow-sm transition dark:bg-slate-900 ${batch.isEditing ? 'border-slate-300 opacity-55 grayscale-[.35] dark:border-slate-700' : 'border-indigo-100 dark:border-indigo-500/20'}`}>
+                  <div className={`p-4 text-white ${batch.isEditing ? 'bg-slate-600' : 'bg-gradient-to-r from-indigo-600 to-violet-600'}`}>
                   <div className="flex items-start gap-3">
                     <div className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-slate-950 text-xs font-black text-white">
                       {(batch.employeeName || 'NV').split(' ').slice(-2).map((word) => word[0]).join('')}
