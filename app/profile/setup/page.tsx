@@ -98,14 +98,17 @@ export default function ProfileSetupPage() {
       const context = canvas.getContext('2d')
       if (!context) throw new Error('Thiết bị không hỗ trợ chỉnh ảnh.')
       context.drawImage(source, sourceX, sourceY, sourceWidth, sourceHeight, 0, 0, outputSize, outputSize)
-      const contentType = 'image/webp'
-      const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, contentType, 0.82))
+      // JPEG is consistently supported by mobile Safari/Chrome. Some browsers
+      // label a canvas export as WebP while returning different bytes, which
+      // then fails the server-side file signature check.
+      const contentType = 'image/jpeg'
+      const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, contentType, 0.86))
       if (!blob) throw new Error('Không thể xử lý ảnh đã chọn.')
 
       const token = await auth.currentUser?.getIdToken()
       if (!token) throw new Error('Phiên đăng nhập đã hết hạn.')
       const body = new FormData()
-      body.set('image', new File([blob], 'profile.webp', { type: contentType }))
+      body.set('image', new File([blob], 'profile.jpg', { type: contentType }))
       const response = await fetch('/api/profile/image', {
         method: 'POST',
         headers: { authorization: `Bearer ${token}` },
