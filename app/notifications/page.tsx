@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import {
   AlertTriangle,
+  ArrowLeft,
   Bell,
   CalendarDays,
   Check,
@@ -12,8 +13,10 @@ import {
   CircleDollarSign,
   Clock3,
   FileText,
+  ExternalLink,
   Loader2,
   MessageSquareText,
+  Phone,
   UserRound,
   X,
 } from 'lucide-react'
@@ -45,11 +48,11 @@ import { profileImageUrl } from '@/lib/utils/profileImage'
 type CurrentSchedule = Pick<WorkSchedule, 'id' | 'shift' | 'status'> & { date: Date }
 
 const managementMeta = {
-  schedule: { icon: CalendarDays, color: 'bg-indigo-600' },
-  leave: { icon: FileText, color: 'bg-emerald-600' },
-  late: { icon: Clock3, color: 'bg-amber-500' },
-  salary: { icon: CircleDollarSign, color: 'bg-sky-600' },
-  staff: { icon: MessageSquareText, color: 'bg-violet-600' },
+  schedule: { icon: CalendarDays, color: 'bg-indigo-600', gradient: 'from-indigo-500 via-violet-500 to-fuchsia-600', soft: 'bg-indigo-50 text-indigo-800 dark:bg-indigo-500/10 dark:text-indigo-100' },
+  leave: { icon: FileText, color: 'bg-emerald-600', gradient: 'from-emerald-500 via-emerald-600 to-teal-700', soft: 'bg-emerald-50 text-emerald-800 dark:bg-emerald-500/10 dark:text-emerald-100' },
+  late: { icon: Clock3, color: 'bg-amber-500', gradient: 'from-amber-400 via-orange-500 to-orange-600', soft: 'bg-amber-50 text-amber-900 dark:bg-amber-500/10 dark:text-amber-100' },
+  salary: { icon: CircleDollarSign, color: 'bg-sky-600', gradient: 'from-sky-500 via-blue-600 to-indigo-600', soft: 'bg-sky-50 text-sky-800 dark:bg-sky-500/10 dark:text-sky-100' },
+  staff: { icon: MessageSquareText, color: 'bg-fuchsia-600', gradient: 'from-fuchsia-500 via-violet-600 to-indigo-600', soft: 'bg-fuchsia-50 text-fuchsia-800 dark:bg-fuchsia-500/10 dark:text-fuchsia-100' },
 }
 
 type ManagementContact = Awaited<ReturnType<typeof getManagementContact>>
@@ -124,40 +127,41 @@ function IdentityAvatar({
   )
 }
 
-function shiftStamp(item: ManagementShift | CurrentSchedule): string {
-  return `${item.date.toLocaleDateString('vi-VN', {
-    weekday: 'short',
-    day: '2-digit',
-    month: '2-digit',
-  })} · ${shiftNames[item.shift]}`
-}
-
-function ShiftList({
+function CompactShiftList({
   title,
   items,
-  tone = 'indigo',
+  className,
 }: {
   title: string
   items?: ManagementShift[]
-  tone?: 'indigo' | 'rose' | 'emerald'
+  className: string
 }) {
   if (!items?.length) return null
-  const toneClass = tone === 'rose'
-    ? 'bg-rose-50 text-rose-800 dark:bg-rose-500/10 dark:text-rose-100'
-    : tone === 'emerald'
-      ? 'bg-emerald-50 text-emerald-800 dark:bg-emerald-500/10 dark:text-emerald-100'
-      : 'bg-indigo-50 text-indigo-800 dark:bg-indigo-500/10 dark:text-indigo-100'
+  const grouped = new Map<string, { date: Date; shifts: ManagementShift['shift'][] }>()
+  items.forEach((item) => {
+    const key = item.date.toISOString().slice(0, 10)
+    const current = grouped.get(key) || { date: item.date, shifts: [] }
+    if (!current.shifts.includes(item.shift)) current.shifts.push(item.shift)
+    grouped.set(key, current)
+  })
+  const rows = [...grouped.values()].sort((left, right) => left.date.getTime() - right.date.getTime())
+
   return (
-    <div>
-      <p className="mb-2 text-xs font-black uppercase tracking-wide text-muted-foreground">{title}</p>
-      <div className="grid gap-2 sm:grid-cols-2">
-        {items.map((item, index) => (
-          <div key={`${item.scheduleId || index}-${item.date.toISOString()}-${item.shift}`} className={`rounded-xl px-3 py-2 text-sm font-bold ${toneClass}`}>
-            {shiftStamp(item)}
+    <section>
+      <p className="mb-2 text-xs font-black uppercase tracking-[0.12em] text-muted-foreground">{title}</p>
+      <div className="overflow-hidden rounded-2xl border border-slate-100 dark:border-white/10">
+        {rows.map((row) => (
+          <div key={row.date.toISOString()} className="grid grid-cols-[minmax(7.5rem,.9fr)_1.1fr] items-center gap-3 border-b border-slate-100 px-3 py-3 last:border-b-0 dark:border-white/10">
+            <p className="font-extrabold">
+              {row.date.toLocaleDateString('vi-VN', { weekday: 'long', day: '2-digit', month: '2-digit' })}
+            </p>
+            <p className={`rounded-xl px-3 py-2 text-sm font-bold ${className}`}>
+              {row.shifts.map((shift) => shiftNames[shift].replace('Ca ', '')).join(' – ')}
+            </p>
           </div>
         ))}
       </div>
-    </div>
+    </section>
   )
 }
 
@@ -171,7 +175,8 @@ export default function NotificationsPage() {
   const [loading, setLoading] = useState(true)
   const [message, setMessage] = useState('')
   const [weekView, setWeekView] = useState<'current' | 'previous'>('current')
-  const [expandedId, setExpandedId] = useState<string | null>(null)
+  const [selectedPending, setSelectedPending] = useState<ManagementPendingItem | null>(null)
+  const [selectedNotification, setSelectedNotification] = useState<Notification | null>(null)
   const [scheduleOpenId, setScheduleOpenId] = useState<string | null>(null)
   const [scheduleLoadingId, setScheduleLoadingId] = useState<string | null>(null)
   const [employeeSchedules, setEmployeeSchedules] = useState<Record<string, CurrentSchedule[]>>({})
@@ -217,6 +222,8 @@ export default function NotificationsPage() {
           employeeId: 'demo-user-001',
           employeeName: 'Nguyễn Minh An',
           employeeCode: 'NV-001',
+          employeePhone: '0901 234 567',
+          employeeFacebookURL: 'https://www.facebook.com/',
           title: 'Yêu cầu đổi / thêm ca',
           detail: '1 ca muốn hủy · 1 ca muốn thêm',
           reason: 'Em cần đổi lịch vì có việc gia đình.',
@@ -280,9 +287,17 @@ export default function NotificationsPage() {
   }, [authUser, isManagement, isPreviewMode])
 
   useEffect(() => {
-    setExpandedId(null)
+    setSelectedPending(null)
+    setSelectedNotification(null)
     setScheduleOpenId(null)
   }, [weekView])
+
+  useEffect(() => {
+    if (!selectedPending && !selectedNotification) return
+    const previous = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    return () => { document.body.style.overflow = previous }
+  }, [selectedNotification, selectedPending])
 
   const destinationFor = (item: Notification) => {
     const content = `${item.title} ${item.message}`.toLocaleLowerCase('vi')
@@ -298,7 +313,7 @@ export default function NotificationsPage() {
     if (content.includes('nghỉ')) return managementMeta.leave
     if (content.includes('trễ')) return managementMeta.late
     if (content.includes('ứng lương')) return managementMeta.salary
-    if (content.includes('phạt')) return { icon: AlertTriangle, color: 'bg-rose-600' }
+    if (content.includes('phạt')) return { icon: AlertTriangle, color: 'bg-rose-600', gradient: 'from-rose-500 via-rose-600 to-red-700', soft: 'bg-rose-50 text-rose-800 dark:bg-rose-500/10 dark:text-rose-100' }
     if (content.includes('lịch')) return managementMeta.schedule
     return managementMeta.staff
   }
@@ -317,7 +332,7 @@ export default function NotificationsPage() {
         }
       }
     }
-    router.push(destinationFor(item))
+    setSelectedNotification(item)
   }
 
   const markAll = async () => {
@@ -400,7 +415,7 @@ export default function NotificationsPage() {
       } else {
         setPendingItems((current) => current.filter((row) => row.id !== item.id))
       }
-      setExpandedId(null)
+      setSelectedPending(null)
       setScheduleOpenId(null)
     } catch {
       setMessage('Chưa thể xử lý yêu cầu này. Vui lòng thử lại.')
@@ -408,6 +423,10 @@ export default function NotificationsPage() {
       setProcessingId(null)
     }
   }
+
+  const selectedPendingMeta = selectedPending ? managementMeta[selectedPending.type] : null
+  const selectedCurrentSchedules = selectedPending ? employeeSchedules[selectedPending.employeeId] || [] : []
+  const selectedNotificationMeta = selectedNotification ? notificationMetaFor(selectedNotification) : null
 
   return (
     <main className="min-h-screen">
@@ -441,18 +460,15 @@ export default function NotificationsPage() {
           <div className="space-y-3">
             {visiblePendingItems.map((item) => {
               const meta = managementMeta[item.type]
-              const expanded = expandedId === item.id
-              const currentSchedules = employeeSchedules[item.employeeId] || []
               const targetDates = item.type === 'schedule' || item.staffRequestType === 'scheduleChange' || item.staffRequestType === 'overtime'
                 ? [...(item.shifts || []), ...(item.removedShifts || [])].map((shift) => shift.date)
                 : []
               return (
-                <article key={item.id} className={`mobile-card overflow-hidden transition ${expanded ? 'ring-2 ring-indigo-100 dark:ring-indigo-500/20' : ''}`}>
+                <article key={item.id} className="mobile-card overflow-hidden transition active:scale-[0.99]">
                   <button
                     type="button"
-                    aria-expanded={expanded}
                     onClick={() => {
-                      setExpandedId(expanded ? null : item.id)
+                      setSelectedPending(item)
                       setScheduleOpenId(null)
                       setMessage('')
                     }}
@@ -473,105 +489,27 @@ export default function NotificationsPage() {
                       <p className="mt-1 text-sm text-muted-foreground">{item.detail}</p>
                       <SubmissionStamp date={item.createdAt} targetDates={targetDates} />
                     </div>
-                    <ChevronDown className={`mt-3 h-5 w-5 shrink-0 text-slate-400 transition ${expanded ? 'rotate-180' : ''}`} />
+                    <ChevronRight className="mt-3 h-5 w-5 shrink-0 text-slate-400" />
                   </button>
-
-                  {expanded && (
-                    <div className="border-t border-slate-100 px-4 pb-4 pt-3 dark:border-slate-800">
-                      <div className="space-y-4">
-                        {item.reason && (
-                          <p className="rounded-xl bg-slate-100 px-3 py-2 text-sm text-slate-700 dark:bg-slate-800 dark:text-slate-200">
-                            <span className="font-bold">Nội dung:</span> {item.reason}
-                          </p>
-                        )}
-                        <ShiftList
-                          title={item.staffRequestType === 'overtime' ? 'Ca muốn làm thêm' : item.type === 'schedule' ? 'Lịch vừa gửi' : 'Ca muốn thêm / đổi'}
-                          items={item.shifts}
-                          tone={item.staffRequestType === 'overtime' ? 'emerald' : 'indigo'}
-                        />
-                        <ShiftList title="Ca muốn hủy" items={item.removedShifts} tone="rose" />
-
-                        <button
-                          type="button"
-                          onClick={() => void toggleCurrentSchedule(item)}
-                          className="flex min-h-11 w-full items-center justify-between rounded-xl border border-slate-200 px-3 text-sm font-extrabold dark:border-slate-700"
-                        >
-                          <span>{scheduleOpenId === item.id ? 'Ẩn lịch hiện tại' : 'Xem lịch hiện tại'}</span>
-                          {scheduleLoadingId === item.id
-                            ? <Loader2 className="h-4 w-4 animate-spin" />
-                            : <ChevronDown className={`h-4 w-4 transition ${scheduleOpenId === item.id ? 'rotate-180' : ''}`} />}
-                        </button>
-
-                        {scheduleOpenId === item.id && scheduleLoadingId !== item.id && (
-                          <div className="rounded-2xl bg-slate-50 p-3 dark:bg-slate-800/70">
-                            <p className="mb-2 text-xs font-black uppercase tracking-wide text-muted-foreground">
-                              Lịch hiện tại của {item.employeeName}
-                            </p>
-                            {currentSchedules.length ? (
-                              <div className="grid max-h-56 gap-2 overflow-y-auto sm:grid-cols-2">
-                                {currentSchedules.map((schedule, index) => (
-                                  <div key={schedule.id || index} className="rounded-xl bg-white px-3 py-2 text-sm dark:bg-slate-900">
-                                    <p className="font-bold">{shiftStamp(schedule)}</p>
-                                    <p className="mt-0.5 text-xs text-muted-foreground">{schedule.status}</p>
-                                  </div>
-                                ))}
-                              </div>
-                            ) : (
-                              <p className="text-sm text-muted-foreground">Nhân viên chưa có lịch hiện tại.</p>
-                            )}
-                          </div>
-                        )}
-
-                        <textarea
-                          value={reviewNotes[item.id] || ''}
-                          onChange={(event) => setReviewNotes((current) => ({ ...current, [item.id]: event.target.value }))}
-                          placeholder="Ghi chú phản hồi (bắt buộc nếu từ chối)"
-                          rows={2}
-                          className="w-full resize-none rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-indigo-400 dark:border-slate-700 dark:bg-slate-900"
-                        />
-                        <div className="grid grid-cols-2 gap-2">
-                          <button
-                            type="button"
-                            disabled={processingId === item.id}
-                            onClick={() => void processPending(item, 'Rejected')}
-                            className="flex min-h-11 items-center justify-center gap-2 rounded-xl border border-rose-200 font-extrabold text-rose-600 disabled:opacity-60"
-                          >
-                            <X className="h-4 w-4" /> Từ chối
-                          </button>
-                          <button
-                            type="button"
-                            disabled={processingId === item.id}
-                            onClick={() => void processPending(item, 'Approved')}
-                            className="flex min-h-11 items-center justify-center gap-2 rounded-xl bg-indigo-600 font-extrabold text-white disabled:opacity-60"
-                          >
-                            {processingId === item.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
-                            Duyệt
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                  )}
                 </article>
               )
             })}
             {visibleManagementHistory.map((item) => {
               const createdAt = item.createdAt instanceof Date ? item.createdAt : item.createdAt.toDate()
-              const expanded = expandedId === `history-${item.id}`
               return (
                 <article key={item.id} className="mobile-card overflow-hidden">
                   <button
                     type="button"
-                    aria-expanded={expanded}
-                    onClick={() => setExpandedId(expanded ? null : `history-${item.id}`)}
+                    onClick={() => setSelectedNotification(item)}
                     className="flex w-full gap-3 p-4 text-left"
                   >
                     <div className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-emerald-50 text-emerald-600 dark:bg-emerald-500/10"><CheckCheck className="h-5 w-5" /></div>
                     <div className="min-w-0 flex-1">
                       <h2 className="font-extrabold">{item.title}</h2>
-                      <p className={`mt-1 text-sm text-muted-foreground ${expanded ? '' : 'line-clamp-2'}`}>{item.message}</p>
+                      <p className="mt-1 line-clamp-2 text-sm text-muted-foreground">{item.message}</p>
                       <SubmissionStamp date={createdAt} />
                     </div>
-                    <ChevronDown className={`mt-3 h-5 w-5 shrink-0 text-slate-400 transition ${expanded ? 'rotate-180' : ''}`} />
+                    <ChevronRight className="mt-3 h-5 w-5 shrink-0 text-slate-400" />
                   </button>
                 </article>
               )
@@ -624,6 +562,97 @@ export default function NotificationsPage() {
           </div>
         )}
       </PageContainer>
+
+      {selectedPending && selectedPendingMeta && (
+        <div className="fixed inset-0 z-[75] overflow-y-auto bg-slate-100 dark:bg-slate-950">
+          <header className="sticky top-0 z-10 border-b border-slate-200/70 bg-white/95 backdrop-blur-xl dark:border-white/10 dark:bg-slate-950/95">
+            <div className="mx-auto flex min-h-20 max-w-lg items-center gap-3 px-4 pt-[env(safe-area-inset-top)]">
+              <button type="button" onClick={() => setSelectedPending(null)} className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-slate-100 dark:bg-slate-800" aria-label="Quay lại danh sách thông báo">
+                <ArrowLeft className="h-5 w-5" />
+              </button>
+              <div><h1 className="text-lg font-black">Chi tiết yêu cầu</h1><p className="text-sm text-muted-foreground">Xem thông tin và xử lý công việc</p></div>
+            </div>
+          </header>
+
+          <main className="mx-auto max-w-lg p-3 pb-[calc(2rem+env(safe-area-inset-bottom))]">
+            <article className="overflow-hidden rounded-[2rem] border border-white bg-white shadow-xl shadow-slate-950/10 dark:border-white/10 dark:bg-slate-900">
+              <section className={`bg-gradient-to-br ${selectedPendingMeta.gradient} p-5 text-white`}>
+                <div className="flex items-start gap-3">
+                  <IdentityAvatar name={selectedPending.employeeName} photoURL={selectedPending.employeePhotoURL} icon={selectedPendingMeta.icon} color={selectedPendingMeta.color} />
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-start justify-between gap-2">
+                      <h2 className="text-xl font-black leading-tight">{selectedPending.title}</h2>
+                      <span className="shrink-0 rounded-full bg-white/20 px-2.5 py-1 text-[10px] font-black uppercase tracking-wide backdrop-blur">Cần xử lý</span>
+                    </div>
+                    <p className="mt-2 font-extrabold">{selectedPending.employeeName}{selectedPending.employeeCode ? ` · ${selectedPending.employeeCode}` : ''}</p>
+                    <p className="mt-1 text-sm font-medium text-white/85">{selectedPending.detail}</p>
+                    <p className="mt-2 text-xs font-semibold text-white/80">Gửi lúc {selectedPending.createdAt.toLocaleDateString('vi-VN')} · {selectedPending.createdAt.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}</p>
+                  </div>
+                </div>
+
+                <div className="mt-5 grid grid-cols-2 gap-2">
+                  {selectedPending.employeePhone ? (
+                    <a href={`tel:${selectedPending.employeePhone.replace(/\s/g, '')}`} className="flex min-h-12 items-center justify-center gap-2 rounded-2xl bg-white/15 px-3 text-sm font-extrabold backdrop-blur transition active:scale-[0.98]"><Phone className="h-4 w-4" /> Gọi điện</a>
+                  ) : <span className="flex min-h-12 items-center justify-center gap-2 rounded-2xl bg-white/10 px-3 text-sm font-bold text-white/60"><Phone className="h-4 w-4" /> Chưa có SĐT</span>}
+                  {selectedPending.employeeFacebookURL ? (
+                    <a href={selectedPending.employeeFacebookURL} target="_blank" rel="noreferrer" className="flex min-h-12 items-center justify-center gap-2 rounded-2xl bg-blue-600 px-3 text-sm font-extrabold shadow-lg shadow-blue-950/15 transition active:scale-[0.98]"><ExternalLink className="h-4 w-4" /> Facebook</a>
+                  ) : <span className="flex min-h-12 items-center justify-center gap-2 rounded-2xl bg-white/10 px-3 text-sm font-bold text-white/60"><ExternalLink className="h-4 w-4" /> Chưa có link</span>}
+                </div>
+              </section>
+
+              <section className="space-y-5 p-4">
+                {selectedPending.reason && (
+                  <p className="rounded-2xl bg-slate-50 p-3 text-sm leading-6 text-slate-700 dark:bg-slate-800 dark:text-slate-200"><span className="font-black">Ghi chú:</span> {selectedPending.reason}</p>
+                )}
+                <CompactShiftList
+                  title={selectedPending.staffRequestType === 'overtime' ? 'Ca muốn làm thêm' : selectedPending.type === 'schedule' ? 'Lịch vừa gửi' : 'Ca muốn thêm / đổi'}
+                  items={selectedPending.shifts}
+                  className={selectedPendingMeta.soft}
+                />
+                <CompactShiftList title="Ca muốn hủy" items={selectedPending.removedShifts} className="bg-rose-50 text-rose-800 dark:bg-rose-500/10 dark:text-rose-100" />
+
+                <button type="button" onClick={() => void toggleCurrentSchedule(selectedPending)} className="flex min-h-12 w-full items-center justify-between rounded-2xl border border-slate-200 px-4 text-sm font-extrabold dark:border-slate-700">
+                  <span>{scheduleOpenId === selectedPending.id ? 'Ẩn lịch hiện tại' : 'Xem lịch hiện tại'}</span>
+                  {scheduleLoadingId === selectedPending.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <ChevronDown className={`h-4 w-4 transition ${scheduleOpenId === selectedPending.id ? 'rotate-180' : ''}`} />}
+                </button>
+                {scheduleOpenId === selectedPending.id && scheduleLoadingId !== selectedPending.id && (
+                  selectedCurrentSchedules.length
+                    ? <CompactShiftList title="Lịch hiện tại" items={selectedCurrentSchedules} className="bg-slate-100 text-slate-800 dark:bg-slate-800 dark:text-slate-100" />
+                    : <p className="rounded-2xl bg-slate-50 p-4 text-sm text-muted-foreground dark:bg-slate-800">Nhân viên chưa có lịch hiện tại.</p>
+                )}
+
+                <textarea value={reviewNotes[selectedPending.id] || ''} onChange={(event) => setReviewNotes((current) => ({ ...current, [selectedPending.id]: event.target.value }))} placeholder="Ghi chú phản hồi (bắt buộc nếu từ chối)" rows={3} className="w-full resize-none rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none focus:border-indigo-400 dark:border-slate-700 dark:bg-slate-900" />
+                <div className="grid grid-cols-2 gap-3">
+                  <button type="button" disabled={processingId === selectedPending.id} onClick={() => void processPending(selectedPending, 'Rejected')} className="flex min-h-13 items-center justify-center gap-2 rounded-2xl border border-rose-200 font-extrabold text-rose-600 disabled:opacity-60"><X className="h-4 w-4" /> Từ chối</button>
+                  <button type="button" disabled={processingId === selectedPending.id} onClick={() => void processPending(selectedPending, 'Approved')} className={`flex min-h-13 items-center justify-center gap-2 rounded-2xl bg-gradient-to-r ${selectedPendingMeta.gradient} font-extrabold text-white shadow-lg disabled:opacity-60`}>{processingId === selectedPending.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />} Xác nhận</button>
+                </div>
+              </section>
+            </article>
+          </main>
+        </div>
+      )}
+
+      {selectedNotification && selectedNotificationMeta && (
+        <div className="fixed inset-0 z-[75] overflow-y-auto bg-slate-100 dark:bg-slate-950">
+          <header className="sticky top-0 z-10 border-b border-slate-200/70 bg-white/95 backdrop-blur-xl dark:border-white/10 dark:bg-slate-950/95">
+            <div className="mx-auto flex min-h-20 max-w-lg items-center gap-3 px-4 pt-[env(safe-area-inset-top)]">
+              <button type="button" onClick={() => setSelectedNotification(null)} className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-slate-100 dark:bg-slate-800" aria-label="Quay lại danh sách thông báo"><ArrowLeft className="h-5 w-5" /></button>
+              <div><h1 className="text-lg font-black">Chi tiết thông báo</h1><p className="text-sm text-muted-foreground">Thông tin từ quản lý và hệ thống</p></div>
+            </div>
+          </header>
+          <main className="mx-auto max-w-lg p-3 pb-[calc(2rem+env(safe-area-inset-bottom))]">
+            <article className="overflow-hidden rounded-[2rem] bg-white shadow-xl shadow-slate-950/10 dark:bg-slate-900">
+              <section className={`bg-gradient-to-br ${selectedNotificationMeta.gradient} p-5 text-white`}>
+                <div className="flex items-start gap-3">
+                  <IdentityAvatar name={managementContact?.fullName || 'Quản lý'} photoURL={managementContact?.photoURL} icon={selectedNotificationMeta.icon} color={selectedNotificationMeta.color} />
+                  <div className="min-w-0 flex-1"><p className="text-xs font-bold uppercase tracking-[0.14em] text-white/75">{managementContact?.fullName || 'Trí Candy'}</p><h2 className="mt-1 text-xl font-black leading-tight">{selectedNotification.title}</h2><p className="mt-2 text-xs font-semibold text-white/80">{(selectedNotification.createdAt instanceof Date ? selectedNotification.createdAt : selectedNotification.createdAt.toDate()).toLocaleDateString('vi-VN')} · {(selectedNotification.createdAt instanceof Date ? selectedNotification.createdAt : selectedNotification.createdAt.toDate()).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}</p></div>
+                </div>
+              </section>
+              <section className="p-4"><p className="rounded-2xl bg-slate-50 p-4 text-sm font-medium leading-7 text-slate-700 dark:bg-slate-800 dark:text-slate-200">{selectedNotification.message}</p><button type="button" onClick={() => router.push(destinationFor(selectedNotification))} className={`mt-5 flex min-h-13 w-full items-center justify-between rounded-2xl bg-gradient-to-r ${selectedNotificationMeta.gradient} px-5 font-extrabold text-white shadow-lg`}><span>Mở tính năng liên quan</span><ChevronRight className="h-5 w-5" /></button></section>
+            </article>
+          </main>
+        </div>
+      )}
     </main>
   )
 }

@@ -307,12 +307,12 @@ export default function Page() {
             <div id="employee-mode-actions" aria-hidden={!employeeModeOpen} className={`grid transition-[grid-template-rows,opacity] duration-300 ease-out ${employeeModeOpen ? 'grid-rows-[1fr] opacity-100' : 'grid-rows-[0fr] opacity-0'}`}>
               <div className="overflow-hidden">
                 <div className="grid grid-cols-2 gap-3 pt-3">
-                  {collapsibleStaffFeatures.map(({ title, note, href, icon: Icon, tone }, index) => (
+                  {collapsibleStaffFeatures.map(({ title, note, href, icon: Icon, tone }) => (
                     <Link
                       key={title}
                       href={href}
                       tabIndex={employeeModeOpen ? undefined : -1}
-                      className={`mobile-card flex min-h-[108px] flex-col p-3 transition active:scale-[0.98] ${index === collapsibleStaffFeatures.length - 1 ? 'col-span-2 min-h-[92px]' : ''}`}
+                      className="mobile-card flex min-h-[108px] flex-col p-3 transition active:scale-[0.98]"
                     >
                       <div className={`grid h-10 w-10 place-items-center rounded-xl text-white ${tone}`}><Icon className="h-4.5 w-4.5" /></div>
                       <div className="mt-auto pt-3"><h3 className="text-sm font-extrabold leading-tight">{title}</h3><p className="mt-1 truncate text-[11px] text-muted-foreground">{note}</p></div>

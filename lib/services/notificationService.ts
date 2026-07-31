@@ -36,6 +36,8 @@ export interface ManagementPendingItem {
   employeeName: string
   employeeCode: string
   employeePhotoURL?: string
+  employeePhone?: string
+  employeeFacebookURL?: string
   title: string
   detail: string
   reason?: string
@@ -250,6 +252,8 @@ export function subscribeToManagementPendingItems(
           name: typeof data.fullName === 'string' ? data.fullName : 'Nhân viên',
           code: typeof data.employeeCode === 'string' ? data.employeeCode : '',
           photoURL: typeof data.photoURL === 'string' ? data.photoURL : '',
+          phone: typeof data.phone === 'string' ? data.phone : '',
+          facebookURL: typeof data.facebookUrl === 'string' ? data.facebookUrl : '',
         },
       ])
     )
@@ -257,6 +261,8 @@ export function subscribeToManagementPendingItems(
       name: 'Nhân viên',
       code: employeeId.slice(0, 8),
       photoURL: '',
+      phone: '',
+      facebookURL: '',
     }
     const items: ManagementPendingItem[] = []
 
@@ -285,6 +291,8 @@ export function subscribeToManagementPendingItems(
         employeeName: employee.name,
         employeeCode: employee.code,
         employeePhotoURL: employee.photoURL,
+        employeePhone: employee.phone,
+        employeeFacebookURL: employee.facebookURL,
         title: 'Lịch làm chờ xác nhận',
         detail: `${rows.length} ca · tuần ${weekRange(nextMonday)}`,
         createdAt,
@@ -308,6 +316,8 @@ export function subscribeToManagementPendingItems(
         employeeName: employee.name,
         employeeCode: employee.code,
         employeePhotoURL: employee.photoURL,
+        employeePhone: employee.phone,
+        employeeFacebookURL: employee.facebookURL,
         title: 'Yêu cầu xin nghỉ',
         detail: `${shortDate(data.leaveDate)}${endDate}`,
         reason: typeof data.reason === 'string' && data.reason.trim() ? data.reason : 'Không ghi lý do',
@@ -327,6 +337,8 @@ export function subscribeToManagementPendingItems(
         employeeName: employee.name,
         employeeCode: employee.code,
         employeePhotoURL: employee.photoURL,
+        employeePhone: employee.phone,
+        employeeFacebookURL: employee.facebookURL,
         title: 'Yêu cầu đi trễ',
         detail: `${shortDate(data.date)} · ${minutes}`,
         reason: typeof data.reason === 'string' && data.reason.trim() ? data.reason : 'Không ghi lý do',
@@ -346,6 +358,8 @@ export function subscribeToManagementPendingItems(
         employeeName: employee.name,
         employeeCode: employee.code,
         employeePhotoURL: employee.photoURL,
+        employeePhone: employee.phone,
+        employeeFacebookURL: employee.facebookURL,
         title: 'Yêu cầu ứng lương',
         detail: `${amount.toLocaleString('vi-VN')}đ`,
         reason: typeof data.reason === 'string' && data.reason.trim() ? data.reason : 'Không ghi lý do',
@@ -379,6 +393,8 @@ export function subscribeToManagementPendingItems(
         employeeName: employee.name,
         employeeCode: employee.code,
         employeePhotoURL: employee.photoURL,
+        employeePhone: employee.phone,
+        employeeFacebookURL: employee.facebookURL,
         title,
         detail,
         reason: typeof data.content === 'string' && data.content.trim() ? data.content : undefined,
