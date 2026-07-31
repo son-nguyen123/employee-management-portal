@@ -178,11 +178,20 @@ function readableFields(record: ArchivedRecord) {
 }
 
 function canonicalFiles(files: ArchiveFileSummary[]) {
+  const fileTime = (file: ArchiveFileSummary) => {
+    const value = Date.parse(file.modifiedTime || file.createdTime || '')
+    return Number.isNaN(value) ? 0 : value
+  }
   const byWeek = new Map<string, ArchiveFileSummary>()
   files.forEach((file) => {
     const week = sourceWeekKey(file.archiveKey)
     const current = byWeek.get(week)
-    if (!current || (current.archiveKey.includes('-test-') && !file.archiveKey.includes('-test-'))) {
+    const currentIsTest = current?.archiveKey.includes('-test-') ?? false
+    const fileIsTest = file.archiveKey.includes('-test-')
+    const shouldReplace = !current ||
+      (currentIsTest && !fileIsTest) ||
+      (currentIsTest === fileIsTest && (fileTime(file) > fileTime(current) || (fileTime(file) === fileTime(current) && file.archiveKey > current.archiveKey)))
+    if (shouldReplace) {
       byWeek.set(week, file)
     }
   })
@@ -217,6 +226,7 @@ export default function AdminArchivePage() {
   const monthRailRef = useRef<HTMLDivElement>(null)
   const centeredYearRef = useRef<number | null>(null)
   const filterRequestIdRef = useRef(0)
+  const visibleFiles = useMemo(() => canonicalFiles(files), [files])
 
   const loadFiles = useCallback(async () => {
     if (!authUser) return
@@ -240,7 +250,7 @@ export default function AdminArchivePage() {
 
   const monthGroups = useMemo(() => {
     const groups = new Map<string, ArchiveFileSummary[]>()
-    files.forEach((file) => {
+    visibleFiles.forEach((file) => {
       const startKey = monthKey(file)
       const end = new Date(`${sourceWeekKey(file.archiveKey)}T12:00:00+07:00`)
       end.setDate(end.getDate() + 6)
@@ -256,7 +266,7 @@ export default function AdminArchivePage() {
         files: entries.sort((left, right) => right.archiveKey.localeCompare(left.archiveKey)),
         weekKeys: [...new Set(entries.map((file) => sourceWeekKey(file.archiveKey)))].sort(),
       }))
-  }, [files])
+  }, [visibleFiles])
 
   useEffect(() => {
     if (!selectedBrowseMonth && !loading) {
@@ -527,7 +537,7 @@ export default function AdminArchivePage() {
         <section className="overflow-hidden rounded-[1.75rem] bg-slate-950 p-4 text-white shadow-xl shadow-slate-950/15">
           <div className="flex items-start gap-3">
             <div className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-indigo-600"><Archive className="h-5 w-5" /></div>
-            <div className="min-w-0 flex-1"><p className="text-[11px] font-bold uppercase tracking-wider text-indigo-300">Lưu trữ dài hạn</p><h1 className="mt-0.5 text-xl font-black">{files.length} bản · {monthGroups.length} tháng</h1><p className="mt-1 text-xs leading-5 text-slate-300">Dữ liệu tuần đã lưu an toàn trên Google Drive.</p></div>
+            <div className="min-w-0 flex-1"><p className="text-[11px] font-bold uppercase tracking-wider text-indigo-300">Lưu trữ dài hạn</p><h1 className="mt-0.5 text-xl font-black">{visibleFiles.length} bản · {monthGroups.length} tháng</h1><p className="mt-1 text-xs leading-5 text-slate-300">Dữ liệu tuần đã lưu an toàn trên Google Drive.</p></div>
             <button type="button" onClick={() => void loadFiles()} disabled={loading} aria-label="Tải lại kho dữ liệu" className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-white/10 disabled:opacity-50"><RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} /></button>
           </div>
         </section>
