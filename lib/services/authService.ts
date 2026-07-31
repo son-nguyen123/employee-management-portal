@@ -79,7 +79,7 @@ export async function signInWithGoogle(): Promise<User> {
     if (returnTimer) clearTimeout(returnTimer)
     returnTimer = setTimeout(() => {
       if (!auth.currentUser) rejectWhenIncomplete?.(incompleteError)
-    }, 12000)
+    }, 1800)
   }
 
   try {

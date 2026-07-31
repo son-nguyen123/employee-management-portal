@@ -8,6 +8,7 @@ interface HeaderProps {
   title: string
   subtitle?: string
   showBackButton?: boolean
+  backHref?: string
   rightAction?: React.ReactNode
   className?: string
 }
@@ -18,6 +19,7 @@ const Header = React.forwardRef<HTMLDivElement, HeaderProps>(
       title,
       subtitle,
       showBackButton = true,
+      backHref,
       rightAction,
       className = '',
     },
@@ -34,7 +36,7 @@ const Header = React.forwardRef<HTMLDivElement, HeaderProps>(
           <div className="flex items-center gap-3 flex-1">
             {showBackButton && (
               <button
-                onClick={() => router.back()}
+                onClick={() => backHref ? router.replace(backHref) : router.back()}
                 className="grid h-11 w-11 place-items-center rounded-2xl bg-slate-100 transition-colors active:bg-slate-200 dark:bg-slate-800"
                 aria-label="Quay lại"
               >

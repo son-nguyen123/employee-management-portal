@@ -14,6 +14,7 @@ import {
 } from 'lucide-react'
 import Link from 'next/link'
 import { useAuth } from '@/lib/hooks/useAuth'
+import { profileImageUrl } from '@/lib/utils/profileImage'
 import { Header } from '@/components/layout/header'
 import { PageContainer } from '@/components/layout/page-container'
 import {
@@ -143,7 +144,7 @@ export default function ProfilePage() {
           <div className="bg-slate-950 p-6 text-center text-white">
             <div className="mx-auto grid h-20 w-20 place-items-center overflow-hidden rounded-[1.75rem] bg-indigo-600">
               {employee?.photoURL || authUser?.photoURL
-                ? <img src={employee?.photoURL || authUser?.photoURL || ''} alt="" className="h-full w-full object-cover" />
+                ? <img src={profileImageUrl(employee?.photoURL || authUser?.photoURL)} alt="" className="h-full w-full object-cover" />
                 : <UserRound className="h-9 w-9" />}
             </div>
             <h2 className="mt-4 text-xl font-extrabold">

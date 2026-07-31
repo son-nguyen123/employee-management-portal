@@ -238,6 +238,15 @@
     @apply min-h-12 w-full rounded-2xl border border-slate-200 bg-white px-4 text-base outline-none transition focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 dark:border-slate-700 dark:bg-slate-900;
   }
 
+  .mobile-field[type='date'],
+  .mobile-field[type='month'] {
+    min-width: 0;
+    max-width: 100%;
+    box-sizing: border-box;
+    -webkit-appearance: none;
+    appearance: none;
+  }
+
   .mobile-primary-button {
     @apply flex min-h-12 w-full items-center justify-center gap-2 rounded-2xl bg-indigo-600 px-4 font-bold text-white shadow-lg shadow-indigo-600/20 transition active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50;
   }

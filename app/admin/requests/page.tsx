@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
-import { AlertTriangle, CalendarPlus, Check, ChevronDown, CircleDollarSign, Clock3, Download, ExternalLink, FileText, Loader2, MessageSquareText, Phone, Plus, UsersRound, X } from 'lucide-react'
+import { AlertTriangle, CalendarPlus, Check, ChevronDown, ChevronLeft, ChevronRight, CircleDollarSign, Clock3, Download, ExternalLink, FileText, Loader2, MessageSquareText, Phone, Plus, UsersRound, X } from 'lucide-react'
 import { useAuth } from '@/lib/hooks/useAuth'
 import { auth } from '@/lib/firebase'
 import { subscribeToPendingLeaveRequests, updateLeaveStatus } from '@/lib/services/leaveService'
@@ -277,6 +277,12 @@ export default function AdminRequestsPage() {
     }
   }
 
+  const shiftPenaltyExportMonth = (offset: number) => {
+    const [year, month] = penaltyExportMonth.split('-').map(Number)
+    const next = new Date(year, month - 1 + offset, 1)
+    setPenaltyExportMonth(`${next.getFullYear()}-${String(next.getMonth() + 1).padStart(2, '0')}`)
+  }
+
   const openPenaltyManager = (penalty: Penalty, mode: 'adjust' | 'cancel') => {
     setEditingPenalty({ penalty, mode })
     setManagedAmount(mode === 'adjust' ? String(penalty.amount) : '')
@@ -353,9 +359,15 @@ export default function AdminRequestsPage() {
               <button type="button" onClick={() => setManualPenaltyOpen((current) => !current)} className="flex min-h-12 items-center justify-center gap-2 rounded-2xl bg-rose-600 px-3 text-sm font-bold text-white"><Plus className="h-4 w-4" /> Ghi phạt</button>
               <button type="button" onClick={() => void exportPenalties()} disabled={exportingPenalties} className="flex min-h-12 items-center justify-center gap-2 rounded-2xl border border-rose-200 bg-white px-3 text-sm font-bold text-rose-700 disabled:opacity-50 dark:bg-slate-900"><Download className="h-4 w-4" /> {exportingPenalties ? 'Đang xuất...' : 'Xuất phạt'}</button>
             </div>
-            <label className="block text-xs font-bold text-muted-foreground">Tháng xuất
-              <input type="month" value={penaltyExportMonth} onChange={(event) => setPenaltyExportMonth(event.target.value)} className="mobile-field mt-2" />
-            </label>
+            <div className="flex items-center justify-between rounded-2xl border border-slate-200 bg-white p-1.5 shadow-sm dark:border-slate-700 dark:bg-slate-900">
+              <button type="button" onClick={() => shiftPenaltyExportMonth(-1)} aria-label="Tháng trước" className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300"><ChevronLeft className="h-4 w-4" /></button>
+              <label className="relative min-w-0 cursor-pointer px-3 text-center">
+                <span className="block text-[10px] font-bold uppercase tracking-wider text-slate-400">Tháng xuất</span>
+                <span className="mt-0.5 block text-sm font-black">Tháng {Number(penaltyExportMonth.slice(5))}/{penaltyExportMonth.slice(0, 4)}</span>
+                <input type="month" value={penaltyExportMonth} onChange={(event) => event.target.value && setPenaltyExportMonth(event.target.value)} aria-label="Chọn tháng xuất phạt" className="absolute inset-0 h-full w-full cursor-pointer opacity-0" />
+              </label>
+              <button type="button" onClick={() => shiftPenaltyExportMonth(1)} aria-label="Tháng sau" className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300"><ChevronRight className="h-4 w-4" /></button>
+            </div>
           </div>
         )}
         {pageMode === 'penalties' && penaltyTab === 'employees' && (

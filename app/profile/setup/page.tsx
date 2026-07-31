@@ -2,11 +2,12 @@
 
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Camera, CreditCard, IdCard, ImageUp, Landmark, Link as LinkIcon, Loader2, LogOut, Phone, Save, UserRound } from 'lucide-react'
+import { Camera, Check, CreditCard, Crop, IdCard, ImageUp, Landmark, Link as LinkIcon, Loader2, LogOut, Move, Phone, Save, UserRound, X } from 'lucide-react'
 import { useAuth } from '@/lib/hooks/useAuth'
 import { auth } from '@/lib/firebase'
 import { createEmployee, updateEmployee } from '@/lib/services/employeeService'
 import { updateUserProfile } from '@/lib/services/authService'
+import { profileImageUrl } from '@/lib/utils/profileImage'
 
 export default function ProfileSetupPage() {
   const router = useRouter()
@@ -24,6 +25,9 @@ export default function ProfileSetupPage() {
   const [saving, setSaving] = useState(false)
   const [signingOut, setSigningOut] = useState(false)
   const [uploadingImage, setUploadingImage] = useState(false)
+  const [pendingImage, setPendingImage] = useState<{ file: File; url: string; width: number; height: number } | null>(null)
+  const [cropPosition, setCropPosition] = useState({ x: 50, y: 50 })
+  const [cropZoom, setCropZoom] = useState(1)
   const [message, setMessage] = useState('')
 
   useEffect(() => {
@@ -44,15 +48,63 @@ export default function ProfileSetupPage() {
   const setValue = (field: keyof typeof form, value: string) =>
     setForm((current) => ({ ...current, [field]: value }))
 
-  const uploadProfileImage = async (file?: File) => {
-    if (!authUser || !file) return
+  const closeImageEditor = () => {
+    if (pendingImage) URL.revokeObjectURL(pendingImage.url)
+    setPendingImage(null)
+    setCropPosition({ x: 50, y: 50 })
+    setCropZoom(1)
+  }
+
+  const chooseProfileImage = async (file?: File) => {
+    if (!file) return
+    if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type) || file.size > 5 * 1024 * 1024) {
+      setMessage('Ảnh phải là JPG, PNG hoặc WebP và không quá 5 MB.')
+      return
+    }
+    const url = URL.createObjectURL(file)
+    const image = new Image()
+    image.src = url
+    try {
+      await image.decode()
+      if (pendingImage) URL.revokeObjectURL(pendingImage.url)
+      setPendingImage({ file, url, width: image.naturalWidth, height: image.naturalHeight })
+      setCropPosition({ x: 50, y: 50 })
+      setCropZoom(1)
+      setMessage('')
+    } catch {
+      URL.revokeObjectURL(url)
+      setMessage('Không thể đọc ảnh này. Vui lòng chọn ảnh khác.')
+    }
+  }
+
+  const uploadProfileImage = async () => {
+    if (!authUser || !pendingImage) return
     setUploadingImage(true)
     setMessage('')
     try {
+      const outputSize = 1024
+      const scale = Math.max(outputSize / pendingImage.width, outputSize / pendingImage.height) * cropZoom
+      const sourceWidth = outputSize / scale
+      const sourceHeight = outputSize / scale
+      const sourceX = (pendingImage.width - sourceWidth) * (cropPosition.x / 100)
+      const sourceY = (pendingImage.height - sourceHeight) * (cropPosition.y / 100)
+      const source = new Image()
+      source.src = pendingImage.url
+      await source.decode()
+      const canvas = document.createElement('canvas')
+      canvas.width = outputSize
+      canvas.height = outputSize
+      const context = canvas.getContext('2d')
+      if (!context) throw new Error('Thiết bị không hỗ trợ chỉnh ảnh.')
+      context.drawImage(source, sourceX, sourceY, sourceWidth, sourceHeight, 0, 0, outputSize, outputSize)
+      const contentType = pendingImage.file.type === 'image/png' ? 'image/png' : 'image/jpeg'
+      const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, contentType, 0.9))
+      if (!blob) throw new Error('Không thể xử lý ảnh đã chọn.')
+
       const token = await auth.currentUser?.getIdToken()
       if (!token) throw new Error('Phiên đăng nhập đã hết hạn.')
       const body = new FormData()
-      body.set('image', file)
+      body.set('image', new File([blob], `profile.${contentType === 'image/png' ? 'png' : 'jpg'}`, { type: contentType }))
       const response = await fetch('/api/profile/image', {
         method: 'POST',
         headers: { authorization: `Bearer ${token}` },
@@ -61,7 +113,8 @@ export default function ProfileSetupPage() {
       const data = await response.json().catch(() => null) as { ok?: boolean; url?: string; error?: string } | null
       if (!response.ok || !data?.url) throw new Error(data?.error || 'Chưa thể tải ảnh lên.')
       setValue('photoURL', data.url)
-      setMessage('Ảnh đã được lưu trên Google Drive.')
+      setMessage('Ảnh đã được căn chỉnh và lưu trên Google Drive.')
+      closeImageEditor()
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'Chưa thể tải ảnh lên Google Drive.')
     } finally {
@@ -152,7 +205,7 @@ export default function ProfileSetupPage() {
       <section className="mx-auto max-w-md overflow-hidden rounded-[2rem] border border-white/80 bg-white shadow-xl shadow-indigo-950/10 dark:border-white/10 dark:bg-slate-900">
         <div className="bg-slate-950 p-6 text-center text-white">
           <div className="mx-auto grid h-16 w-16 place-items-center overflow-hidden rounded-3xl bg-indigo-600">
-            {form.photoURL ? <img src={form.photoURL} alt="" className="h-full w-full object-cover" /> : <UserRound className="h-7 w-7" />}
+            {form.photoURL ? <img src={profileImageUrl(form.photoURL)} alt="" className="h-full w-full object-cover" /> : <UserRound className="h-7 w-7" />}
           </div>
           <h1 className="mt-4 text-2xl font-black">Hoàn thiện hồ sơ</h1>
           <p className="mt-1 text-sm leading-6 text-slate-300">Chỉ cần làm một lần để quản lý nhận diện đúng tài khoản của bạn.</p>
@@ -163,14 +216,23 @@ export default function ProfileSetupPage() {
           <div className="rounded-3xl border border-indigo-100 bg-indigo-50/70 p-4 dark:border-indigo-500/20 dark:bg-indigo-500/10">
             <div className="flex items-center gap-3">
               <div className="grid h-12 w-12 shrink-0 place-items-center overflow-hidden rounded-2xl bg-white text-indigo-600 shadow-sm dark:bg-slate-900">
-                {form.photoURL ? <img src={form.photoURL} alt="" className="h-full w-full object-cover" /> : <Camera className="h-5 w-5" />}
+                {form.photoURL ? <img src={profileImageUrl(form.photoURL)} alt="" className="h-full w-full object-cover" /> : <Camera className="h-5 w-5" />}
               </div>
               <div className="min-w-0 flex-1"><h2 className="font-extrabold">Ảnh đại diện</h2><p className="mt-1 text-xs leading-5 text-muted-foreground">JPG, PNG hoặc WebP · tối đa 5 MB. Ảnh lưu trên Google Drive, Firebase chỉ giữ đường dẫn.</p></div>
             </div>
             <label className="mt-3 flex min-h-12 cursor-pointer items-center justify-center gap-2 rounded-2xl bg-indigo-600 px-4 text-sm font-bold text-white">
               {uploadingImage ? <Loader2 className="h-4 w-4 animate-spin" /> : <ImageUp className="h-4 w-4" />}
               {uploadingImage ? 'Đang tải lên...' : form.photoURL ? 'Đổi ảnh' : 'Chọn ảnh'}
-              <input type="file" accept="image/jpeg,image/png,image/webp" className="hidden" disabled={uploadingImage || saving || signingOut} onChange={(event) => void uploadProfileImage(event.target.files?.[0])} />
+              <input
+                type="file"
+                accept="image/jpeg,image/png,image/webp"
+                className="hidden"
+                disabled={uploadingImage || saving || signingOut}
+                onChange={(event) => {
+                  void chooseProfileImage(event.target.files?.[0])
+                  event.target.value = ''
+                }}
+              />
             </label>
           </div>
           {fields.map(({ key, label, placeholder, icon: Icon }) => (
@@ -224,6 +286,53 @@ export default function ProfileSetupPage() {
           </button>
         </form>
       </section>
+      {pendingImage && (() => {
+        const previewSize = 260
+        const previewScale = Math.max(previewSize / pendingImage.width, previewSize / pendingImage.height) * cropZoom
+        const renderedWidth = pendingImage.width * previewScale
+        const renderedHeight = pendingImage.height * previewScale
+        return (
+          <div className="fixed inset-0 z-[90] flex items-end justify-center bg-slate-950/65 backdrop-blur-sm sm:items-center sm:p-4" onClick={() => !uploadingImage && closeImageEditor()}>
+            <section role="dialog" aria-modal="true" aria-labelledby="profile-image-editor-title" className="w-full max-w-md overflow-hidden rounded-t-[2rem] bg-white shadow-2xl dark:bg-slate-900 sm:rounded-[2rem]" onClick={(event) => event.stopPropagation()}>
+              <header className="flex items-center gap-3 border-b border-slate-100 p-4 dark:border-white/10">
+                <div className="grid h-11 w-11 place-items-center rounded-2xl bg-indigo-50 text-indigo-600 dark:bg-indigo-500/10"><Crop className="h-5 w-5" /></div>
+                <div className="min-w-0 flex-1"><p className="text-xs font-bold uppercase tracking-wider text-indigo-600">Ảnh đại diện</p><h2 id="profile-image-editor-title" className="text-lg font-black">Căn vị trí ảnh</h2></div>
+                <button type="button" onClick={closeImageEditor} disabled={uploadingImage} aria-label="Đóng chỉnh ảnh" className="grid h-10 w-10 place-items-center rounded-xl bg-slate-100 disabled:opacity-50 dark:bg-slate-800"><X className="h-4 w-4" /></button>
+              </header>
+              <div className="p-4">
+                <div className="mx-auto overflow-hidden rounded-full bg-slate-100 ring-4 ring-indigo-100 dark:bg-slate-800 dark:ring-indigo-500/20" style={{ width: previewSize, height: previewSize }}>
+                  <div className="relative h-full w-full overflow-hidden">
+                    <img
+                      src={pendingImage.url}
+                      alt="Xem trước ảnh đại diện"
+                      className="pointer-events-none absolute max-w-none select-none"
+                      style={{
+                        width: renderedWidth,
+                        height: renderedHeight,
+                        left: (previewSize - renderedWidth) * (cropPosition.x / 100),
+                        top: (previewSize - renderedHeight) * (cropPosition.y / 100),
+                      }}
+                    />
+                  </div>
+                </div>
+                <p className="mt-4 flex items-center justify-center gap-2 text-xs font-semibold text-muted-foreground"><Move className="h-4 w-4" /> Điều chỉnh để khuôn mặt nằm giữa vòng tròn</p>
+                <div className="mt-4 space-y-3 rounded-2xl bg-slate-50 p-3 dark:bg-slate-800">
+                  <label className="block text-xs font-bold">Trái – phải<input type="range" min="0" max="100" value={cropPosition.x} onChange={(event) => setCropPosition((current) => ({ ...current, x: Number(event.target.value) }))} className="mt-2 w-full accent-indigo-600" /></label>
+                  <label className="block text-xs font-bold">Lên – xuống<input type="range" min="0" max="100" value={cropPosition.y} onChange={(event) => setCropPosition((current) => ({ ...current, y: Number(event.target.value) }))} className="mt-2 w-full accent-indigo-600" /></label>
+                  <label className="block text-xs font-bold">Phóng to<input type="range" min="1" max="2.5" step="0.05" value={cropZoom} onChange={(event) => setCropZoom(Number(event.target.value))} className="mt-2 w-full accent-indigo-600" /></label>
+                </div>
+              </div>
+              <footer className="grid grid-cols-[auto_1fr] gap-2 border-t border-slate-100 p-4 pb-[max(1rem,env(safe-area-inset-bottom))] dark:border-white/10">
+                <button type="button" onClick={closeImageEditor} disabled={uploadingImage} className="min-h-12 rounded-2xl border border-slate-200 px-4 font-bold disabled:opacity-50 dark:border-slate-700">Chọn lại</button>
+                <button type="button" onClick={() => void uploadProfileImage()} disabled={uploadingImage} className="mobile-primary-button">
+                  {uploadingImage ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
+                  {uploadingImage ? 'Đang lưu ảnh...' : 'Xác nhận ảnh'}
+                </button>
+              </footer>
+            </section>
+          </div>
+        )
+      })()}
     </main>
   )
 }

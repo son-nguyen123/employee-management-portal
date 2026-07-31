@@ -8,6 +8,7 @@ const PROFILE_IMAGE_FOLDER_NAME = 'Employee Portal - Profile Images'
 export interface DriveFile {
   id: string
   name: string
+  mimeType?: string
   size?: string
   md5Checksum?: string
   webViewLink?: string
@@ -213,6 +214,41 @@ export async function storeProfileImage(params: {
   return {
     id: file.id,
     url: `https://drive.google.com/uc?export=view&id=${encodeURIComponent(file.id)}`,
+  }
+}
+
+export async function readProfileImage(fileId: string): Promise<{
+  contentType: string
+  bytes: ArrayBuffer
+}> {
+  if (!/^[a-zA-Z0-9_-]{10,200}$/.test(fileId)) {
+    throw new Error('Invalid Google Drive profile image ID.')
+  }
+  const accessToken = await googleAccessToken()
+  const metadata = await driveRequest<DriveFile>(
+    accessToken,
+    `/files/${encodeURIComponent(fileId)}?fields=id,name,mimeType,appProperties`,
+  )
+  if (
+    metadata.appProperties?.application !== 'employee-management-portal' ||
+    metadata.appProperties.portalProfileImage !== 'true' ||
+    !['image/jpeg', 'image/png', 'image/webp'].includes(metadata.mimeType || '')
+  ) {
+    throw new Error('The requested file is not an Employee Portal profile image.')
+  }
+  const response = await fetch(
+    `${DRIVE_API}/files/${encodeURIComponent(fileId)}?alt=media`,
+    {
+      headers: { authorization: `Bearer ${accessToken}` },
+      cache: 'no-store',
+    },
+  )
+  if (!response.ok) {
+    throw new Error(`Google Drive profile image download failed (${response.status}).`)
+  }
+  return {
+    contentType: metadata.mimeType!,
+    bytes: await response.arrayBuffer(),
   }
 }
 

@@ -260,7 +260,7 @@ export default function AdminDashboardPage() {
 
   return (
     <main className="min-h-screen pb-8">
-      <Header title="Trung tâm quản lý" subtitle="Duyệt lịch và theo dõi nhân viên" />
+      <Header title="Trung tâm quản lý" subtitle="Duyệt lịch và theo dõi nhân viên" backHref="/" />
       <PageContainer maxWidth="2xl">
         <section className="grid grid-cols-3 gap-2">
           {[

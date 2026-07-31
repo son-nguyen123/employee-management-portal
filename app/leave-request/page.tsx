@@ -202,7 +202,7 @@ export default function LeaveRequestPage() {
           </p>
         </section>
 
-        {(!hasPendingRequest || editingId) && <form onSubmit={submit} className="mobile-card p-4 sm:p-6">
+        {(!hasPendingRequest || editingId) && <form onSubmit={submit} className="mobile-card min-w-0 overflow-hidden p-4 sm:p-6">
           <div className="grid grid-cols-2 gap-2 rounded-2xl bg-slate-100 p-1 dark:bg-slate-800">
             {[
               { value: 'short' as const, label: 'Nghỉ ngắn hạn', note: 'Một ngày' },
@@ -240,14 +240,14 @@ export default function LeaveRequestPage() {
 
           {duration === 'long' ? (
             <>
-              <div className="mt-5 grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2">
-                <label className="min-w-0 text-sm font-bold">
+              <div className="mt-5 grid min-w-0 grid-cols-1 gap-3 overflow-hidden sm:grid-cols-2">
+                <label className="block min-w-0 max-w-full overflow-hidden text-sm font-bold">
                   Từ ngày
-                  <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} className="mobile-field mt-2 min-w-0" required />
+                  <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} className="mobile-field mt-2 block min-w-0 max-w-full overflow-hidden !px-3" required />
                 </label>
-              <label className="min-w-0 text-sm font-bold">
+              <label className="block min-w-0 max-w-full overflow-hidden text-sm font-bold">
                 Đến ngày
-                <input type="date" value={endDate} min={startDate} onChange={(e) => setEndDate(e.target.value)} className="mobile-field mt-2 min-w-0" required />
+                <input type="date" value={endDate} min={startDate} onChange={(e) => setEndDate(e.target.value)} className="mobile-field mt-2 block min-w-0 max-w-full overflow-hidden !px-3" required />
               </label>
               </div>
               {!!longLeaveShifts.length && (

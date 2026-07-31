@@ -153,7 +153,7 @@ export function LoginForm() {
               className="flex min-h-12 w-full items-center justify-center gap-2 rounded-2xl border border-indigo-200 bg-indigo-50/70 px-4 font-bold text-indigo-700 transition active:scale-[.98] disabled:opacity-50 dark:border-indigo-500/30 dark:bg-indigo-500/10 dark:text-indigo-200"
             >
               {loadingAction === 'google' && <Loader2 className="h-4 w-4 animate-spin" />}
-              {loadingAction === 'google' ? 'Đang mở Google...' : 'Truy cập Trí Candy bằng Google'}
+              {loadingAction === 'google' ? 'Đang chờ Google...' : 'Truy cập Trí Candy bằng Google'}
             </button>
 
             <div className="text-center text-sm">

@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server'
 import { authenticateRequest } from '@/lib/server/api-auth'
-import { storeProfileImage } from '@/lib/server/google-drive-archive'
+import { readProfileImage, storeProfileImage } from '@/lib/server/google-drive-archive'
 
 export const runtime = 'nodejs'
 
@@ -36,9 +36,27 @@ export async function POST(request: Request) {
       contentType: image.type as 'image/jpeg' | 'image/png' | 'image/webp',
       bytes: Buffer.from(bytes),
     })
-    return NextResponse.json({ ok: true, url: result.url })
+    const displayUrl = new URL('/api/profile/image', request.url)
+    displayUrl.searchParams.set('fileId', result.id)
+    return NextResponse.json({ ok: true, url: displayUrl.toString() })
   } catch (error) {
     console.error('Google Drive profile image upload failed:', error)
     return NextResponse.json({ error: 'Chưa thể tải ảnh lên Google Drive.' }, { status: 500 })
+  }
+}
+
+export async function GET(request: Request) {
+  try {
+    const fileId = new URL(request.url).searchParams.get('fileId') || ''
+    const image = await readProfileImage(fileId)
+    return new Response(image.bytes, {
+      headers: {
+        'content-type': image.contentType,
+        'cache-control': 'public, max-age=3600, stale-while-revalidate=86400',
+        'x-content-type-options': 'nosniff',
+      },
+    })
+  } catch {
+    return new Response(null, { status: 404 })
   }
 }
