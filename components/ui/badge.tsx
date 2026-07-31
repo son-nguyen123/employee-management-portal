@@ -22,7 +22,7 @@ const Badge = React.forwardRef<HTMLSpanElement, BadgeProps>(
       primary: 'bg-primary text-primary-foreground',
       success: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900 dark:text-emerald-100',
       warning: 'bg-amber-100 text-amber-700 dark:bg-amber-900 dark:text-amber-100',
-      destructive: 'bg-destructive/10 text-destructive',
+      destructive: 'bg-rose-500 text-white shadow-sm ring-2 ring-white dark:ring-slate-950',
       secondary: 'bg-muted text-muted-foreground',
       outline: 'border border-border bg-transparent text-foreground',
     }

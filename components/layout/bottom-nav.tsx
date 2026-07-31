@@ -51,7 +51,7 @@ const BottomNav = React.forwardRef<HTMLDivElement, BottomNavProps>(
                     <Badge
                       variant="destructive"
                       size="sm"
-                      className="absolute -right-1.5 -top-1.5 flex h-5 min-w-5 items-center justify-center rounded-full px-1 text-[10px] font-black"
+                      className="absolute -right-1.5 -top-1.5 z-20 flex h-5 min-w-5 items-center justify-center rounded-full px-1 text-[10px] font-black"
                     >
                       {item.badge}
                     </Badge>

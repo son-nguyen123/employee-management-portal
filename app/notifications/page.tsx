@@ -114,7 +114,7 @@ function IdentityAvatar({
     <div className="relative h-12 w-12 shrink-0">
       <div className="grid h-12 w-12 place-items-center overflow-hidden rounded-2xl bg-slate-900 text-sm font-black text-white shadow-sm">
         {photoURL
-          ? <img src={profileImageUrl(photoURL)} alt={`Ảnh đại diện của ${name}`} className="h-full w-full object-cover" />
+          ? <img src={profileImageUrl(photoURL)} alt={`Ảnh đại diện của ${name}`} width={48} height={48} decoding="async" className="h-full w-full object-cover" />
           : name ? initials(name) : <UserRound className="h-5 w-5" />}
       </div>
       <span className={`absolute -bottom-1 -right-1 grid h-6 w-6 place-items-center rounded-lg border-2 border-white text-white shadow-sm dark:border-slate-900 ${color}`}>

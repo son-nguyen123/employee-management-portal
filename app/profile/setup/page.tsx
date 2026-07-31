@@ -83,7 +83,7 @@ export default function ProfileSetupPage() {
     setUploadingImage(true)
     setMessage('')
     try {
-      const outputSize = 1024
+      const outputSize = 512
       const scale = Math.max(outputSize / pendingImage.width, outputSize / pendingImage.height) * cropZoom
       const sourceWidth = outputSize / scale
       const sourceHeight = outputSize / scale
@@ -98,14 +98,14 @@ export default function ProfileSetupPage() {
       const context = canvas.getContext('2d')
       if (!context) throw new Error('Thiết bị không hỗ trợ chỉnh ảnh.')
       context.drawImage(source, sourceX, sourceY, sourceWidth, sourceHeight, 0, 0, outputSize, outputSize)
-      const contentType = pendingImage.file.type === 'image/png' ? 'image/png' : 'image/jpeg'
-      const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, contentType, 0.9))
+      const contentType = 'image/webp'
+      const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, contentType, 0.82))
       if (!blob) throw new Error('Không thể xử lý ảnh đã chọn.')
 
       const token = await auth.currentUser?.getIdToken()
       if (!token) throw new Error('Phiên đăng nhập đã hết hạn.')
       const body = new FormData()
-      body.set('image', new File([blob], `profile.${contentType === 'image/png' ? 'png' : 'jpg'}`, { type: contentType }))
+      body.set('image', new File([blob], 'profile.webp', { type: contentType }))
       const response = await fetch('/api/profile/image', {
         method: 'POST',
         headers: { authorization: `Bearer ${token}` },

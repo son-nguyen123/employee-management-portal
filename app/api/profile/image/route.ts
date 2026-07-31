@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { FieldValue } from 'firebase-admin/firestore'
+import sharp from 'sharp'
 import { ApiError, authenticateRequest } from '@/lib/server/api-auth'
 import { adminAuth, adminDb } from '@/lib/server/firebase-admin'
 import {
@@ -87,10 +88,15 @@ export async function GET(request: Request) {
   try {
     const fileId = new URL(request.url).searchParams.get('fileId') || ''
     const image = await readProfileImage(fileId)
-    return new Response(image.bytes, {
+    const optimized = await sharp(image.bytes)
+      .rotate()
+      .resize(256, 256, { fit: 'cover', position: 'centre', withoutEnlargement: true })
+      .webp({ quality: 80, effort: 3 })
+      .toBuffer()
+    return new Response(optimized, {
       headers: {
-        'content-type': image.contentType,
-        'cache-control': 'public, max-age=3600, stale-while-revalidate=86400',
+        'content-type': 'image/webp',
+        'cache-control': 'public, max-age=31536000, s-maxage=31536000, immutable',
         'x-content-type-options': 'nosniff',
       },
     })

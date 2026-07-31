@@ -33,6 +33,7 @@ import { getAllSchedules, getEmployeeSchedules, getSchedulesByDateRange } from '
 import { getPreviewSchedules } from '@/lib/services/previewWorkflow'
 import { getWeeklyScheduleTarget } from '@/lib/services/managementSettingsService'
 import { SkeletonLoader } from '@/components/ui/skeleton-loader'
+import { profileImageUrl } from '@/lib/utils/profileImage'
 
 const staffFeatures = [
   { title: 'Đăng ký lịch làm', note: 'Chọn ca cho tuần tiếp theo', href: '/schedule', icon: CalendarDays, tone: 'bg-indigo-600' },
@@ -163,6 +164,7 @@ export default function Page() {
   if (!authUser) return null
 
   const displayName = employee?.fullName || authUser.displayName || 'Nhân viên'
+  const avatarURL = profileImageUrl(employee?.photoURL || authUser.photoURL)
   const isAdmin = role === 'admin' || role === 'manager'
   const adminFeatures = [
     { title: 'Điều hành', note: `${adminStats.pending} lịch chờ duyệt · yêu cầu khác`, href: '/admin/dashboard#schedules', icon: ShieldCheck },
@@ -178,29 +180,31 @@ export default function Page() {
 
   return (
     <main className="min-h-screen pb-24 md:pb-8">
-      <section className="overflow-hidden rounded-b-[2rem] bg-slate-950 px-4 pb-7 pt-[max(1rem,env(safe-area-inset-top))] text-white">
+      <section className="overflow-hidden rounded-b-[2rem] bg-gradient-to-br from-rose-50 via-white to-indigo-100 px-4 pb-7 pt-[max(1rem,env(safe-area-inset-top))] text-slate-950 dark:from-slate-950 dark:via-slate-950 dark:to-indigo-950 dark:text-white">
         <div className="mx-auto max-w-2xl">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
-              <div className="grid h-11 w-11 place-items-center rounded-2xl bg-white/10">
-                {isAdmin ? <ShieldCheck className="h-5 w-5" /> : <UserRound className="h-5 w-5" />}
+              <div className="grid h-12 w-12 shrink-0 place-items-center overflow-hidden rounded-2xl border-2 border-white bg-gradient-to-br from-fuchsia-500 to-violet-600 text-white shadow-md shadow-fuchsia-900/10 dark:border-white/15">
+                {avatarURL
+                  ? <img src={avatarURL} alt={`Ảnh đại diện của ${displayName}`} width={48} height={48} loading="eager" fetchPriority="high" decoding="async" className="h-full w-full object-cover" />
+                  : isAdmin ? <ShieldCheck className="h-5 w-5" /> : <UserRound className="h-5 w-5" />}
               </div>
               <div>
-                <p className="text-xs font-semibold text-indigo-300">{isAdmin ? 'Tài khoản quản lý · Trí Candy' : 'Trí Candy'}</p>
+                <p className="text-xs font-bold text-fuchsia-600 dark:text-fuchsia-300">{isAdmin ? 'Tài khoản quản lý · Trí Candy' : 'Trí Candy'}</p>
                 <h1 className="max-w-[190px] truncate text-lg font-bold">{displayName}</h1>
               </div>
             </div>
             <div className="flex gap-1">
               <button
                 onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
-                className="grid h-11 w-11 place-items-center rounded-2xl bg-white/10"
+                className="grid h-11 w-11 place-items-center rounded-2xl bg-white/80 text-slate-700 shadow-sm ring-1 ring-fuchsia-100 dark:bg-white/10 dark:text-white dark:ring-white/10"
                 aria-label="Đổi giao diện sáng tối"
               >
                 {theme === 'dark' ? <Sun className="h-5 w-5" /> : <Moon className="h-5 w-5" />}
               </button>
               <button
                 onClick={async () => { await logout(); router.push('/auth/login') }}
-                className="grid h-11 w-11 place-items-center rounded-2xl bg-white/10 text-rose-300"
+                className="grid h-11 w-11 place-items-center rounded-2xl bg-white/80 text-rose-500 shadow-sm ring-1 ring-rose-100 dark:bg-white/10 dark:text-rose-300 dark:ring-white/10"
                 aria-label="Đăng xuất"
               >
                 <LogOut className="h-5 w-5" />
@@ -208,7 +212,7 @@ export default function Page() {
             </div>
           </div>
 
-          <div className="mt-6 rounded-3xl bg-gradient-to-br from-indigo-500 to-violet-600 p-5 shadow-xl shadow-indigo-950/30">
+          <div className="mt-6 rounded-3xl bg-gradient-to-br from-fuchsia-600 via-rose-500 to-violet-600 p-5 text-white shadow-xl shadow-fuchsia-950/20">
             <div className="flex items-start justify-between gap-4">
               <div>
                 <p className="text-xs font-semibold text-indigo-100">{isAdmin ? 'Tiến độ gửi lịch tuần này' : 'Lịch làm việc tuần này'}</p>
