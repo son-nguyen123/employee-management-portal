@@ -94,7 +94,8 @@ export async function updateLeaveStatus(
   leaveId: string,
   status: 'Approved' | 'Rejected',
   approvedBy: string,
-  reviewNote = ''
+  reviewNote = '',
+  penaltyAmount?: number
 ): Promise<void> {
   void approvedBy
   await callWorkflowApi('reviewRequest', {
@@ -102,6 +103,7 @@ export async function updateLeaveStatus(
     id: leaveId,
     status,
     note: reviewNote,
+    penaltyAmount,
   })
 }
 

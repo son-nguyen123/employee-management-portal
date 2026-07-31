@@ -397,6 +397,21 @@ export default function NotificationsPage() {
       setMessage('Vui lòng nhập lý do trước khi từ chối.')
       return
     }
+    let penaltyAmount: number | undefined
+    if (item.type === 'leave' || item.type === 'late') {
+      const suggested = status === 'Approved' ? item.penaltyIfApproved || 0 : item.penaltyIfRejected || 0
+      const entered = window.prompt(
+        `Mức trừ đề xuất là ${suggested.toLocaleString('vi-VN')}đ. Nhập mức trừ muốn áp dụng (nhập 0 nếu không trừ):`,
+        String(suggested)
+      )
+      if (entered === null) return
+      penaltyAmount = Number(entered.replace(/[^0-9]/g, ''))
+      if (!Number.isFinite(penaltyAmount) || penaltyAmount < 0) {
+        setMessage('Mức trừ không hợp lệ.')
+        return
+      }
+      if (penaltyAmount > 0 && !window.confirm(`Xác nhận áp dụng mức trừ ${penaltyAmount.toLocaleString('vi-VN')}đ?`)) return
+    }
     setProcessingId(item.id)
     setMessage('')
     try {
@@ -404,9 +419,9 @@ export default function NotificationsPage() {
         if (item.type === 'schedule') {
           await reviewWorkScheduleBatch(item.targetIds, status, note)
         } else if (item.type === 'leave') {
-          await updateLeaveStatus(item.targetIds[0], status, authUser.uid, note)
+          await updateLeaveStatus(item.targetIds[0], status, authUser.uid, note, penaltyAmount)
         } else if (item.type === 'late') {
-          await updateLateStatus(item.targetIds[0], status, authUser.uid, note)
+          await updateLateStatus(item.targetIds[0], status, authUser.uid, note, penaltyAmount)
         } else if (item.type === 'salary') {
           await updateSalaryAdvanceStatus(item.targetIds[0], status, authUser.uid, note)
         } else {
@@ -601,6 +616,14 @@ export default function NotificationsPage() {
               </section>
 
               <section className="space-y-5 p-4">
+                {selectedPending.warning && (
+                  <p className="rounded-2xl border border-amber-200 bg-amber-50 p-3 text-sm font-bold leading-6 text-amber-900 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-100">⚠ {selectedPending.warning}</p>
+                )}
+                {selectedPending.managerMessageStatus && (
+                  <p className="rounded-2xl bg-sky-50 p-3 text-sm font-semibold text-sky-900 dark:bg-sky-500/10 dark:text-sky-100">
+                    Xác nhận liên hệ: {selectedPending.managerMessageStatus === 'messagedTri' ? 'đã nhắn anh Trí' : selectedPending.managerMessageStatus === 'notMessaged' ? 'chưa nhắn riêng' : 'đã nhắn quản lý khác'}.
+                  </p>
+                )}
                 {selectedPending.reason && (
                   <p className="rounded-2xl bg-slate-50 p-3 text-sm leading-6 text-slate-700 dark:bg-slate-800 dark:text-slate-200"><span className="font-black">Ghi chú:</span> {selectedPending.reason}</p>
                 )}

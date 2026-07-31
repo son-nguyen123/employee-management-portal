@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { FieldValue } from 'firebase-admin/firestore'
 import sharp from 'sharp'
-import { ApiError, authenticateRequest } from '@/lib/server/api-auth'
+import { ApiError } from '@/lib/server/api-auth'
 import { adminAuth, adminDb } from '@/lib/server/firebase-admin'
 import {
   deleteOtherProfileImages,
@@ -26,7 +26,12 @@ function hasValidSignature(bytes: Uint8Array, contentType: string) {
 
 export async function POST(request: Request) {
   try {
-    const actor = await authenticateRequest(request)
+    const authorization = request.headers.get('authorization')
+    if (!authorization?.startsWith('Bearer ')) throw new ApiError(401, 'Bạn cần đăng nhập để tải ảnh.')
+    const token = await adminAuth.verifyIdToken(authorization.slice(7), true)
+    const profileRef = adminDb.collection('employees').doc(token.uid)
+    const profile = await profileRef.get()
+    if (profile.exists && profile.get('status') !== 'active') throw new ApiError(403, 'Tài khoản chưa hoạt động.')
     const form = await request.formData()
     const image = form.get('image')
     if (!(image instanceof File)) {
@@ -40,7 +45,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Nội dung tệp không đúng định dạng ảnh.' }, { status: 400 })
     }
     const uploadedFile = await storeProfileImage({
-      employeeId: actor.uid,
+      employeeId: token.uid,
       contentType: image.type as 'image/jpeg' | 'image/png' | 'image/webp',
       bytes: Buffer.from(bytes),
     })
@@ -49,23 +54,20 @@ export async function POST(request: Request) {
     const photoURL = displayUrl.toString()
 
     try {
-      await adminDb.collection('employees').doc(actor.uid).update({
-        photoURL,
-        updatedAt: FieldValue.serverTimestamp(),
-      })
+      if (profile.exists) await profileRef.update({ photoURL, updatedAt: FieldValue.serverTimestamp() })
     } catch (error) {
-      await deleteProfileImage(actor.uid, uploadedFile.id).catch((cleanupError) => {
+      await deleteProfileImage(token.uid, uploadedFile.id).catch((cleanupError) => {
         console.error('Failed to roll back a new Google Drive profile image:', cleanupError)
       })
       throw error
     }
 
-    await adminAuth.updateUser(actor.uid, { photoURL }).catch((error) => {
+    await adminAuth.updateUser(token.uid, { photoURL }).catch((error) => {
       console.error('Firebase Auth profile image sync failed:', error)
     })
     let oldImagesDeleted = true
     try {
-      await deleteOtherProfileImages(actor.uid, uploadedFile.id)
+      await deleteOtherProfileImages(token.uid, uploadedFile.id)
     } catch (error) {
       oldImagesDeleted = false
       console.error('Old Google Drive profile image cleanup failed:', error)

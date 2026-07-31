@@ -1,6 +1,7 @@
 'use client'
 
 import React, { useState, useEffect } from 'react'
+import Link from 'next/link'
 import { useAuth } from '@/lib/hooks/useAuth'
 import { cancelSalaryAdvance, createSalaryAdvance, reviseSalaryAdvance, subscribeToEmployeeSalaryAdvances } from '@/lib/services/salaryService'
 import { mockSalaryAdvances } from '@/lib/services/mockData'
@@ -123,7 +124,7 @@ export default function SalaryAdvancePage() {
   if (isLoading || loading) {
     return (
       <div className="min-h-screen bg-background">
-        <Header title="Ứng lương" subtitle="Gửi yêu cầu trong tháng hiện tại" />
+        <Header title="Ứng lương / yêu cầu" subtitle="Gửi đề nghị cho quản lý" />
         <PageContainer>
           <SkeletonLoader variant="card" count={5} />
         </PageContainer>
@@ -133,9 +134,13 @@ export default function SalaryAdvancePage() {
 
   return (
     <div className="min-h-screen bg-background pb-24 md:pb-0">
-      <Header title="Ứng lương" subtitle="Gửi yêu cầu trong tháng hiện tại" />
+      <Header title="Ứng lương / yêu cầu" subtitle="Gửi đề nghị cho quản lý" />
 
       <PageContainer>
+        <Link href="/staff-note" className="mb-5 block rounded-3xl bg-sky-50 p-4 text-sky-900 shadow-sm transition active:scale-[0.99] dark:bg-sky-500/10 dark:text-sky-100">
+          <p className="font-black">Gửi yêu cầu khác</p>
+          <p className="mt-1 text-sm">Dùng cho xin nghỉ việc, đề nghị riêng hoặc nội dung không phải ứng lương.</p>
+        </Link>
         {message && (
           <div
             className={`mb-6 p-4 rounded-lg border flex items-gap-2 ${

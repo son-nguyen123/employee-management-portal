@@ -22,6 +22,7 @@ type WorkflowAction =
   | 'getManagementContact'
   | 'getAuditReceiptSettings'
   | 'updateAuditReceiptSettings'
+  | 'manageEmployeeStatus'
 
 export async function callWorkflowApi<T>(
   action: WorkflowAction,

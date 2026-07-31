@@ -39,7 +39,7 @@ const staffFeatures = [
   { title: 'Đăng ký lịch làm', note: 'Chọn ca cho tuần tiếp theo', href: '/schedule', icon: CalendarDays, tone: 'bg-indigo-600' },
   { title: 'Xin đi trễ', note: 'Gửi yêu cầu theo ca đã đăng ký', href: '/late-arrival', icon: Clock3, tone: 'bg-amber-500' },
   { title: 'Xin nghỉ', note: 'Chọn ca đã duyệt và lý do nghỉ', href: '/leave-request', icon: ClipboardList, tone: 'bg-emerald-600' },
-  { title: 'Ứng lương', note: 'Theo dõi yêu cầu trong tháng', href: '/salary-advance', icon: CircleDollarSign, tone: 'bg-sky-600' },
+  { title: 'Ứng lương / yêu cầu', note: 'Ứng lương hoặc gửi đề nghị khác', href: '/salary-advance', icon: CircleDollarSign, tone: 'bg-sky-600' },
   { title: 'Khoản phạt', note: 'Xem lịch sử và nguồn phát sinh', href: '/penalties', icon: AlertTriangle, tone: 'bg-rose-600' },
   { title: 'Đổi / thêm ca', note: 'Đổi ca cũ hoặc đăng ký làm thêm', href: '/schedule?mode=change', icon: CalendarPlus, tone: 'bg-fuchsia-600' },
   { title: 'Điều khoản công ty', note: 'Quy định và hướng dẫn chung', href: '/rules', icon: BookOpenText, tone: 'bg-violet-600' },

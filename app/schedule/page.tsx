@@ -422,7 +422,7 @@ export default function SchedulePage() {
       } else {
         const result = submittedIds.length
           ? await replaceWorkSchedules(submittedIds, rows)
-          : await submitWorkSchedules(rows)
+          : await submitWorkSchedules(rows, confirmed)
         ids = result.ids
       }
       window.sessionStorage.removeItem('schedule-draft')
@@ -815,6 +815,11 @@ export default function SchedulePage() {
                   ? `${missingDays[0].name} bạn nghỉ, đúng không?`
                   : `Bạn nghỉ ${missingDays.length} ngày: ${missingDays.map((day) => day.name).join(', ')}, đúng không?`}
             </p>
+            {selectedCount < 6 && (
+              <p className="mt-3 rounded-2xl bg-amber-50 p-3 text-sm font-bold leading-6 text-amber-900 dark:bg-amber-500/10 dark:text-amber-200">
+                Bạn chỉ đăng ký {selectedCount} ca, dưới mức tối thiểu 6 ca/tuần. Bạn có chắc muốn báo lịch này cho quản lý?
+              </p>
+            )}
             {weekNote.trim() && <p className="mt-3 rounded-2xl bg-indigo-50 p-3 text-sm text-indigo-900 dark:bg-indigo-500/10 dark:text-indigo-100"><strong>Ghi chú:</strong> {weekNote.trim()}</p>}
             <div className="mt-5 grid grid-cols-2 gap-2">
               <button type="button" onClick={() => setConfirmationOpen(false)} className="min-h-12 rounded-2xl border border-slate-200 font-bold dark:border-slate-700">Xem lại</button>

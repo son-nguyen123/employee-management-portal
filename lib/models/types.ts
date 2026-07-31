@@ -13,7 +13,7 @@ export interface Employee {
   bankAccountNumber?: string
   email: string
   role: 'admin' | 'manager' | 'employee'
-  status: 'active' | 'inactive'
+  status: 'pending' | 'active' | 'inactive'
   joinDate: Timestamp | Date
   createdAt: Timestamp | Date
   updatedAt: Timestamp | Date
@@ -87,6 +87,8 @@ export interface LeaveRequest {
   endDate?: Timestamp | Date
   duration?: 'short' | 'long'
   noticeClass?: 'onTime' | 'late'
+  weeklyShiftCount?: number
+  weeklyShiftCountAfterLeave?: number
   penaltyIfApproved?: number
   penaltyIfRejected?: number
   leaveType: LeaveType
@@ -112,6 +114,10 @@ export interface LateRequest {
   lateMinutes: number
   reason: string
   expectedArrival?: string
+  noticeMinutes?: number
+  managerMessageStatus?: 'messagedTri' | 'notMessaged' | 'messagedOtherManager'
+  penaltyIfApproved?: number
+  penaltyIfRejected?: number
   status: LateStatus
   approvedBy?: string
   reviewNote?: string

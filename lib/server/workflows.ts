@@ -1,7 +1,7 @@
 import 'server-only'
 
 import { FieldValue, Timestamp } from 'firebase-admin/firestore'
-import { adminDb, adminMessaging } from '@/lib/server/firebase-admin'
+import { adminAuth, adminDb, adminMessaging } from '@/lib/server/firebase-admin'
 import { ApiError, type RequestActor, requireManager, requireStaff } from '@/lib/server/api-auth'
 import { workflowPolicy } from '@/lib/server/workflow-policy'
 import { auditReceiptCapability } from '@/lib/server/audit-trail'
@@ -146,6 +146,33 @@ export async function updateAuditReceiptSettings(actor: RequestActor, raw: unkno
     cancelledQueuedEmails,
     ...capability,
   }
+}
+
+export async function manageEmployeeStatus(actor: RequestActor, raw: unknown) {
+  requireManager(actor)
+  if (actor.role !== 'admin') throw new ApiError(403, 'Chỉ admin được duyệt hoặc khóa tài khoản.')
+  const body = objectBody(raw)
+  const employeeId = text(body.employeeId, 'Nhân viên', 128)
+  const status = text(body.status, 'Trạng thái', 20) as 'active' | 'inactive'
+  if (!['active', 'inactive'].includes(status)) throw new ApiError(400, 'Trạng thái tài khoản không hợp lệ.')
+  if (employeeId === actor.uid && status === 'inactive') throw new ApiError(409, 'Bạn không thể tự khóa tài khoản admin đang dùng.')
+  const employeeRef = adminDb.collection('employees').doc(employeeId)
+  await adminDb.runTransaction(async (transaction) => {
+    const employee = await transaction.get(employeeRef)
+    if (!employee.exists) throw new ApiError(404, 'Không tìm thấy nhân viên.')
+    const now = FieldValue.serverTimestamp()
+    transaction.set(employeeRef, { status, statusChangedBy: actor.uid, statusChangedAt: now, updatedAt: now }, { merge: true })
+    transaction.set(adminDb.collection('notifications').doc(`account-status-${employeeId}`), {
+      employeeId,
+      title: status === 'active' ? 'Tài khoản đã được chấp nhận' : 'Tài khoản đã bị vô hiệu hóa',
+      message: status === 'active' ? 'Quản lý đã duyệt hồ sơ. Bạn có thể sử dụng đầy đủ các tính năng.' : 'Quản lý đã tạm khóa quyền sử dụng tài khoản này.',
+      type: status === 'active' ? 'success' : 'warning',
+      isRead: false,
+      createdAt: now,
+    })
+  })
+  if (status === 'inactive') await adminAuth.revokeRefreshTokens(employeeId)
+  return { employeeId, status }
 }
 
 function workflowRef(actor: RequestActor, id: string) {
@@ -316,6 +343,20 @@ function scheduleDeadline(firstShift: Date): Date {
   )
 }
 
+function leaveNoticeDeadline(firstShift: Date): Date {
+  const dateKey = vietnamDateKey(firstShift)
+  const deadline = new Date(`${dateKey}T${String(workflowPolicy.leaveNoticeDeadlineHour).padStart(2, '0')}:00:00+07:00`)
+  deadline.setDate(deadline.getDate() - 1)
+  return deadline
+}
+
+function rejectedScheduleResubmissionDeadline(firstShift: Date): Date {
+  const mondayKey = vietnamDateKey(mondayFor(firstShift))
+  const deadline = new Date(`${mondayKey}T00:00:00+07:00`)
+  deadline.setDate(deadline.getDate() - 1)
+  return deadline
+}
+
 export async function submitSchedules(actor: RequestActor, raw: unknown) {
   requireStaff(actor)
   const body = objectBody(raw)
@@ -335,6 +376,11 @@ export async function submitSchedules(actor: RequestActor, raw: unknown) {
       note: text(row.note ?? '', `Ghi chú ca ${index + 1}`, 500, true),
     }
   })
+  const actualShiftCount = schedules.filter((row) => !row.note.includes('[NO_SHIFTS]') && !row.note.includes('[DUTY_ONLY]')).length
+  const underMinimum = actualShiftCount < workflowPolicy.minimumWeeklyShifts
+  if (underMinimum && body.confirmUnderMinimum !== true) {
+    throw new ApiError(409, `Bạn mới đăng ký ${actualShiftCount} ca, dưới mức tối thiểu ${workflowPolicy.minimumWeeklyShifts} ca/tuần. Vui lòng xác nhận trước khi gửi.`)
+  }
 
   const firstDate = schedules.reduce((min, row) => row.date < min ? row.date : min, schedules[0].date)
   const isLate = new Date() > scheduleDeadline(firstDate)
@@ -389,6 +435,8 @@ export async function submitSchedules(actor: RequestActor, raw: unknown) {
         batchKey,
         requiresReapproval: false,
         revisionCount: 0,
+        weeklyShiftCount: actualShiftCount,
+        underMinimumWarning: underMinimum,
         createdAt: now,
         updatedAt: now,
         lockedAt: null,
@@ -426,7 +474,7 @@ export async function submitSchedules(actor: RequestActor, raw: unknown) {
         managerNotification(
           managerId,
           'Bảng lịch mới chờ xác nhận',
-          `Một nhân viên vừa gửi bảng lịch tuần ${weekStart.toLocaleDateString('vi-VN')}.`
+          `Một nhân viên vừa gửi bảng lịch tuần ${weekStart.toLocaleDateString('vi-VN')}.${underMinimum ? ` Cảnh báo: chỉ có ${actualShiftCount}/${workflowPolicy.minimumWeeklyShifts} ca tối thiểu.` : ''}`
         )
       )
     })
@@ -444,7 +492,9 @@ export async function submitSchedules(actor: RequestActor, raw: unknown) {
     managerIds,
     sourceKey: `schedule-${batchKey}`,
     title: 'Bảng lịch mới chờ xác nhận',
-    body: 'Một nhân viên vừa gửi bảng lịch tuần. Mở Trí Candy để xử lý.',
+    body: underMinimum
+      ? `Cảnh báo: lịch chỉ có ${actualShiftCount}/${workflowPolicy.minimumWeeklyShifts} ca tối thiểu.`
+      : 'Một nhân viên vừa gửi bảng lịch tuần. Mở Trí Candy để xử lý.',
     link: '/notifications',
     source: 'workSchedules',
     sourceId: scheduleRefs[0].id,
@@ -668,10 +718,13 @@ export async function replaceSchedules(actor: RequestActor, raw: unknown) {
     }
   })
 
+  const revisedShiftCount = schedules.filter((row) => !row.note.includes('[NO_SHIFTS]') && !row.note.includes('[DUTY_ONLY]')).length
   const oldRefs = scheduleIds.map((scheduleId) => adminDb.collection('workSchedules').doc(scheduleId))
   const newRefs = schedules.map(() => adminDb.collection('workSchedules').doc())
   const workflow = workflowRef(actor, id)
   const managerIds = await activeManagerIds()
+  const resubmissionPenaltyRef = adminDb.collection('penalties').doc(`schedule-resubmission-${actor.uid}-${id}`)
+  let penalizedRejectedResubmission = false
 
   await adminDb.runTransaction(async (transaction) => {
     const [workflowSnapshot, ...oldSnapshots] = await Promise.all([
@@ -704,6 +757,8 @@ export async function replaceSchedules(actor: RequestActor, raw: unknown) {
       schedule.requiresReapproval === true
     )
     const revisionCount = Math.max(0, ...oldData.map((schedule) => Number(schedule.revisionCount || 0))) + 1
+    penalizedRejectedResubmission = oldData.some((schedule) => schedule.status === 'Rejected') &&
+      Date.now() >= rejectedScheduleResubmissionDeadline(schedules[0].date).getTime()
     oldRefs.forEach((ref) => transaction.delete(ref))
     schedules.forEach((schedule, index) => {
       transaction.create(newRefs[index], {
@@ -715,6 +770,8 @@ export async function replaceSchedules(actor: RequestActor, raw: unknown) {
         batchKey,
         requiresReapproval,
         revisionCount,
+        weeklyShiftCount: revisedShiftCount,
+        underMinimumWarning: revisedShiftCount < workflowPolicy.minimumWeeklyShifts,
         createdAt: now,
         updatedAt: now,
         lockedAt: null,
@@ -725,9 +782,20 @@ export async function replaceSchedules(actor: RequestActor, raw: unknown) {
       action: 'replaceSchedules',
       targetIds: newRefs.map((ref) => ref.id),
       replacedIds: scheduleIds,
-      penaltyId: null,
+      penaltyId: penalizedRejectedResubmission ? resubmissionPenaltyRef.id : null,
       createdAt: now,
     })
+    if (penalizedRejectedResubmission && workflowPolicy.scheduleLatePenalty > 0) {
+      transaction.create(resubmissionPenaltyRef, penaltyData({
+        employeeId: actor.uid,
+        title: 'Gửi lại lịch bị từ chối quá hạn',
+        description: 'Lịch bị từ chối nhưng được gửi lại từ Chủ Nhật hoặc sau khi tuần làm việc đã bắt đầu.',
+        category: 'Late',
+        amount: workflowPolicy.scheduleLatePenalty,
+        sourceType: 'scheduleResubmission',
+        sourceId: newRefs[0].id,
+      }))
+    }
     transaction.set(adminDb.collection('notifications').doc(`schedule-status-${newRefs[0].id}`), {
       employeeId: actor.uid,
       title: 'Yêu cầu gửi lịch đang xử lý',
@@ -760,7 +828,7 @@ export async function replaceSchedules(actor: RequestActor, raw: unknown) {
     sourceId: newRefs[0].id,
   })
 
-  return { ids: newRefs.map((ref) => ref.id), penalty: 0 }
+  return { ids: newRefs.map((ref) => ref.id), penalty: penalizedRejectedResubmission ? workflowPolicy.scheduleLatePenalty : 0 }
 }
 
 export async function setScheduleBatchEditing(actor: RequestActor, raw: unknown) {
@@ -854,6 +922,8 @@ export async function submitLeave(actor: RequestActor, raw: unknown) {
   let isLate = false
   let penaltyIfApproved = 0
   let penaltyIfRejected = workflowPolicy.leaveOnTimeRejectedPenalty
+  let weeklyShiftCount = 0
+  let weeklyShiftCountAfterLeave = 0
 
   await adminDb.runTransaction(async (transaction) => {
     if ((await transaction.get(workflow)).exists) throw new ApiError(409, 'Yêu cầu nghỉ này đã được gửi.')
@@ -877,11 +947,24 @@ export async function submitLeave(actor: RequestActor, raw: unknown) {
     const noticeTarget = selectedShiftStarts.length
       ? selectedShiftStarts.reduce((earliest, value) => value < earliest ? value : earliest, selectedShiftStarts[0])
       : leaveDate
-    isLate = noticeTarget.getTime() - Date.now() < workflowPolicy.leaveNoticeHours * 60 * 60 * 1000
+    isLate = Date.now() > leaveNoticeDeadline(noticeTarget).getTime()
     penaltyIfApproved = isLate ? workflowPolicy.leaveLateApprovedPenalty : 0
     penaltyIfRejected = isLate
       ? workflowPolicy.leaveLateRejectedPenalty
       : workflowPolicy.leaveOnTimeRejectedPenalty
+    const weekStart = mondayFor(noticeTarget)
+    const weekEnd = new Date(weekStart)
+    weekEnd.setUTCDate(weekEnd.getUTCDate() + 7)
+    const weeklySchedules = await transaction.get(
+      adminDb.collection('workSchedules').where('employeeId', '==', actor.uid)
+    )
+    const selectedIds = new Set(workScheduleIds)
+    weeklyShiftCount = weeklySchedules.docs.filter((snapshot) => {
+      const data = snapshot.data()
+      const date = (data.date as Timestamp).toDate()
+      return data.status === 'Approved' && date >= weekStart && date < weekEnd && !String(data.note || '').includes('[DUTY_ONLY]')
+    }).length
+    weeklyShiftCountAfterLeave = Math.max(0, weeklyShiftCount - selectedIds.size)
     transaction.create(leaveRef, {
       employeeId: actor.uid,
       ...(workScheduleIds.length ? {
@@ -894,6 +977,9 @@ export async function submitLeave(actor: RequestActor, raw: unknown) {
       noticeClass: isLate ? 'late' : 'onTime',
       penaltyIfApproved,
       penaltyIfRejected,
+      weeklyShiftCount,
+      weeklyShiftCountAfterLeave,
+      underMinimumWarning: weeklyShiftCountAfterLeave < workflowPolicy.minimumWeeklyShifts,
       leaveType,
       reason,
       status: 'Pending',
@@ -910,7 +996,11 @@ export async function submitLeave(actor: RequestActor, raw: unknown) {
     managerIds.forEach((managerId) => {
       transaction.set(
         managerNotificationRef(managerId, `leave-${leaveRef.id}`),
-        managerNotification(managerId, managerRequestCopy.leave.title, managerRequestCopy.leave.message)
+        managerNotification(
+          managerId,
+          managerRequestCopy.leave.title,
+          `${managerRequestCopy.leave.message}${weeklyShiftCountAfterLeave < workflowPolicy.minimumWeeklyShifts ? ` Cảnh báo: sau khi nghỉ còn ${weeklyShiftCountAfterLeave}/${workflowPolicy.minimumWeeklyShifts} ca.` : ''}`
+        )
       )
     })
   })
@@ -943,11 +1033,16 @@ export async function submitLate(actor: RequestActor, raw: unknown) {
     throw new ApiError(400, 'Giờ dự kiến không hợp lệ.')
   }
   const reason = text(body.reason, 'Lý do', 1000)
+  const managerMessageStatus = text(body.managerMessageStatus, 'Xác nhận nhắn quản lý', 30) as
+    | 'messagedTri'
+    | 'notMessaged'
+    | 'messagedOtherManager'
+  if (!['messagedTri', 'notMessaged', 'messagedOtherManager'].includes(managerMessageStatus)) {
+    throw new ApiError(400, 'Vui lòng xác nhận bạn đã nhắn cho ai trước khi gửi.')
+  }
   const scheduleRef = adminDb.collection('workSchedules').doc(scheduleId)
   const workflow = workflowRef(actor, id)
   const lateRef = adminDb.collection('lateRequests').doc()
-  const penaltyRef = adminDb.collection('penalties').doc(`late-${actor.uid}-${id}`)
-  const notificationRef = adminDb.collection('notifications').doc(`late-penalty-${actor.uid}-${id}`)
   const managerIds = await activeManagerIds()
   let computedPenalty = 0
 
@@ -965,13 +1060,21 @@ export async function submitLate(actor: RequestActor, raw: unknown) {
     const shift = schedule.shift as Shift
     if (!shifts.includes(shift)) throw new ApiError(400, 'Ca làm không hợp lệ.')
     const date = (schedule.date as Timestamp).toDate()
+    if (vietnamDateKey(date) !== vietnamDateKey(new Date())) {
+      throw new ApiError(400, 'Bạn chỉ được báo đi trễ cho ca làm trong hôm nay.')
+    }
     const start = shiftStart(date, shift)
     const arrival = new Date(`${date.toISOString().slice(0, 10)}T${arrivalTime}:00+07:00`)
     const lateMinutes = Math.ceil((arrival.getTime() - start.getTime()) / 60_000)
     if (lateMinutes < 1 || lateMinutes > 720) throw new ApiError(400, 'Giờ dự kiến phải sau giờ bắt đầu ca.')
     const noticeMinutes = (start.getTime() - Date.now()) / 60_000
     const isLateNotice = noticeMinutes < workflowPolicy.lateNoticeMinutes
-    computedPenalty = isLateNotice ? workflowPolicy.lateNoticePenalty : 0
+    const contactPenalty = managerMessageStatus === 'messagedOtherManager'
+      ? workflowPolicy.lateWrongManagerMessagePenalty
+      : managerMessageStatus === 'notMessaged'
+        ? workflowPolicy.lateMissingManagerMessagePenalty
+        : 0
+    computedPenalty = Math.max(isLateNotice ? workflowPolicy.lateNoticePenalty : 0, contactPenalty)
     const now = FieldValue.serverTimestamp()
     transaction.create(lateRef, {
       employeeId: actor.uid,
@@ -980,32 +1083,21 @@ export async function submitLate(actor: RequestActor, raw: unknown) {
       shift,
       lateMinutes,
       expectedArrival: arrivalTime,
+      noticeMinutes: Math.floor(noticeMinutes),
+      noticeClass: isLateNotice ? 'late' : 'onTime',
+      managerMessageStatus,
+      penaltyIfApproved: computedPenalty,
+      penaltyIfRejected: computedPenalty > 0 ? computedPenalty * 2 : 0,
       reason,
       status: 'Pending',
       createdAt: now,
       updatedAt: now,
     })
-    if (computedPenalty > 0) {
-      transaction.create(penaltyRef, penaltyData({
-        employeeId: actor.uid,
-        title: 'Báo đi trễ dưới 1 giờ trước ca',
-        description: 'Báo đi trễ dưới 60 phút trước giờ bắt đầu ca. Khấu trừ 500đ vào tiền công của 1 giờ làm.',
-        category: 'Late',
-        amount: computedPenalty,
-        sourceType: 'lateRequest',
-        sourceId: lateRef.id,
-      }))
-      transaction.create(notificationRef, warningNotification(
-        actor.uid,
-        'Phát sinh khoản phạt báo đi trễ',
-        `Khoản phạt ${computedPenalty.toLocaleString('vi-VN')}đ đã được ghi nhận.`
-      ))
-    }
     transaction.create(workflow, {
       employeeId: actor.uid,
       action: 'submitLate',
       targetIds: [lateRef.id],
-      penaltyId: computedPenalty ? penaltyRef.id : null,
+      penaltyId: null,
       createdAt: now,
     })
     managerIds.forEach((managerId) => {
@@ -1026,17 +1118,7 @@ export async function submitLate(actor: RequestActor, raw: unknown) {
     sourceId: lateRef.id,
   })
 
-  if (computedPenalty > 0) {
-    await sendPenaltyPush({
-      employeeId: actor.uid,
-      penaltyId: penaltyRef.id,
-      event: 'created',
-      title: 'Phát sinh khoản phạt báo đi trễ',
-      body: `Khoản phạt ${computedPenalty.toLocaleString('vi-VN')}đ đã được ghi nhận.`,
-    })
-  }
-
-  return { id: lateRef.id, penalty: computedPenalty }
+  return { id: lateRef.id, penalty: 0, suggestedPenalty: computedPenalty }
 }
 
 export async function submitSalaryAdvance(actor: RequestActor, raw: unknown) {
@@ -1274,7 +1356,7 @@ export async function reviseRequest(actor: RequestActor, raw: unknown) {
       const noticeTarget = selectedShiftStarts.length
         ? selectedShiftStarts.reduce((earliest, value) => value < earliest ? value : earliest, selectedShiftStarts[0])
         : leaveDate
-      const isLate = noticeTarget.getTime() - Date.now() < workflowPolicy.leaveNoticeHours * 60 * 60 * 1000
+      const isLate = Date.now() > leaveNoticeDeadline(noticeTarget).getTime()
       updates.duration = duration
       updates.leaveDate = Timestamp.fromDate(leaveDate)
       updates.endDate = Timestamp.fromDate(endDate)
@@ -1608,10 +1690,13 @@ export async function reviewRequest(actor: RequestActor, raw: unknown) {
   }
   const note = text(body.note ?? '', 'Phản hồi', 1000, true)
   if (status !== 'Approved' && !note) throw new ApiError(400, 'Vui lòng nhập lý do hoặc nội dung cần sửa.')
+  const managerPenaltyAmount = body.penaltyAmount == null
+    ? null
+    : numberValue(body.penaltyAmount, 'Khoản trừ', 0, 100_000_000)
 
   const targetRef = adminDb.collection(config.collection).doc(id)
-  const leaveDecisionPenaltyRef = resource === 'leave'
-    ? adminDb.collection('penalties').doc(`leave-decision-${id}`)
+  const decisionPenaltyRef = resource === 'leave' || resource === 'late'
+    ? adminDb.collection('penalties').doc(`${resource}-decision-${id}`)
     : null
   const notificationRef = adminDb.collection('notifications').doc(`${config.collection}-${id}-${status}`)
   const dispatchRef = adminDb.collection('pushDispatches').doc(`${config.collection}-${id}-${status}`)
@@ -1624,7 +1709,7 @@ export async function reviewRequest(actor: RequestActor, raw: unknown) {
   await adminDb.runTransaction(async (transaction) => {
     const [target, existingLeavePenalty] = await Promise.all([
       transaction.get(targetRef),
-      leaveDecisionPenaltyRef ? transaction.get(leaveDecisionPenaltyRef) : Promise.resolve(null),
+      decisionPenaltyRef ? transaction.get(decisionPenaltyRef) : Promise.resolve(null),
     ])
     if (!target.exists) throw new ApiError(404, 'Không tìm thấy yêu cầu.')
     const data = target.data()!
@@ -1639,25 +1724,33 @@ export async function reviewRequest(actor: RequestActor, raw: unknown) {
     const employeeName = String(employeeSnapshot.get('fullName') || 'Nhân viên')
     const employeeCode = String(employeeSnapshot.get('employeeCode') || employeeId.slice(0, 8))
     reviewedEmployee = `${employeeName} · ${employeeCode}`
+    const longLeaveSchedules = resource === 'leave' && status === 'Approved' && data.duration === 'long'
+      ? await transaction.get(adminDb.collection('workSchedules').where('employeeId', '==', employeeId))
+      : null
     const now = FieldValue.serverTimestamp()
-    if (resource === 'leave' && leaveDecisionPenaltyRef) {
+    if ((resource === 'leave' || resource === 'late') && decisionPenaltyRef) {
       const isLate = data.noticeClass === 'late'
-      const amount = status === 'Approved'
+      const suggestedAmount = status === 'Approved'
         ? Number(data.penaltyIfApproved ?? (isLate ? workflowPolicy.leaveLateApprovedPenalty : 0))
         : Number(data.penaltyIfRejected ?? (isLate
           ? workflowPolicy.leaveLateRejectedPenalty
           : workflowPolicy.leaveOnTimeRejectedPenalty))
+      const amount = managerPenaltyAmount ?? suggestedAmount
       if (amount > 0) {
-        transaction.set(leaveDecisionPenaltyRef, {
+        transaction.set(decisionPenaltyRef, {
           ...penaltyData({
             employeeId,
-            title: isLate ? 'Xin nghỉ trễ hạn' : 'Yêu cầu nghỉ không được duyệt',
-            description: status === 'Approved'
-              ? `Yêu cầu nghỉ được gửi dưới ${workflowPolicy.leaveNoticeHours} giờ trước ca và đã được duyệt.`
-              : `Yêu cầu nghỉ ${isLate ? 'trễ hạn ' : ''}đã bị từ chối.`,
+            title: resource === 'late'
+              ? 'Xử lý thông báo đi trễ'
+              : isLate ? 'Xin nghỉ sau 16:00 hôm trước' : 'Yêu cầu nghỉ không được duyệt',
+            description: resource === 'late'
+              ? `Quản lý ${status === 'Approved' ? 'xác nhận' : 'từ chối'} thông báo đi trễ và áp dụng mức trừ đã xác nhận.`
+              : status === 'Approved'
+                ? 'Yêu cầu nghỉ được duyệt kèm mức trừ do quản lý xác nhận.'
+                : `Yêu cầu nghỉ ${isLate ? 'trễ hạn ' : ''}đã bị từ chối.`,
             category: 'Late',
             amount,
-            sourceType: 'leaveRequest',
+            sourceType: resource === 'late' ? 'lateRequest' : 'leaveRequest',
             sourceId: id,
           }),
           status: 'Active',
@@ -1668,7 +1761,7 @@ export async function reviewRequest(actor: RequestActor, raw: unknown) {
             : {}),
         }, { merge: true })
       } else if (existingLeavePenalty?.exists) {
-        transaction.set(leaveDecisionPenaltyRef, {
+        transaction.set(decisionPenaltyRef, {
           amount: 0,
           status: 'Cancelled',
           decisionStatus: status,
@@ -1678,6 +1771,25 @@ export async function reviewRequest(actor: RequestActor, raw: unknown) {
           updatedAt: now,
         }, { merge: true })
       }
+    }
+    if (resource === 'leave' && status === 'Approved' && data.duration === 'long') {
+      const leaveStart = (data.leaveDate as Timestamp).toDate()
+      const leaveEnd = (data.endDate as Timestamp | undefined)?.toDate() ?? leaveStart
+      longLeaveSchedules?.docs.forEach((snapshot) => {
+        const scheduleDate = (snapshot.get('date') as Timestamp).toDate()
+        if (snapshot.get('status') === 'Approved' &&
+          vietnamDateKey(scheduleDate) >= vietnamDateKey(leaveStart) &&
+          vietnamDateKey(scheduleDate) <= vietnamDateKey(leaveEnd)) {
+          transaction.set(snapshot.ref, {
+            status: 'Cancelled',
+            cancellationReason: `Tự động hủy do nghỉ dài hạn được duyệt (${id}).`,
+            cancelledBy: actor.uid,
+            cancelledAt: now,
+            lockedAt: null,
+            updatedAt: now,
+          }, { merge: true })
+        }
+      })
     }
     if (resource === 'staff' && status === 'Approved' && ['overtime', 'scheduleChange'].includes(data.type)) {
       const removedItems = data.type === 'scheduleChange' && Array.isArray(data.removedShifts)
@@ -1771,7 +1883,7 @@ export async function reviewRequest(actor: RequestActor, raw: unknown) {
     transaction.set(notificationRef, {
       employeeId,
       title: config.title,
-      message: `${requestLabel} của bạn ${statusText(status)}.${note ? ` Phản hồi: ${note}` : ''}`,
+      message: `${requestLabel} của bạn ${statusText(status)}.${managerPenaltyAmount && managerPenaltyAmount > 0 ? ` Mức trừ được quản lý xác nhận: ${managerPenaltyAmount.toLocaleString('vi-VN')}đ.` : ''}${note ? ` Phản hồi: ${note}` : ''}`,
       type: status === 'Approved' ? 'success' : 'warning',
       isRead: false,
       createdAt: now,

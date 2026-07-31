@@ -16,6 +16,7 @@ export async function createLateRequest(
     workScheduleId: lateData.workScheduleId,
     expectedArrival: lateData.expectedArrival,
     reason: lateData.reason,
+    managerMessageStatus: lateData.managerMessageStatus,
   })
   return result.id
 }
@@ -85,7 +86,8 @@ export async function updateLateStatus(
   lateId: string,
   status: 'Approved' | 'Rejected',
   approvedBy: string,
-  reviewNote = ''
+  reviewNote = '',
+  penaltyAmount?: number
 ): Promise<void> {
   void approvedBy
   await callWorkflowApi('reviewRequest', {
@@ -93,6 +95,7 @@ export async function updateLateStatus(
     id: lateId,
     status,
     note: reviewNote,
+    penaltyAmount,
   })
 }
 

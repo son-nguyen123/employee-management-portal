@@ -14,10 +14,12 @@ export async function createWorkSchedule(scheduleData: Omit<WorkSchedule, 'id' |
 }
 
 export async function submitWorkSchedules(
-  schedules: Array<Omit<WorkSchedule, 'id' | 'createdAt' | 'updatedAt'>>
+  schedules: Array<Omit<WorkSchedule, 'id' | 'createdAt' | 'updatedAt'>>,
+  confirmUnderMinimum = false
 ): Promise<{ ids: string[]; penalty: number }> {
   return callWorkflowApi('submitSchedules', {
     requestId: newWorkflowRequestId(),
+    confirmUnderMinimum,
     schedules: schedules.map((schedule) => ({
       date: schedule.date instanceof Date
         ? schedule.date.toISOString()

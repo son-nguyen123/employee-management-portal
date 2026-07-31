@@ -26,6 +26,7 @@ export default function LateArrivalPage() {
   const [selectedShift, setSelectedShift] = useState<ShiftItem | null>(null)
   const [arrivalTime, setArrivalTime] = useState('')
   const [reason, setReason] = useState('')
+  const [managerMessageStatus, setManagerMessageStatus] = useState<'messagedTri' | 'notMessaged' | 'messagedOtherManager'>('messagedTri')
   const [requests, setRequests] = useState<any[]>([])
   const [submitting, setSubmitting] = useState(false)
   const [message, setMessage] = useState('')
@@ -35,7 +36,10 @@ export default function LateArrivalPage() {
     if (!authUser) return
     const updateShifts = (scheduleData: any[]) => {
       setShifts(scheduleData
-        .filter((item) => item.status === 'Approved')
+        .filter((item) => {
+          const date = item.date instanceof Date ? item.date : typeof item.date === 'string' ? new Date(item.date) : item.date.toDate()
+          return item.status === 'Approved' && date.toLocaleDateString('en-CA') === new Date().toLocaleDateString('en-CA')
+        })
         .map((item) => ({
           id: item.id!,
           date: item.date instanceof Date ? item.date : typeof item.date === 'string' ? new Date(item.date) : item.date.toDate(),
@@ -94,6 +98,7 @@ export default function LateArrivalPage() {
           lateMinutes,
           expectedArrival: arrivalTime,
           reason: reason.trim(),
+          managerMessageStatus,
           status: 'Pending',
         })
       }
@@ -104,6 +109,7 @@ export default function LateArrivalPage() {
         lateMinutes,
         expectedArrival: arrivalTime,
         reason: reason.trim(),
+        managerMessageStatus,
         status: 'Pending',
         date: selectedShift.date,
       }
@@ -243,6 +249,21 @@ export default function LateArrivalPage() {
               <label className="mt-4 block text-sm font-bold">Lý do
                 <textarea value={reason} onChange={(e) => setReason(e.target.value)} className="mobile-field mt-2 min-h-24 py-3" placeholder="Ví dụ: xe hỏng trên đường..." required />
               </label>
+              <fieldset className="mt-4">
+                <legend className="text-sm font-bold">Bạn đã nhắn riêng cho ai?</legend>
+                <div className="mt-2 grid gap-2">
+                  {([
+                    ['messagedTri', 'Đã nhắn anh Trí'],
+                    ['notMessaged', 'Chưa nhắn riêng (có thể trừ 500đ)'],
+                    ['messagedOtherManager', 'Đã nhắn chị Thảo/người khác (có thể trừ 1.000đ)'],
+                  ] as const).map(([value, label]) => (
+                    <label key={value} className={`flex min-h-12 items-center gap-3 rounded-2xl border px-3 text-sm font-semibold ${managerMessageStatus === value ? 'border-indigo-500 bg-indigo-50 text-indigo-800 dark:bg-indigo-500/10 dark:text-indigo-100' : 'border-slate-200 dark:border-slate-700'}`}>
+                      <input type="radio" name="manager-message" value={value} checked={managerMessageStatus === value} onChange={() => setManagerMessageStatus(value)} className="accent-indigo-600" />
+                      {label}
+                    </label>
+                  ))}
+                </div>
+              </fieldset>
               <button type="submit" disabled={submitting} className="mobile-primary-button mt-5">
                 {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
                 {submitting ? 'Đang gửi...' : editingId ? 'Gửi điều chỉnh' : 'Gửi thông báo đi trễ'}

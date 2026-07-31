@@ -14,6 +14,7 @@ import {
   getManagementContact,
   getAuditReceiptSettings,
   updateAuditReceiptSettings,
+  manageEmployeeStatus,
   replaceSchedules,
   reviseRequest,
   setScheduleBatchEditing,
@@ -50,6 +51,7 @@ const handlers = {
   getManagementContact,
   getAuditReceiptSettings,
   updateAuditReceiptSettings,
+  manageEmployeeStatus,
 } as const
 
 function safeServerError(error: unknown): { status: number; message: string } {

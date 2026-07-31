@@ -2,7 +2,6 @@ import {
   collection,
   doc,
   getDoc,
-  setDoc,
   updateDoc,
   query,
   where,
@@ -12,7 +11,9 @@ import {
   deleteField,
 } from 'firebase/firestore'
 import { db } from '@/lib/firebase'
+import { auth } from '@/lib/firebase'
 import { Employee } from '@/lib/models/types'
+import { callWorkflowApi } from '@/lib/services/workflowApi'
 
 const EMPLOYEES_COLLECTION = 'employees'
 
@@ -45,14 +46,16 @@ export async function createEmployee(uid: string, employeeData: Omit<Employee, '
       delete sanitized.bankAccountName
       delete sanitized.bankAccountNumber
     }
-    const employee: Employee = {
-      ...sanitized,
-      uid,
-      createdAt: Timestamp.now(),
-      updatedAt: Timestamp.now(),
-    }
-
-    await setDoc(doc(db, EMPLOYEES_COLLECTION, uid), employee)
+    void uid
+    const user = auth.currentUser
+    if (!user) throw new Error('Bạn cần đăng nhập để tạo hồ sơ.')
+    const response = await fetch('/api/profile/register', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', authorization: `Bearer ${await user.getIdToken()}` },
+      body: JSON.stringify(sanitized),
+    })
+    const result = await response.json().catch(() => null) as { error?: string } | null
+    if (!response.ok) throw new Error(result?.error || 'Chưa thể gửi hồ sơ đăng ký.')
   } catch (error) {
     console.error('Error creating employee:', error)
     throw error
@@ -133,4 +136,8 @@ export function subscribeToActiveEmployees(
     (snapshot) => callback(snapshot.docs.map((item) => item.data() as Employee)),
     (error) => onError?.(error)
   )
+}
+
+export async function setEmployeeAccountStatus(employeeId: string, status: 'active' | 'inactive'): Promise<void> {
+  await callWorkflowApi('manageEmployeeStatus', { employeeId, status })
 }

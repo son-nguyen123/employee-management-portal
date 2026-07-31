@@ -70,6 +70,7 @@ service cloud.firestore {
 
     function isManagerOrAdmin() {
       return hasEmployeeProfile() &&
+        get(/databases/$(database)/documents/employees/$(request.auth.uid)).data.status == 'active' &&
         currentRole() in ['manager', 'admin'];
     }
 
@@ -144,7 +145,8 @@ service cloud.firestore {
         data.keys().hasOnly([
           'uid', 'employeeCode', 'fullName', 'phone', 'email',
           'photoURL', 'facebookUrl', 'bankName', 'bankAccountName', 'bankAccountNumber',
-          'role', 'status', 'joinDate', 'createdAt', 'updatedAt'
+          'role', 'status', 'joinDate', 'createdAt', 'updatedAt',
+          'statusChangedBy', 'statusChangedAt'
         ]) &&
         validString(data.uid, 1, 128) &&
         validString(data.employeeCode, 3, 30) &&
@@ -155,7 +157,9 @@ service cloud.firestore {
         validOptionalBankAccount(data) &&
         validEmail(data.email) &&
         data.role in ['admin', 'manager', 'employee'] &&
-        data.status in ['active', 'inactive'] &&
+        data.status in ['pending', 'active', 'inactive'] &&
+        (!('statusChangedBy' in data) || validString(data.statusChangedBy, 1, 128)) &&
+        (!('statusChangedAt' in data) || data.statusChangedAt is timestamp) &&
         data.joinDate is timestamp &&
         data.createdAt is timestamp &&
         data.updatedAt is timestamp;
@@ -221,18 +225,8 @@ service cloud.firestore {
     match /employees/{uid} {
       allow read: if isOwner(uid) || isManagerOrAdmin();
 
-      allow create: if validEmployee(request.resource.data) &&
-        timestampsValidOnCreate(request.resource.data) &&
-        uidUnchanged() &&
-        request.resource.data.uid == uid &&
-        (
-          (
-            isOwner(uid) &&
-            request.resource.data.role == 'employee' &&
-            request.resource.data.status == 'active'
-          ) ||
-          isAdmin()
-        );
+      // Account creation and employee-code reservation are atomic server workflows.
+      allow create: if false;
 
       allow update: if validEmployee(request.resource.data) &&
         timestampsValidOnUpdate(request.resource.data) &&
@@ -241,9 +235,10 @@ service cloud.firestore {
         (
           (
             isDocOwner() &&
+            resource.data.status == 'active' &&
             request.resource.data.diff(resource.data).affectedKeys()
               .hasOnly([
-                'fullName', 'phone', 'employeeCode', 'photoURL', 'facebookUrl',
+                'fullName', 'phone', 'photoURL', 'facebookUrl',
                 'bankName', 'bankAccountName', 'bankAccountNumber', 'updatedAt'
               ]) &&
             request.resource.data.role == resource.data.role &&
@@ -253,6 +248,10 @@ service cloud.firestore {
         );
 
       allow delete: if isAdmin();
+    }
+
+    match /employeeCodes/{code} {
+      allow read, write: if false;
     }
 
     match /workSchedules/{scheduleId} {

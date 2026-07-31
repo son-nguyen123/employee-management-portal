@@ -46,6 +46,10 @@ export interface ManagementPendingItem {
   staffRequestType?: StaffRequestType
   shifts?: ManagementShift[]
   removedShifts?: ManagementShift[]
+  warning?: string
+  penaltyIfApproved?: number
+  penaltyIfRejected?: number
+  managerMessageStatus?: 'messagedTri' | 'notMessaged' | 'messagedOtherManager'
 }
 
 function asDate(value: unknown, fallback = new Date(0)): Date {
@@ -302,6 +306,9 @@ export function subscribeToManagementPendingItems(
           const shift = asShift(row.data.shift)
           return date.getTime() && shift ? [{ date, shift, scheduleId: row.id }] : []
         }),
+        warning: rows.some((row) => row.data.underMinimumWarning === true)
+          ? `Lịch chỉ có ${rows.filter((row) => !String(row.data.note || '').includes('[DUTY_ONLY]')).length}/6 ca tối thiểu.`
+          : undefined,
       })
     })
 
@@ -323,6 +330,11 @@ export function subscribeToManagementPendingItems(
         reason: typeof data.reason === 'string' && data.reason.trim() ? data.reason : 'Không ghi lý do',
         createdAt: asDate(data.updatedAt || data.createdAt),
         targetIds: [id],
+        warning: data.underMinimumWarning === true
+          ? `Sau yêu cầu nghỉ, tuần này nhân viên còn ${Number(data.weeklyShiftCountAfterLeave || 0)}/6 ca.`
+          : data.noticeClass === 'late' ? 'Yêu cầu được gửi sau 16:00 của ngày hôm trước.' : undefined,
+        penaltyIfApproved: Number(data.penaltyIfApproved || 0),
+        penaltyIfRejected: Number(data.penaltyIfRejected || 0),
       })
     })
 
@@ -344,6 +356,12 @@ export function subscribeToManagementPendingItems(
         reason: typeof data.reason === 'string' && data.reason.trim() ? data.reason : 'Không ghi lý do',
         createdAt: asDate(data.updatedAt || data.createdAt),
         targetIds: [id],
+        warning: data.noticeClass === 'late' ? 'Báo đi trễ dưới 60 phút trước ca.' : undefined,
+        penaltyIfApproved: Number(data.penaltyIfApproved || 0),
+        penaltyIfRejected: Number(data.penaltyIfRejected || 0),
+        managerMessageStatus: data.managerMessageStatus === 'messagedTri' || data.managerMessageStatus === 'notMessaged' || data.managerMessageStatus === 'messagedOtherManager'
+          ? data.managerMessageStatus
+          : undefined,
       })
     })
 

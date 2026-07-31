@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { CalendarCheck, Check, ChevronRight, ExternalLink, Loader2, MessageSquareText, Phone, UsersRound, X } from 'lucide-react'
 import { useAuth, useUserRole } from '@/lib/hooks/useAuth'
-import { subscribeToAllEmployees } from '@/lib/services/employeeService'
+import { setEmployeeAccountStatus, subscribeToAllEmployees } from '@/lib/services/employeeService'
 import { reviewWorkScheduleBatch, subscribeToAllSchedules } from '@/lib/services/scheduleService'
 import { getPreviewSchedules, updatePreviewSchedule } from '@/lib/services/previewWorkflow'
 import type { Employee, WorkSchedule } from '@/lib/models/types'
@@ -160,6 +160,22 @@ export default function AdminDashboardPage() {
   }, [authUser, isPreviewMode])
 
   const activeEmployees = useMemo(() => employees.filter((item) => item.status === 'active'), [employees])
+  const pendingEmployees = useMemo(() => employees.filter((item) => item.status === 'pending'), [employees])
+  const inactiveEmployees = useMemo(() => employees.filter((item) => item.status === 'inactive'), [employees])
+
+  const changeAccountStatus = async (employee: Employee, status: 'active' | 'inactive') => {
+    setProcessingId(employee.uid)
+    setMessage('')
+    try {
+      await setEmployeeAccountStatus(employee.uid, status)
+      setEmployees((current) => current.map((item) => item.uid === employee.uid ? { ...item, status } : item))
+      setMessage(status === 'active' ? `Đã chấp nhận tài khoản ${employee.fullName}.` : `Đã vô hiệu hóa tài khoản ${employee.fullName}.`)
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'Chưa thể đổi trạng thái tài khoản.')
+    } finally {
+      setProcessingId('')
+    }
+  }
   const pendingBatches = useMemo(() => {
     const grouped = new Map<string, ScheduleBatch>()
     schedules.filter((item) =>
@@ -263,6 +279,22 @@ export default function AdminDashboardPage() {
       <main className="min-h-screen pb-8">
         <Header title="Danh sách nhân viên" subtitle={`${activeEmployees.length} nhân viên đang hoạt động`} backHref="/" />
         <PageContainer maxWidth="2xl">
+          {message && <p className="mb-3 rounded-2xl bg-indigo-50 p-3 text-sm font-semibold text-indigo-900 dark:bg-indigo-500/10 dark:text-indigo-100">{message}</p>}
+          {role === 'admin' && pendingEmployees.length > 0 && (
+            <section className="mb-5 rounded-3xl border border-amber-200 bg-amber-50 p-4 dark:border-amber-500/30 dark:bg-amber-500/10">
+              <h2 className="font-black text-amber-900 dark:text-amber-100">Tài khoản mới chờ duyệt ({pendingEmployees.length})</h2>
+              <div className="mt-3 space-y-2">{pendingEmployees.map((employee) => (
+                <article key={employee.uid} className="rounded-2xl bg-white p-3 shadow-sm dark:bg-slate-900">
+                  <p className="font-extrabold">{employee.fullName} · {employee.employeeCode}</p>
+                  <p className="mt-1 text-xs text-muted-foreground">{employee.phone} · {employee.email}</p>
+                  <div className="mt-3 grid grid-cols-2 gap-2">
+                    <button type="button" disabled={processingId === employee.uid} onClick={() => void changeAccountStatus(employee, 'inactive')} className="min-h-11 rounded-xl border border-rose-200 text-sm font-bold text-rose-600 disabled:opacity-50">Từ chối / khóa</button>
+                    <button type="button" disabled={processingId === employee.uid} onClick={() => void changeAccountStatus(employee, 'active')} className="min-h-11 rounded-xl bg-emerald-600 text-sm font-bold text-white disabled:opacity-50">{processingId === employee.uid ? 'Đang xử lý...' : 'Chấp nhận'}</button>
+                  </div>
+                </article>
+              ))}</div>
+            </section>
+          )}
           {loading ? (
             <div className="grid min-h-56 place-items-center"><Loader2 className="h-7 w-7 animate-spin text-indigo-600" /></div>
           ) : (
@@ -280,6 +312,17 @@ export default function AdminDashboardPage() {
                 </Link>
               ))}
               {!activeEmployees.length && <div className="mobile-card p-8 text-center text-sm font-semibold text-muted-foreground sm:col-span-2">Chưa có nhân viên đang hoạt động.</div>}
+            </section>
+          )}
+          {role === 'admin' && inactiveEmployees.length > 0 && (
+            <section className="mt-6">
+              <h2 className="mb-3 text-lg font-black">Tài khoản đã khóa</h2>
+              <div className="space-y-2">{inactiveEmployees.map((employee) => (
+                <article key={employee.uid} className="mobile-card flex items-center gap-3 p-3">
+                  <div className="min-w-0 flex-1"><p className="truncate font-bold">{employee.fullName}</p><p className="text-xs text-muted-foreground">{employee.employeeCode}</p></div>
+                  <button type="button" disabled={processingId === employee.uid} onClick={() => void changeAccountStatus(employee, 'active')} className="min-h-10 rounded-xl bg-emerald-50 px-3 text-xs font-bold text-emerald-700 disabled:opacity-50">Bật lại</button>
+                </article>
+              ))}</div>
             </section>
           )}
         </PageContainer>
