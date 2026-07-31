@@ -536,6 +536,7 @@ export async function submitSchedules(actor: RequestActor, raw: unknown) {
         revisionCount: 0,
         weeklyShiftCount: actualShiftCount,
         underMinimumWarning: underMinimum,
+        penaltyId: shouldPenalize && workflowPolicy.scheduleLatePenalty > 0 ? penaltyRef.id : null,
         createdAt: now,
         updatedAt: now,
         lockedAt: null,
@@ -2076,6 +2077,7 @@ export async function reviewScheduleBatch(actor: RequestActor, raw: unknown) {
   const note = text(body.note ?? '', 'Phản hồi', 1000, true)
   if (status === 'Rejected' && !note) throw new ApiError(400, 'Vui lòng nhập lý do từ chối.')
   const allowSundayResubmissionWithoutPenalty = status === 'Rejected' && body.allowSundayResubmissionWithoutPenalty === true
+  const waiveNewEmployeePenalty = status === 'Approved' && body.waiveNewEmployeePenalty === true
 
   const refs = ids.map((id) => adminDb.collection('workSchedules').doc(id))
   let employeeId = ''
@@ -2108,6 +2110,26 @@ export async function reviewScheduleBatch(actor: RequestActor, raw: unknown) {
       throw new ApiError(409, 'Bảng lịch đã ở trạng thái này.')
     }
 
+    let shouldWaivePenalty = false
+    if (waiveNewEmployeePenalty) {
+      const joinedValue = employeeSnapshot.get('joinDate') || employeeSnapshot.get('createdAt')
+      const joinedAt = joinedValue instanceof Timestamp ? joinedValue.toDate() : null
+      const allEmployeeSchedules = await transaction.get(
+        adminDb.collection('workSchedules').where('employeeId', '==', employeeId)
+      )
+      const hasPreviousSchedule = allEmployeeSchedules.docs.some((snapshot) =>
+        !ids.includes(snapshot.id) && snapshot.get('status') !== 'Cancelled'
+      )
+      shouldWaivePenalty = Boolean(
+        joinedAt &&
+        Date.now() - joinedAt.getTime() <= 45 * 24 * 60 * 60 * 1000 &&
+        !hasPreviousSchedule
+      )
+    }
+    const penaltyIds = shouldWaivePenalty
+      ? Array.from(new Set(schedules.map((schedule) => schedule.penaltyId).filter((value): value is string => typeof value === 'string' && value.length > 0)))
+      : []
+    const penaltySnapshots = await Promise.all(penaltyIds.map((id) => transaction.get(adminDb.collection('penalties').doc(id))))
     const now = FieldValue.serverTimestamp()
     refs.forEach((ref) => transaction.set(ref, {
       status,
@@ -2119,6 +2141,15 @@ export async function reviewScheduleBatch(actor: RequestActor, raw: unknown) {
       updatedAt: now,
       lockedAt: status === 'Approved' ? now : null,
     }, { merge: true }))
+    penaltySnapshots.forEach((snapshot) => {
+      if (snapshot.exists) transaction.set(snapshot.ref, {
+        status: 'Cancelled',
+        amount: 0,
+        cancellationReason: 'Miễn phạt lần đầu cho nhân viên mới khi quản lý xác nhận.',
+        cancelledAt: FieldValue.serverTimestamp(),
+        updatedAt: FieldValue.serverTimestamp(),
+      }, { merge: true })
+    })
     transaction.set(notificationRef, {
       employeeId,
       title: 'Yêu cầu gửi lịch đã được xử lý',
@@ -2129,6 +2160,16 @@ export async function reviewScheduleBatch(actor: RequestActor, raw: unknown) {
       isRead: false,
       createdAt: now,
     }, { merge: true })
+    if (shouldWaivePenalty) {
+      transaction.set(adminDb.collection('notifications').doc(`schedule-penalty-waived-${ids[0]}`), {
+        employeeId,
+        title: 'Đã miễn phạt đăng ký lịch',
+        message: 'Quản lý đã miễn khoản phạt lần đầu vì bạn là nhân viên mới.',
+        type: 'success',
+        isRead: false,
+        createdAt: now,
+      })
+    }
     transaction.set(dispatchRef, {
       source: 'workSchedules',
       sourceId: ids[0],

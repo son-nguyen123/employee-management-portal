@@ -24,6 +24,7 @@ import {
   cancelWorkScheduleBatch,
   replaceWorkSchedules,
   setWorkScheduleBatchEditing,
+  getEmployeeSchedules,
   subscribeToSchedulesByDateRange,
   submitWorkSchedules,
 } from '@/lib/services/scheduleService'
@@ -79,7 +80,7 @@ const localDateKey = (date: Date) =>
   `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
 
 export default function SchedulePage() {
-  const { authUser, isPreviewMode } = useAuth()
+  const { authUser, employee, isPreviewMode } = useAuth()
   const [managerFacebookUrl, setManagerFacebookUrl] = useState(process.env.NEXT_PUBLIC_MANAGER_FACEBOOK_URL?.trim() || '')
   const [selected, setSelected] = useState<Selection>({})
   const [original, setOriginal] = useState<Selection>({})
@@ -104,6 +105,8 @@ export default function SchedulePage() {
   const [originalScheduleIds, setOriginalScheduleIds] = useState<Record<string, string>>({})
   const [submittedChangeSummary, setSubmittedChangeSummary] = useState<{ removed: string[]; added: string[] } | null>(null)
   const [editBaseline, setEditBaseline] = useState<EditBaseline | null>(null)
+  const [hasExistingSchedules, setHasExistingSchedules] = useState<boolean | null>(null)
+  const [referenceNow] = useState(() => Date.now())
 
   useEffect(() => {
     const mode = new URLSearchParams(window.location.search).get('mode')
@@ -120,8 +123,40 @@ export default function SchedulePage() {
     }).catch(() => undefined)
   }, [authUser, isPreviewMode])
 
+  useEffect(() => {
+    if (!authUser) return
+    if (isPreviewMode) {
+      setHasExistingSchedules(getPreviewSchedules().some((item) => item.employeeId === authUser.uid && item.status !== 'Cancelled'))
+      return
+    }
+    setHasExistingSchedules(null)
+    void getEmployeeSchedules(authUser.uid)
+      .then((schedules) => setHasExistingSchedules(schedules.some((item) => item.status !== 'Cancelled')))
+      .catch(() => setHasExistingSchedules(false))
+  }, [authUser, isPreviewMode])
+
+  const isNewEmployee = useMemo(() => {
+    if (!employee || hasExistingSchedules !== false || overtimeMode || changeMode) return false
+    const joined = employee.joinDate instanceof Date ? employee.joinDate : employee.joinDate.toDate()
+    return referenceNow - joined.getTime() <= 45 * 24 * 60 * 60 * 1000
+  }, [employee, hasExistingSchedules, overtimeMode, changeMode, referenceNow])
+
   const days = useMemo<DayItem[]>(() => {
     const now = new Date()
+    if (isNewEmployee) {
+      const first = new Date(now)
+      first.setHours(0, 0, 0, 0)
+      const last = new Date(first)
+      last.setDate(first.getDate() + ((7 - first.getDay()) % 7) + 7)
+      const names = ['Chá»§ Nháº­t', 'Thá»© Hai', 'Thá»© Ba', 'Thá»© TÆ°', 'Thá»© NÄƒm', 'Thá»© SÃ¡u', 'Thá»© Báº£y']
+      const shortNames = ['CN', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7']
+      const result: DayItem[] = []
+      for (const date = new Date(first); date <= last; date.setDate(date.getDate() + 1)) {
+        const itemDate = new Date(date)
+        result.push({ key: localDateKey(itemDate), name: names[itemDate.getDay()], shortName: shortNames[itemDate.getDay()], date: itemDate })
+      }
+      return result
+    }
     const currentDay = now.getDay()
     const daysUntilNextMonday = currentWeekMode
       ? -((currentDay || 7) - 1)
@@ -136,10 +171,10 @@ export default function SchedulePage() {
       date.setDate(monday.getDate() + index)
       return { key: localDateKey(date), name, shortName: shortNames[index], date }
     })
-  }, [currentWeekMode])
+  }, [currentWeekMode, isNewEmployee])
 
   useEffect(() => {
-    if (!authUser) return
+    if (!authUser || hasExistingSchedules === null) return
     const hydrateSchedules = (schedules: WorkSchedule[]) => {
         const current = schedules.filter((item) => (overtimeMode || changeMode)
           ? item.status === 'Approved'
@@ -214,7 +249,7 @@ export default function SchedulePage() {
     }
 
     const start = days[0].date
-    const end = new Date(days[6].date)
+    const end = new Date(days[days.length - 1].date)
     end.setHours(23, 59, 59, 999)
     if (isPreviewMode) {
       hydrateSchedules(getPreviewSchedules()
@@ -236,7 +271,7 @@ export default function SchedulePage() {
         setLoading(false)
       }
     )
-  }, [authUser, days, isPreviewMode, overtimeMode, changeMode])
+  }, [authUser, days, hasExistingSchedules, isPreviewMode, overtimeMode, changeMode])
 
   const chooseShift = (dayKey: string, shift: Shift) => {
     if (overtimeMode && original[dayKey]?.includes(shift)) return
@@ -544,7 +579,7 @@ export default function SchedulePage() {
 
   return (
     <main className="min-h-screen pb-32">
-      <Header title={changeMode ? 'Đổi / thêm ca' : overtimeMode ? 'Xin làm thêm' : 'Đăng ký lịch làm'} subtitle={`${currentWeekMode ? 'Tuần hiện tại' : 'Tuần kế tiếp'} · Thứ Hai đến Chủ Nhật`} />
+      <Header title={changeMode ? 'Đổi / thêm ca' : overtimeMode ? 'Xin làm thêm' : 'Đăng ký lịch làm'} subtitle={`${isNewEmployee ? 'Từ hôm nay đến hết tuần sau' : currentWeekMode ? 'Tuần hiện tại' : 'Tuần kế tiếp'} · ${days[0].name} đến ${days[days.length - 1].name}`} />
       <div className="mx-auto max-w-2xl px-3 py-4 sm:px-6">
         {changeMode && (
           <div className="mb-4 grid grid-cols-2 gap-2 rounded-2xl bg-slate-100 p-1 dark:bg-slate-800">
@@ -552,21 +587,21 @@ export default function SchedulePage() {
             <button type="button" onClick={() => { setCurrentWeekMode(false); setSubmittedChangeSummary(null); setMessage(null) }} className={`min-h-11 rounded-xl text-sm font-bold ${!currentWeekMode ? 'bg-white text-indigo-600 shadow-sm dark:bg-slate-950' : 'text-muted-foreground'}`}>Tuần sau</button>
           </div>
         )}
-        <section className="mb-4 rounded-3xl bg-slate-950 p-5 text-white">
+        <section className="mb-4 rounded-3xl bg-gradient-to-br from-fuchsia-600 via-pink-500 to-violet-600 p-5 text-white shadow-lg shadow-fuchsia-500/20">
           <div className="flex items-start justify-between gap-4">
             <div>
-              <p className="text-xs font-semibold text-indigo-300">Lịch tuần sau</p>
+              <p className="text-xs font-semibold text-fuchsia-100">{isNewEmployee ? 'Lịch dành cho nhân viên mới' : currentWeekMode ? 'Lịch tuần này' : 'Lịch tuần sau'}</p>
               <h2 className="mt-1 text-xl font-extrabold">
                 {days[0].date.toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit' })}
                 {' – '}
-                {days[6].date.toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit' })}
+                {days[days.length - 1].date.toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit' })}
               </h2>
               <p className="mt-1 text-xs text-slate-300">
                 {changeMode
                   ? 'Chạm ca màu đỏ để xin hủy; chọn ca trống để đổi ca hoặc đăng ký thêm.'
                   : overtimeMode
                   ? 'Ca đã duyệt được khóa lại; bạn chỉ cần chọn những ca muốn làm thêm.'
-                  : compactMode ? 'Lịch đã được gom thành một bảng để quản lý xác nhận.' : 'Bạn có thể chọn một hoặc nhiều ca trong cùng ngày.'}
+                  : compactMode ? 'Lịch đã được gom thành một bảng để quản lý xác nhận.' : isNewEmployee ? 'Bạn có thể soạn lịch từ hôm nay đến hết tuần sau.' : 'Bạn có thể chọn một hoặc nhiều ca trong cùng ngày.'}
               </p>
             </div>
             <div className="rounded-2xl bg-white/10 px-3 py-2 text-center">

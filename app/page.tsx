@@ -257,7 +257,7 @@ export default function Page() {
               <p className="font-extrabold">
                 {schedulePrompt.isNew ? 'Có vẻ bạn là thành viên mới' : 'Có vẻ bạn chưa có lịch'}
               </p>
-              <p className="text-xs text-indigo-700 dark:text-indigo-200">Tuần kế tiếp chưa có lịch · Thêm lịch ngay</p>
+              <p className="text-xs text-indigo-700 dark:text-indigo-200">{schedulePrompt.isNew ? 'Nhân viên mới: chọn từ hôm nay đến hết tuần sau' : 'Tuần kế tiếp chưa có lịch · Thêm lịch ngay'}</p>
             </div>
             <ChevronRight className="h-5 w-5 shrink-0" />
           </Link>

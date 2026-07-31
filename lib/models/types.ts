@@ -46,6 +46,7 @@ export interface WorkSchedule {
   editingAt?: Timestamp | Date
   requiresReapproval?: boolean
   allowSundayResubmissionWithoutPenalty?: boolean
+  penaltyId?: string | null
   revisionCount?: number
   createdAt: Timestamp | Date
   updatedAt: Timestamp | Date

@@ -80,7 +80,9 @@ export default function AdminDashboardPage() {
   const [savingTarget, setSavingTarget] = useState(false)
   const [selectedProcessedBatch, setSelectedProcessedBatch] = useState<ProcessedScheduleBatch | null>(null)
   const [selectedPendingBatch, setSelectedPendingBatch] = useState<ScheduleBatch | null>(null)
+  const [newEmployeeApprovalBatch, setNewEmployeeApprovalBatch] = useState<ScheduleBatch | null>(null)
   const [processedReason, setProcessedReason] = useState('')
+  const [referenceNow] = useState(() => Date.now())
 
   useEffect(() => {
     const timeout = window.setTimeout(() => {
@@ -198,9 +200,11 @@ export default function AdminDashboardPage() {
   }
   const pendingBatches = useMemo(() => {
     const grouped = new Map<string, ScheduleBatch>()
+    const referenceDate = new Date(referenceNow)
+    const reviewableWeeks = new Set([nextMondayKey(), ...(referenceDate.getDay() === 0 ? [mondayKey(referenceDate)] : [])])
     schedules.filter((item) =>
       ['Registered', 'Pending'].includes(item.status) &&
-      mondayKey(toDate(item.date)) === nextMondayKey()
+      reviewableWeeks.has(mondayKey(toDate(item.date)))
     ).forEach((schedule) => {
       const key = `${schedule.employeeId}-${mondayKey(toDate(schedule.date))}`
       const current = grouped.get(key)
@@ -231,7 +235,7 @@ export default function AdminDashboardPage() {
         requiresReapproval: uniqueRows.some((item) => item.requiresReapproval),
       }
     })
-  }, [schedules])
+  }, [schedules, referenceNow])
   const processedBatches = useMemo(() => {
     const grouped = new Map<string, ProcessedScheduleBatch>()
     schedules.filter((item) =>
@@ -292,7 +296,7 @@ export default function AdminDashboardPage() {
     }
   }
 
-  const review = async (batch: ScheduleBatch, status: 'Approved' | 'Rejected', reviewNote = '', allowSundayResubmission = false) => {
+  const review = async (batch: ScheduleBatch, status: 'Approved' | 'Rejected', reviewNote = '', allowSundayResubmission = false, waiveNewEmployeePenalty = false) => {
     if (status === 'Rejected' && !reviewNote.trim()) return false
     setProcessingId(batch.key)
     setProcessingAction(status === 'Approved' ? 'approve' : 'reject')
@@ -300,7 +304,7 @@ export default function AdminDashboardPage() {
     try {
       const ids = batch.schedules.map((item) => item.id)
       if (isPreviewMode) ids.forEach((id) => updatePreviewSchedule(id, { status, reviewNote }))
-      else await reviewWorkScheduleBatch(ids, status, reviewNote, allowSundayResubmission)
+      else await reviewWorkScheduleBatch(ids, status, reviewNote, allowSundayResubmission, waiveNewEmployeePenalty)
       setSchedules((prev) => prev.map((item) => ids.includes(item.id) ? { ...item, status, reviewNote } : item))
       setMessage(
         status === 'Approved'
@@ -318,6 +322,16 @@ export default function AdminDashboardPage() {
       setProcessingId('')
       setProcessingAction('')
     }
+  }
+
+  const isNewEmployeeApproval = (batch: ScheduleBatch) => {
+    const referenceDate = new Date(referenceNow)
+    if (referenceDate.getDay() !== 0) return false
+    const employee = employees.find((item) => item.uid === batch.employeeId)
+    if (!employee || !batch.schedules.some((item) => localDateKey(toDate(item.date)) === localDateKey(referenceDate))) return false
+    const joined = employee.joinDate instanceof Date ? employee.joinDate : employee.joinDate.toDate()
+    const hasPreviousSchedule = schedules.some((item) => item.employeeId === batch.employeeId && !batch.schedules.some((row) => row.id === item.id) && item.status !== 'Cancelled')
+    return referenceNow - joined.getTime() <= 45 * 24 * 60 * 60 * 1000 && !hasPreviousSchedule
   }
 
   if ((!role || !['admin', 'manager'].includes(role)) && !isPreviewMode) {
@@ -467,7 +481,7 @@ export default function AdminDashboardPage() {
                 {weekNote && <p className="mx-4 mb-4 rounded-2xl bg-slate-50 p-3 text-sm dark:bg-slate-800"><strong>Ghi chú:</strong> {weekNote}</p>}
                 <section className="grid grid-cols-2 gap-2 border-t border-slate-100 p-4 dark:border-white/10">
                   <button type="button" disabled={!!processingId || selectedPendingBatch.isEditing} onClick={() => { setRejectingBatch(selectedPendingBatch); setRejectReason(''); setAllowSundayResubmissionWithoutPenalty(false); setSelectedPendingBatch(null) }} className="flex min-h-12 items-center justify-center gap-2 rounded-2xl border border-rose-200 font-extrabold text-rose-600 disabled:opacity-50"><X className="h-4 w-4" /> Từ chối</button>
-                  <button type="button" disabled={!!processingId || selectedPendingBatch.isEditing} onClick={async () => { if (await review(selectedPendingBatch, 'Approved')) setSelectedPendingBatch(null) }} className="flex min-h-12 items-center justify-center gap-2 rounded-2xl bg-emerald-600 font-extrabold text-white disabled:opacity-50">{processingId === selectedPendingBatch.key ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />} Duyệt</button>
+                  <button type="button" disabled={!!processingId || selectedPendingBatch.isEditing} onClick={async () => { if (isNewEmployeeApproval(selectedPendingBatch)) setNewEmployeeApprovalBatch(selectedPendingBatch); else if (await review(selectedPendingBatch, 'Approved')) setSelectedPendingBatch(null) }} className="flex min-h-12 items-center justify-center gap-2 rounded-2xl bg-emerald-600 font-extrabold text-white disabled:opacity-50">{processingId === selectedPendingBatch.key ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />} Duyệt</button>
                 </section>
               </article>
             </main>
@@ -599,6 +613,27 @@ export default function AdminDashboardPage() {
                 {processingId === rejectingBatch.key && processingAction === 'reject' ? <Loader2 className="h-4 w-4 animate-spin" /> : <X className="h-4 w-4" />}
                 {processingId ? 'Đang từ chối...' : 'Từ chối bảng lịch'}
               </button>
+            </div>
+          </section>
+        </div>
+      )}
+
+      {newEmployeeApprovalBatch && (
+        <div className="fixed inset-0 z-[90] flex items-end justify-center bg-slate-950/60 p-0 backdrop-blur-sm sm:items-center sm:p-4" onClick={() => !processingId && setNewEmployeeApprovalBatch(null)}>
+          <section className="w-full max-w-md overflow-hidden rounded-t-[2rem] bg-white shadow-2xl dark:bg-slate-900 sm:rounded-[2rem]" onClick={(event) => event.stopPropagation()}>
+            <div className="bg-gradient-to-br from-fuchsia-600 via-pink-500 to-violet-600 p-6 text-white">
+              <div className="mx-auto grid h-16 w-16 place-items-center rounded-3xl bg-white/20 text-3xl">✨</div>
+              <h2 className="mt-4 text-center text-2xl font-black">Nhân viên mới vào</h2>
+              <p className="mt-2 text-center text-sm leading-6 text-white/85">Có vẻ đây là lịch đầu tiên của nhân viên. Bạn có muốn miễn khoản phạt đăng ký trễ lần đầu không?</p>
+            </div>
+            <div className="grid gap-2 p-5">
+              <button type="button" disabled={!!processingId} onClick={async () => { if (await review(newEmployeeApprovalBatch, 'Approved', '', false, true)) { setNewEmployeeApprovalBatch(null); setSelectedPendingBatch(null) } }} className="min-h-12 rounded-2xl bg-gradient-to-r from-fuchsia-600 to-violet-600 font-extrabold text-white shadow-lg shadow-fuchsia-500/20 disabled:opacity-50">
+                Có, miễn phạt lần đầu
+              </button>
+              <button type="button" disabled={!!processingId} onClick={async () => { if (await review(newEmployeeApprovalBatch, 'Approved')) { setNewEmployeeApprovalBatch(null); setSelectedPendingBatch(null) } }} className="min-h-12 rounded-2xl border border-slate-200 font-bold text-slate-700 dark:border-slate-700 dark:text-slate-200 disabled:opacity-50">
+                Không, vẫn tính phạt
+              </button>
+              <button type="button" disabled={!!processingId} onClick={() => setNewEmployeeApprovalBatch(null)} className="min-h-10 text-sm font-semibold text-muted-foreground">Quay lại</button>
             </div>
           </section>
         </div>
