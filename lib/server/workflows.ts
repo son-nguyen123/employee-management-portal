@@ -560,9 +560,9 @@ export async function submitSchedules(actor: RequestActor, raw: unknown) {
     }
     transaction.set(adminDb.collection('notifications').doc(`schedule-status-${scheduleRefs[0].id}`), {
       employeeId: actor.uid,
-      title: 'Yêu cầu gửi lịch đang xử lý',
-      message: `Bảng lịch gồm ${scheduleRefs.length} ca đã được gửi và đang chờ quản lý xử lý.`,
-      type: 'info',
+      title: 'Đã gửi yêu cầu lịch',
+      message: 'Yêu cầu đã gửi đến quản lý và đang chờ duyệt.',
+      type: 'warning',
       isRead: false,
       createdAt: now,
     })
@@ -727,6 +727,14 @@ export async function submitStaffRequest(actor: RequestActor, raw: unknown) {
       createdAt: now,
       updatedAt: now,
     })
+    transaction.create(
+      adminDb.collection('notifications').doc(`staff-request-status-${requestRef.id}`),
+      warningNotification(
+        actor.uid,
+        type === 'scheduleChange' ? 'Đã gửi yêu cầu đổi ca' : type === 'overtime' ? 'Đã gửi yêu cầu làm thêm' : 'Đã gửi ghi chú',
+        'Yêu cầu đã gửi đến quản lý và đang chờ xử lý.'
+      )
+    )
     if (shouldPenalizeSameDayChange && workflowPolicy.sameDayScheduleChangePenalty > 0) {
       const penaltyRef = adminDb.collection('penalties').doc(`schedule-change-${actor.uid}-${id}`)
       transaction.create(penaltyRef, penaltyData({
@@ -902,9 +910,9 @@ export async function replaceSchedules(actor: RequestActor, raw: unknown) {
     }
     transaction.set(adminDb.collection('notifications').doc(`schedule-status-${newRefs[0].id}`), {
       employeeId: actor.uid,
-      title: 'Yêu cầu gửi lịch đang xử lý',
-      message: `Bảng lịch điều chỉnh gồm ${newRefs.length} ca đã được gửi và đang chờ quản lý xử lý.`,
-      type: 'info',
+      title: 'Đã gửi lại yêu cầu lịch',
+      message: 'Lịch đã cập nhật và gửi đến quản lý.',
+      type: 'warning',
       isRead: false,
       createdAt: now,
     })
@@ -1090,6 +1098,10 @@ export async function submitLeave(actor: RequestActor, raw: unknown) {
       createdAt: now,
       updatedAt: now,
     })
+    transaction.create(
+      adminDb.collection('notifications').doc(`leave-status-${leaveRef.id}`),
+      warningNotification(actor.uid, 'Đã gửi yêu cầu nghỉ', 'Yêu cầu đã gửi đến quản lý và đang chờ duyệt.')
+    )
     transaction.create(workflow, {
       employeeId: actor.uid,
       action: 'submitLeave',
@@ -1197,6 +1209,10 @@ export async function submitLate(actor: RequestActor, raw: unknown) {
       createdAt: now,
       updatedAt: now,
     })
+    transaction.create(
+      adminDb.collection('notifications').doc(`late-status-${lateRef.id}`),
+      warningNotification(actor.uid, 'Đã gửi thông báo đi trễ', 'Thông báo đã gửi đến quản lý và đang chờ xử lý.')
+    )
     transaction.create(workflow, {
       employeeId: actor.uid,
       action: 'submitLate',
@@ -1246,6 +1262,10 @@ export async function submitSalaryAdvance(actor: RequestActor, raw: unknown) {
       createdAt: now,
       updatedAt: now,
     })
+    transaction.create(
+      adminDb.collection('notifications').doc(`salary-status-${advanceRef.id}`),
+      warningNotification(actor.uid, 'Đã gửi yêu cầu ứng lương', 'Yêu cầu đã gửi đến quản lý và đang chờ duyệt.')
+    )
     transaction.create(workflow, {
       employeeId: actor.uid,
       action: 'submitSalaryAdvance',
@@ -1501,6 +1521,11 @@ export async function reviseRequest(actor: RequestActor, raw: unknown) {
       revisedAt: now,
       updatedAt: now,
     }, { merge: true })
+    transaction.set(
+      adminDb.collection('notifications').doc(`${resource}-revised-status-${id}`),
+      warningNotification(actor.uid, 'Đã gửi lại yêu cầu', 'Nội dung đã cập nhật và gửi đến quản lý.'),
+      { merge: true }
+    )
     managerIds.forEach((managerId) => {
       const copy = managerRequestCopy[resource]
       transaction.set(
