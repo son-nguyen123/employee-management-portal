@@ -12,6 +12,12 @@ import { Badge } from '@/components/ui/badge'
 import { SkeletonLoader } from '@/components/ui/skeleton-loader'
 import { AlertCircle, DollarSign, Loader2, Pencil, Trash2 } from 'lucide-react'
 
+function formatVietnameseCurrency(value: string | number): string {
+  const digits = String(value).replace(/\D/g, '')
+  if (!digits) return ''
+  return Number(digits).toLocaleString('vi-VN')
+}
+
 export default function SalaryAdvancePage() {
   const { authUser, isLoading, isPreviewMode } = useAuth()
   const [loading, setLoading] = useState(true)
@@ -55,7 +61,7 @@ export default function SalaryAdvancePage() {
       return
     }
 
-    const amount = parseFloat(formData.amount)
+    const amount = Number(formData.amount.replace(/\./g, ''))
     if (isNaN(amount) || amount <= 0) {
       setMessage({ type: 'error', text: 'Số tiền chưa hợp lệ' })
       return
@@ -102,7 +108,7 @@ export default function SalaryAdvancePage() {
 
   const editAdvance = (advance: any) => {
     setEditingId(advance.id)
-    setFormData({ amount: String(advance.amount || ''), reason: advance.reason || '' })
+    setFormData({ amount: formatVietnameseCurrency(advance.amount || ''), reason: advance.reason || '' })
     setMessage({ type: 'success', text: 'Bạn đang điều chỉnh yêu cầu đã gửi.' })
     window.scrollTo({ top: 0, behavior: 'smooth' })
   }
@@ -162,11 +168,10 @@ export default function SalaryAdvancePage() {
               <div className="relative">
                 <DollarSign className="absolute left-3 top-2.5 w-5 h-5 text-muted-foreground" />
                 <input
-                  type="number"
-                  min="0"
-                  step="0.01"
+                  type="text"
+                  inputMode="numeric"
                   value={formData.amount}
-                  onChange={(e) => setFormData({ ...formData, amount: e.target.value })}
+                  onChange={(e) => setFormData({ ...formData, amount: formatVietnameseCurrency(e.target.value) })}
                   placeholder="Ví dụ: 2.000.000"
                   className="w-full pl-10 pr-4 py-2 rounded-lg border border-border bg-background focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-colors"
                   disabled={submitting}
