@@ -83,6 +83,9 @@ export default function LeaveRequestPage() {
   }, [approvedShifts])
 
   const selectedShortShifts = approvedShifts.filter((shift) => selectedScheduleIds.includes(shift.id))
+  const selectedShortDayCount = new Set(
+    selectedShortShifts.map((item) => item.date.toLocaleDateString('vi-VN'))
+  ).size
 
   const openSchedulePicker = () => {
     setDraftScheduleIds(selectedScheduleIds)
@@ -90,22 +93,20 @@ export default function LeaveRequestPage() {
   }
 
   const toggleDraftShift = (shift: ApprovedShift) => {
-    const shiftDate = `${shift.date.getFullYear()}-${String(shift.date.getMonth() + 1).padStart(2, '0')}-${String(shift.date.getDate()).padStart(2, '0')}`
-    const currentDate = approvedShifts.find((item) => draftScheduleIds.includes(item.id))
-    const currentKey = currentDate
-      ? `${currentDate.date.getFullYear()}-${String(currentDate.date.getMonth() + 1).padStart(2, '0')}-${String(currentDate.date.getDate()).padStart(2, '0')}`
-      : ''
     setDraftScheduleIds((current) => {
       if (current.includes(shift.id)) return current.filter((id) => id !== shift.id)
-      return currentKey && currentKey !== shiftDate ? [shift.id] : [...current, shift.id]
+      return [...current, shift.id]
     })
   }
 
   const confirmSchedulePicker = () => {
     const selected = approvedShifts.filter((item) => draftScheduleIds.includes(item.id))
     if (!selected.length) return
-    const date = selected[0].date
-    setStartDate(`${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`)
+    const dates = selected.map((item) => item.date).sort((left, right) => left.getTime() - right.getTime())
+    const firstDate = dates[0]
+    const lastDate = dates[dates.length - 1]
+    setStartDate(`${firstDate.getFullYear()}-${String(firstDate.getMonth() + 1).padStart(2, '0')}-${String(firstDate.getDate()).padStart(2, '0')}`)
+    setEndDate(`${lastDate.getFullYear()}-${String(lastDate.getMonth() + 1).padStart(2, '0')}-${String(lastDate.getDate()).padStart(2, '0')}`)
     setSelectedScheduleIds(draftScheduleIds)
     setSchedulePickerOpen(false)
   }
@@ -133,7 +134,7 @@ export default function LeaveRequestPage() {
     const request = {
       employeeId: authUser.uid,
       leaveDate: new Date(`${startDate}T12:00:00`),
-      endDate: new Date(`${duration === 'short' ? startDate : endDate}T12:00:00`),
+      endDate: new Date(`${endDate || startDate}T12:00:00`),
       duration,
       leaveType: 'personal' as const,
       reason: reason.trim(),
@@ -195,7 +196,7 @@ export default function LeaveRequestPage() {
           <Palmtree className="h-7 w-7 text-emerald-100" />
           <h2 className="mt-4 text-2xl font-black">Bạn cần nghỉ khi nào?</h2>
           <p className="mt-1 text-sm leading-6 text-emerald-50">
-            Nghỉ ngắn hạn áp dụng cho một ngày. Nghỉ dài hạn cần chọn khoảng ngày cụ thể.
+            Nghỉ ngắn hạn chọn các ca cụ thể trong một hoặc nhiều ngày. Nghỉ dài hạn chọn một khoảng ngày liên tục.
           </p>
           <p className="mt-3 rounded-2xl bg-white/10 p-3 text-xs font-semibold leading-5 text-emerald-50">
             Ghi lý do chính tại đây; hình ảnh hoặc giấy tờ làm bằng chứng gửi riêng cho quản lý qua Messenger.
@@ -205,7 +206,7 @@ export default function LeaveRequestPage() {
         {(!hasPendingRequest || editingId) && <form onSubmit={submit} className="mobile-card min-w-0 overflow-hidden p-4 sm:p-6">
           <div className="grid grid-cols-2 gap-2 rounded-2xl bg-slate-100 p-1 dark:bg-slate-800">
             {[
-              { value: 'short' as const, label: 'Nghỉ ngắn hạn', note: 'Một ngày' },
+              { value: 'short' as const, label: 'Nghỉ ngắn hạn', note: 'Chọn ca' },
               { value: 'long' as const, label: 'Nghỉ dài hạn', note: 'Nhiều ngày' },
             ].map((item) => (
               <button
@@ -229,7 +230,7 @@ export default function LeaveRequestPage() {
                   <p className="font-extrabold">{selectedShortShifts.length ? `${selectedShortShifts.length} ca đã chọn` : 'Chọn từ lịch đã đăng ký'}</p>
                   <p className="mt-1 text-xs text-muted-foreground">
                     {selectedShortShifts.length
-                      ? `${selectedShortShifts[0].date.toLocaleDateString('vi-VN', { weekday: 'long', day: '2-digit', month: '2-digit' })} · ${selectedShortShifts.map((item) => shiftLabels[item.shift]).join(', ')}`
+                      ? `${selectedShortDayCount} ngày · ${selectedShortShifts.map((item) => shiftLabels[item.shift]).join(', ')}`
                       : 'Hiển thị các ca đã được quản lý duyệt'}
                   </p>
                 </div>
@@ -268,7 +269,7 @@ export default function LeaveRequestPage() {
             <div className="mt-4 flex gap-2 rounded-2xl bg-indigo-50 p-3 text-xs leading-5 text-indigo-800 dark:bg-indigo-500/10 dark:text-indigo-200">
               <CalendarDays className="mt-0.5 h-4 w-4 shrink-0" />
               {duration === 'short'
-                ? `Bạn đang xin nghỉ ngày ${new Date(`${startDate}T12:00:00`).toLocaleDateString('vi-VN')}.`
+                ? `Bạn đang chọn ${selectedShortShifts.length} ca trong ${selectedShortDayCount} ngày${endDate && endDate !== startDate ? `, từ ${new Date(`${startDate}T12:00:00`).toLocaleDateString('vi-VN')} đến ${new Date(`${endDate}T12:00:00`).toLocaleDateString('vi-VN')}` : ` ${new Date(`${startDate}T12:00:00`).toLocaleDateString('vi-VN')}`}.`
                 : `Khoảng nghỉ từ ${new Date(`${startDate}T12:00:00`).toLocaleDateString('vi-VN')}${endDate ? ` đến ${new Date(`${endDate}T12:00:00`).toLocaleDateString('vi-VN')}` : ''}.`}
             </div>
           )}
@@ -319,7 +320,7 @@ export default function LeaveRequestPage() {
               <button type="button" onClick={() => setSchedulePickerOpen(false)} aria-label="Đóng bảng chọn ca" className="grid h-11 w-11 place-items-center rounded-2xl bg-slate-100 dark:bg-slate-800"><X className="h-5 w-5" /></button>
             </header>
             <div className="overflow-y-auto p-4">
-              <p className="mb-3 text-xs leading-5 text-muted-foreground">Bạn có thể chọn một hoặc nhiều ca trong cùng một ngày. Chọn ngày khác sẽ thay lựa chọn hiện tại.</p>
+              <p className="mb-3 text-xs leading-5 text-muted-foreground">Bạn có thể chọn một hoặc nhiều ca ở nhiều ngày khác nhau trong cùng yêu cầu.</p>
               <div className="space-y-3">
                 {groupedApprovedShifts.map(([dateKey, shifts]) => (
                   <section key={dateKey} className="rounded-2xl border border-slate-200 p-3 dark:border-slate-700">

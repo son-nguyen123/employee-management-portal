@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Camera, Check, CreditCard, Crop, IdCard, ImageUp, Landmark, Link as LinkIcon, Loader2, LogOut, Move, Phone, Save, UserRound, X } from 'lucide-react'
 import { useAuth } from '@/lib/hooks/useAuth'
@@ -28,6 +28,7 @@ export default function ProfileSetupPage() {
   const [pendingImage, setPendingImage] = useState<{ file: File; url: string; width: number; height: number } | null>(null)
   const [cropPosition, setCropPosition] = useState({ x: 50, y: 50 })
   const [cropZoom, setCropZoom] = useState(1)
+  const cropDrag = useRef<{ pointerId: number; x: number; y: number; positionX: number; positionY: number } | null>(null)
   const [message, setMessage] = useState('')
 
   useEffect(() => {
@@ -300,8 +301,33 @@ export default function ProfileSetupPage() {
                 <button type="button" onClick={closeImageEditor} disabled={uploadingImage} aria-label="Đóng chỉnh ảnh" className="grid h-10 w-10 place-items-center rounded-xl bg-slate-100 disabled:opacity-50 dark:bg-slate-800"><X className="h-4 w-4" /></button>
               </header>
               <div className="p-4">
-                <div className="mx-auto overflow-hidden rounded-full bg-slate-100 ring-4 ring-indigo-100 dark:bg-slate-800 dark:ring-indigo-500/20" style={{ width: previewSize, height: previewSize }}>
-                  <div className="relative h-full w-full overflow-hidden">
+                <div
+                  className="mx-auto touch-none overflow-hidden rounded-full bg-slate-100 ring-4 ring-indigo-100 active:cursor-grabbing dark:bg-slate-800 dark:ring-indigo-500/20"
+                  style={{ width: previewSize, height: previewSize }}
+                  onPointerDown={(event) => {
+                    event.currentTarget.setPointerCapture(event.pointerId)
+                    cropDrag.current = {
+                      pointerId: event.pointerId,
+                      x: event.clientX,
+                      y: event.clientY,
+                      positionX: cropPosition.x,
+                      positionY: cropPosition.y,
+                    }
+                  }}
+                  onPointerMove={(event) => {
+                    const drag = cropDrag.current
+                    if (!drag || drag.pointerId !== event.pointerId) return
+                    const overflowX = Math.max(1, renderedWidth - previewSize)
+                    const overflowY = Math.max(1, renderedHeight - previewSize)
+                    setCropPosition({
+                      x: Math.max(0, Math.min(100, drag.positionX - ((event.clientX - drag.x) / overflowX) * 100)),
+                      y: Math.max(0, Math.min(100, drag.positionY - ((event.clientY - drag.y) / overflowY) * 100)),
+                    })
+                  }}
+                  onPointerUp={() => { cropDrag.current = null }}
+                  onPointerCancel={() => { cropDrag.current = null }}
+                >
+                  <div className="relative h-full w-full cursor-grab overflow-hidden">
                     <img
                       src={pendingImage.url}
                       alt="Xem trước ảnh đại diện"
@@ -315,10 +341,8 @@ export default function ProfileSetupPage() {
                     />
                   </div>
                 </div>
-                <p className="mt-4 flex items-center justify-center gap-2 text-xs font-semibold text-muted-foreground"><Move className="h-4 w-4" /> Điều chỉnh để khuôn mặt nằm giữa vòng tròn</p>
-                <div className="mt-4 space-y-3 rounded-2xl bg-slate-50 p-3 dark:bg-slate-800">
-                  <label className="block text-xs font-bold">Trái – phải<input type="range" min="0" max="100" value={cropPosition.x} onChange={(event) => setCropPosition((current) => ({ ...current, x: Number(event.target.value) }))} className="mt-2 w-full accent-indigo-600" /></label>
-                  <label className="block text-xs font-bold">Lên – xuống<input type="range" min="0" max="100" value={cropPosition.y} onChange={(event) => setCropPosition((current) => ({ ...current, y: Number(event.target.value) }))} className="mt-2 w-full accent-indigo-600" /></label>
+                <p className="mt-4 flex items-center justify-center gap-2 text-xs font-semibold text-muted-foreground"><Move className="h-4 w-4" /> Kéo trực tiếp ảnh để căn vị trí</p>
+                <div className="mt-4 rounded-2xl bg-slate-50 p-3 dark:bg-slate-800">
                   <label className="block text-xs font-bold">Phóng to<input type="range" min="1" max="2.5" step="0.05" value={cropZoom} onChange={(event) => setCropZoom(Number(event.target.value))} className="mt-2 w-full accent-indigo-600" /></label>
                 </div>
               </div>

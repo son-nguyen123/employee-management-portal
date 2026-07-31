@@ -13,11 +13,21 @@ import {
   type Query,
 } from 'firebase/firestore'
 import { db } from '@/lib/firebase'
-import { Notification } from '@/lib/models/types'
+import {
+  Notification,
+  type StaffRequestShift,
+  type StaffRequestType,
+} from '@/lib/models/types'
 
 const NOTIFICATIONS_COLLECTION = 'notifications'
 
-export type ManagementPendingType = 'schedule' | 'leave' | 'late' | 'salary'
+export type ManagementPendingType = 'schedule' | 'leave' | 'late' | 'salary' | 'staff'
+
+export interface ManagementShift {
+  date: Date
+  shift: StaffRequestShift['shift']
+  scheduleId?: string
+}
 
 export interface ManagementPendingItem {
   id: string
@@ -29,7 +39,10 @@ export interface ManagementPendingItem {
   detail: string
   reason?: string
   createdAt: Date
-  href: string
+  targetIds: string[]
+  staffRequestType?: StaffRequestType
+  shifts?: ManagementShift[]
+  removedShifts?: ManagementShift[]
 }
 
 function asDate(value: unknown, fallback = new Date(0)): Date {
@@ -51,6 +64,30 @@ function weekRange(start: Date): string {
   const end = new Date(start)
   end.setDate(start.getDate() + 6)
   return `${start.toLocaleDateString('vi-VN')} – ${end.toLocaleDateString('vi-VN')}`
+}
+
+function asShift(value: unknown): StaffRequestShift['shift'] | null {
+  return value === 'Morning' || value === 'Afternoon' || value === 'Evening'
+    ? value
+    : null
+}
+
+function asShiftList(value: unknown, includeScheduleId = false): ManagementShift[] {
+  if (!Array.isArray(value)) return []
+  return value.flatMap((entry) => {
+    if (!entry || typeof entry !== 'object') return []
+    const row = entry as Record<string, unknown>
+    const date = asDate(row.date)
+    const shift = asShift(row.shift)
+    if (!date.getTime() || !shift) return []
+    return [{
+      date,
+      shift,
+      ...(includeScheduleId && typeof row.scheduleId === 'string'
+        ? { scheduleId: row.scheduleId }
+        : {}),
+    }]
+  })
 }
 
 /**
@@ -192,6 +229,7 @@ export function subscribeToManagementPendingItems(
     leaveRequests: [],
     lateRequests: [],
     salaryAdvances: [],
+    staffRequests: [],
   }
 
   const now = new Date()
@@ -246,7 +284,12 @@ export function subscribeToManagementPendingItems(
         title: 'Lịch làm chờ xác nhận',
         detail: `${rows.length} ca · tuần ${weekRange(nextMonday)}`,
         createdAt,
-        href: '/admin/dashboard#schedules',
+        targetIds: rows.map((row) => row.id),
+        shifts: rows.flatMap((row) => {
+          const date = asDate(row.data.date)
+          const shift = asShift(row.data.shift)
+          return date.getTime() && shift ? [{ date, shift, scheduleId: row.id }] : []
+        }),
       })
     })
 
@@ -264,7 +307,7 @@ export function subscribeToManagementPendingItems(
         detail: `${shortDate(data.leaveDate)}${endDate}`,
         reason: typeof data.reason === 'string' && data.reason.trim() ? data.reason : 'Không ghi lý do',
         createdAt: asDate(data.updatedAt || data.createdAt),
-        href: '/admin/requests',
+        targetIds: [id],
       })
     })
 
@@ -282,7 +325,7 @@ export function subscribeToManagementPendingItems(
         detail: `${shortDate(data.date)} · ${minutes}`,
         reason: typeof data.reason === 'string' && data.reason.trim() ? data.reason : 'Không ghi lý do',
         createdAt: asDate(data.updatedAt || data.createdAt),
-        href: '/admin/requests',
+        targetIds: [id],
       })
     })
 
@@ -300,7 +343,42 @@ export function subscribeToManagementPendingItems(
         detail: `${amount.toLocaleString('vi-VN')}đ`,
         reason: typeof data.reason === 'string' && data.reason.trim() ? data.reason : 'Không ghi lý do',
         createdAt: asDate(data.updatedAt || data.createdAt),
-        href: '/admin/requests',
+        targetIds: [id],
+      })
+    })
+
+    state.staffRequests.forEach(({ id, data }) => {
+      const employeeId = String(data.employeeId || '')
+      const employee = identity(employeeId)
+      const requestType = data.type === 'overtime' || data.type === 'scheduleChange' || data.type === 'note'
+        ? data.type
+        : 'note'
+      const shifts = asShiftList(data.shifts)
+      const removedShifts = asShiftList(data.removedShifts, true)
+      const title = requestType === 'overtime'
+        ? 'Yêu cầu làm thêm'
+        : requestType === 'scheduleChange'
+          ? 'Yêu cầu đổi / thêm ca'
+          : 'Ghi chú từ nhân viên'
+      const detail = requestType === 'scheduleChange'
+        ? `${removedShifts.length} ca muốn hủy · ${shifts.length} ca muốn thêm`
+        : requestType === 'overtime'
+          ? `${shifts.length} ca muốn làm thêm`
+          : 'Nội dung cần quản lý xem xét'
+      items.push({
+        id: `staff-${id}`,
+        type: 'staff',
+        employeeId,
+        employeeName: employee.name,
+        employeeCode: employee.code,
+        title,
+        detail,
+        reason: typeof data.content === 'string' && data.content.trim() ? data.content : undefined,
+        createdAt: asDate(data.updatedAt || data.createdAt),
+        targetIds: [id],
+        staffRequestType: requestType,
+        shifts,
+        removedShifts,
       })
     })
 
@@ -333,6 +411,7 @@ export function subscribeToManagementPendingItems(
     watch('leaveRequests', pendingQuery('leaveRequests')),
     watch('lateRequests', pendingQuery('lateRequests')),
     watch('salaryAdvances', pendingQuery('salaryAdvances')),
+    watch('staffRequests', pendingQuery('staffRequests')),
   ]
 
   return () => unsubscribes.forEach((unsubscribe) => unsubscribe())

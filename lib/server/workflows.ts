@@ -440,7 +440,7 @@ export async function submitSchedules(actor: RequestActor, raw: unknown) {
     sourceKey: `schedule-${batchKey}`,
     title: 'Bảng lịch mới chờ xác nhận',
     body: 'Một nhân viên vừa gửi bảng lịch tuần. Mở Trí Candy để xử lý.',
-    link: '/admin/dashboard',
+    link: '/notifications',
     source: 'workSchedules',
     sourceId: scheduleRefs[0].id,
   })
@@ -616,7 +616,7 @@ export async function submitStaffRequest(actor: RequestActor, raw: unknown) {
     sourceKey: `staff-${requestRef.id}`,
     title: type === 'scheduleChange' ? 'Yêu cầu đổi / thêm ca chờ xử lý' : type === 'overtime' ? 'Yêu cầu làm thêm chờ xử lý' : 'Ghi chú mới từ nhân viên',
     body: type === 'scheduleChange' ? 'Một nhân viên vừa gửi các ca xin hủy và ca mới / ca thêm.' : type === 'overtime' ? 'Một nhân viên vừa gửi các ca muốn làm thêm.' : 'Một nhân viên vừa gửi ghi chú cho quản lý.',
-    link: '/admin/requests',
+    link: '/notifications',
     source: 'staffRequests',
     sourceId: requestRef.id,
   })
@@ -750,7 +750,7 @@ export async function replaceSchedules(actor: RequestActor, raw: unknown) {
     sourceKey: `schedule-revised-${newRefs[0].id}`,
     title: 'Bảng lịch đã được điều chỉnh',
     body: 'Nhân viên vừa gửi lại bảng lịch. Vui lòng kiểm tra và xác nhận.',
-    link: '/admin/dashboard',
+    link: '/notifications',
     source: 'workSchedules',
     sourceId: newRefs[0].id,
   })
@@ -915,7 +915,7 @@ export async function submitLeave(actor: RequestActor, raw: unknown) {
     sourceKey: `leave-${leaveRef.id}`,
     title: managerRequestCopy.leave.title,
     body: managerRequestCopy.leave.message,
-    link: '/admin/requests',
+    link: '/notifications',
     source: 'leaveRequests',
     sourceId: leaveRef.id,
   })
@@ -1016,7 +1016,7 @@ export async function submitLate(actor: RequestActor, raw: unknown) {
     sourceKey: `late-${lateRef.id}`,
     title: managerRequestCopy.late.title,
     body: managerRequestCopy.late.message,
-    link: '/admin/requests',
+    link: '/notifications',
     source: 'lateRequests',
     sourceId: lateRef.id,
   })
@@ -1075,7 +1075,7 @@ export async function submitSalaryAdvance(actor: RequestActor, raw: unknown) {
     sourceKey: `salary-${advanceRef.id}`,
     title: managerRequestCopy.salary.title,
     body: managerRequestCopy.salary.message,
-    link: '/admin/requests',
+    link: '/notifications',
     source: 'salaryAdvances',
     sourceId: advanceRef.id,
   })
@@ -1325,7 +1325,7 @@ export async function reviseRequest(actor: RequestActor, raw: unknown) {
     sourceKey: `${resource}-revised-${id}`,
     title: `${copy.title.replace(' chờ xử lý', '')} đã điều chỉnh`,
     body: 'Nhân viên vừa cập nhật nội dung. Vui lòng kiểm tra lại.',
-    link: '/admin/requests',
+    link: '/notifications',
     source: collectionName,
     sourceId: id,
   })

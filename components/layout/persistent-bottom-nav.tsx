@@ -48,7 +48,7 @@ export function PersistentBottomNav() {
       <BottomNav items={[
         { href: '/', icon: <LayoutDashboard className="h-5 w-5" />, label: 'Trang chủ' },
         isManagement
-          ? { href: '/admin/dashboard', icon: <LayoutDashboard className="h-5 w-5" />, label: 'Quản trị' }
+          ? { href: '/admin/dashboard', icon: <LayoutDashboard className="h-5 w-5" />, label: 'Điều hành' }
           : { href: '/schedule', icon: <CalendarDays className="h-5 w-5" />, label: 'Lịch làm' },
         {
           href: '/notifications',

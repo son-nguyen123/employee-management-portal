@@ -39,6 +39,12 @@ type Shift = 'Morning' | 'Afternoon' | 'Evening' | 'Custom'
 type DayItem = { key: string; name: string; shortName: string; date: Date }
 type CustomShift = { start: string; end: string; note: string; request: string }
 type Selection = Record<string, Shift[]>
+type EditBaseline = {
+  selected: Selection
+  customData: Record<string, CustomShift>
+  dutyDay: string | null
+  weekNote: string
+}
 
 const shiftOptions: { value: Shift; label: string; shortLabel: string; time: string }[] = [
   { value: 'Morning', label: 'Ca sáng', shortLabel: 'sáng', time: '07:30–11:30' },
@@ -49,6 +55,22 @@ const shiftOptions: { value: Shift; label: string; shortLabel: string; time: str
 
 const cloneSelection = (value: Selection): Selection =>
   Object.fromEntries(Object.entries(value).map(([key, shifts]) => [key, [...shifts]]))
+
+const editSignature = (
+  selected: Selection,
+  customData: Record<string, CustomShift>,
+  dutyDay: string | null,
+  weekNote: string
+) => JSON.stringify({
+  selected: Object.entries(selected)
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([day, shifts]) => [day, [...shifts].sort()]),
+  customData: Object.entries(customData)
+    .filter(([day]) => selected[day]?.includes('Custom'))
+    .sort(([left], [right]) => left.localeCompare(right)),
+  dutyDay,
+  weekNote: weekNote.trim(),
+})
 
 const scheduleDate = (value: WorkSchedule['date']) =>
   value instanceof Date ? value : value.toDate()
@@ -81,6 +103,7 @@ export default function SchedulePage() {
   const [currentWeekMode, setCurrentWeekMode] = useState(false)
   const [originalScheduleIds, setOriginalScheduleIds] = useState<Record<string, string>>({})
   const [submittedChangeSummary, setSubmittedChangeSummary] = useState<{ removed: string[]; added: string[] } | null>(null)
+  const [editBaseline, setEditBaseline] = useState<EditBaseline | null>(null)
 
   useEffect(() => {
     const mode = new URLSearchParams(window.location.search).get('mode')
@@ -150,6 +173,12 @@ export default function SchedulePage() {
           setOriginalScheduleIds(scheduleIds)
           setCustomData(custom)
           setDutyDay(loadedDuty)
+          setEditBaseline({
+            selected: cloneSelection(hydrated),
+            customData: structuredClone(custom),
+            dutyDay: loadedDuty,
+            weekNote: loadedWeekNote,
+          })
           setSubmittedIds(current.map((item) => item.id!).filter(Boolean))
           setSubmittedStatus(current[0].status)
           setRequiresReapproval(current.some((item) => item.requiresReapproval))
@@ -167,6 +196,7 @@ export default function SchedulePage() {
           setOriginalScheduleIds({})
           setCustomData({})
           setDutyDay(null)
+          setEditBaseline(null)
           setSubmittedIds([])
           setSubmittedStatus(null)
           setRequiresReapproval(false)
@@ -350,6 +380,16 @@ export default function SchedulePage() {
       }
       return
     }
+    if (
+      editing &&
+      editBaseline &&
+      editSignature(selected, customData, dutyDay, weekNote) ===
+        editSignature(editBaseline.selected, editBaseline.customData, editBaseline.dutyDay, editBaseline.weekNote)
+    ) {
+      setMessage('Bạn chưa thay đổi lịch nên chưa thể gửi điều chỉnh.')
+      window.scrollTo({ top: 0, behavior: 'smooth' })
+      return
+    }
     if (!confirmed && missingDays.length) {
       setConfirmationOpen(true)
       return
@@ -391,6 +431,12 @@ export default function SchedulePage() {
       setSubmittedStatus('Pending')
       setRequiresReapproval(needsReapproval)
       setOriginal(cloneSelection(selected))
+      setEditBaseline({
+        selected: cloneSelection(selected),
+        customData: structuredClone(customData),
+        dutyDay,
+        weekNote,
+      })
       setEditing(false)
       setEditingOriginStatus(null)
       setCelebrating(true)
@@ -446,7 +492,10 @@ export default function SchedulePage() {
       } else {
         await setWorkScheduleBatchEditing(submittedIds, false)
       }
-      setSelected(cloneSelection(original))
+      setSelected(cloneSelection(editBaseline?.selected || original))
+      setCustomData(structuredClone(editBaseline?.customData || customData))
+      setDutyDay(editBaseline ? editBaseline.dutyDay : dutyDay)
+      setWeekNote(editBaseline ? editBaseline.weekNote : weekNote)
       setSubmittedStatus(restoredStatus)
       setEditingOriginStatus(null)
       setEditing(false)

@@ -34,7 +34,7 @@ export function NotificationPermissionGate({ children }: { children: React.React
   const [working, setWorking] = useState(false)
   const [message, setMessage] = useState('')
   const exempt = pathname.startsWith('/auth/') || pathname === '/profile/setup'
-  const mustEnable = !isLoading && !!authUser && employee?.role === 'employee' && !isPreviewMode && !exempt
+  const mustEnable = !isLoading && !!authUser && !!employee && !isPreviewMode && !exempt
 
   const refreshState = useCallback(async (syncDevice = true) => {
     if (!authUser || isPreviewMode) return
@@ -118,7 +118,7 @@ export function NotificationPermissionGate({ children }: { children: React.React
             </div>
             <h1 className="mt-4 text-2xl font-black">Cho phép thông báo</h1>
             <p className="mx-auto mt-2 max-w-xs text-sm leading-6 text-slate-300">
-              Trí Candy cần gửi kết quả lịch làm, yêu cầu nghỉ và phản hồi từ quản lý đến bạn đúng lúc.
+              Trí Candy cần gửi yêu cầu mới, kết quả lịch làm và phản hồi công việc đến thiết bị đúng lúc.
             </p>
           </div>
 
@@ -134,7 +134,7 @@ export function NotificationPermissionGate({ children }: { children: React.React
                 <div className="space-y-3">
                   <div className="flex items-start gap-3 rounded-2xl bg-slate-50 p-3 dark:bg-slate-800/70">
                     <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0 text-indigo-600" />
-                    <div><p className="text-sm font-extrabold">Không bỏ lỡ quyết định</p><p className="mt-0.5 text-xs leading-5 text-muted-foreground">Biết ngay khi lịch hoặc yêu cầu của bạn được xử lý.</p></div>
+                    <div><p className="text-sm font-extrabold">Không bỏ lỡ công việc</p><p className="mt-0.5 text-xs leading-5 text-muted-foreground">Nhân viên nhận kết quả; quản lý nhận ngay yêu cầu mới cần xử lý.</p></div>
                   </div>
                   <div className="flex items-start gap-3 rounded-2xl bg-slate-50 p-3 dark:bg-slate-800/70">
                     <Smartphone className="mt-0.5 h-5 w-5 shrink-0 text-indigo-600" />

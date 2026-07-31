@@ -252,15 +252,44 @@ export default function AdminDashboardPage() {
   if ((!role || !['admin', 'manager'].includes(role)) && !isPreviewMode) {
     return (
       <main className="min-h-screen">
-        <Header title="Trung tâm quản lý" />
+        <Header title="Điều hành" />
         <PageContainer><div className="mobile-card p-8 text-center font-bold">Tài khoản này không có quyền quản lý.</div></PageContainer>
+      </main>
+    )
+  }
+
+  if (tab === 'employees') {
+    return (
+      <main className="min-h-screen pb-8">
+        <Header title="Danh sách nhân viên" subtitle={`${activeEmployees.length} nhân viên đang hoạt động`} backHref="/" />
+        <PageContainer maxWidth="2xl">
+          {loading ? (
+            <div className="grid min-h-56 place-items-center"><Loader2 className="h-7 w-7 animate-spin text-indigo-600" /></div>
+          ) : (
+            <section id="employees" className="grid gap-2 sm:grid-cols-2">
+              {activeEmployees.map((employee) => (
+                <Link key={employee.uid} href={`/admin/employees/${employee.uid}`} className="flex min-h-18 items-center gap-3 rounded-2xl border border-slate-200/80 bg-white p-3 shadow-sm transition active:scale-[.99] dark:border-white/10 dark:bg-slate-900">
+                  <div className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-indigo-50 text-sm font-black text-indigo-600 dark:bg-indigo-500/10">
+                    {employee.fullName.split(' ').slice(-2).map((word) => word[0]).join('')}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <h2 className="truncate text-sm font-extrabold">{employee.fullName}</h2>
+                    <p className="mt-1 truncate text-xs text-muted-foreground">{employee.employeeCode} · {employee.phone || 'Chưa có SĐT'}</p>
+                  </div>
+                  <ChevronRight className="h-4 w-4 shrink-0 text-slate-400" />
+                </Link>
+              ))}
+              {!activeEmployees.length && <div className="mobile-card p-8 text-center text-sm font-semibold text-muted-foreground sm:col-span-2">Chưa có nhân viên đang hoạt động.</div>}
+            </section>
+          )}
+        </PageContainer>
       </main>
     )
   }
 
   return (
     <main className="min-h-screen pb-8">
-      <Header title="Trung tâm quản lý" subtitle="Duyệt lịch và theo dõi nhân viên" backHref="/" />
+      <Header title="Điều hành" subtitle="Duyệt lịch và theo dõi nhân viên" backHref="/" />
       <PageContainer maxWidth="2xl">
         <section className="grid grid-cols-3 gap-2">
           {[
