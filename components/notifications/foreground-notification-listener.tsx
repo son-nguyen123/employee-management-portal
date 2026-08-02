@@ -32,7 +32,9 @@ export function ForegroundNotificationListener() {
     const showNotice = (title: string, body: string) => {
       const key = `${title}\n${body}`
       const now = Date.now()
-      if (lastNotice.current?.key === key && now - lastNotice.current.at < 3000) return
+      // FCM and the Firestore fallback can report the same event a few seconds
+      // apart on slow devices. Keep one visible toast without suppressing later events.
+      if (lastNotice.current?.key === key && now - lastNotice.current.at < 30000) return
       lastNotice.current = { key, at: now }
       setNotice({ title, body })
       if (dismissTimer.current) clearTimeout(dismissTimer.current)

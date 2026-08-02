@@ -2462,61 +2462,163 @@ async function sendEmployeePush(params: {
   const dispatchRef = adminDb.collection('pushDispatches').doc(params.dispatchId)
   const devices = await adminDb.collection('employees').doc(params.employeeId)
     .collection('notificationDevices').limit(500).get()
-  const fids = devices.docs.map((item) => item.get('fid')).filter((fid): fid is string => typeof fid === 'string' && !!fid)
+  const staleBefore = Date.now() - 90 * 24 * 60 * 60 * 1000
+  const staleDevices = devices.docs.filter((item) => {
+    const lastSeenAt = item.get('lastSeenAt')
+    return lastSeenAt instanceof Timestamp && lastSeenAt.toMillis() < staleBefore
+  })
+  const staleIds = new Set(staleDevices.map((item) => item.id))
+  const activeDevices = devices.docs.filter((item) => !staleIds.has(item.id))
+  const deviceByFid = new Map(
+    activeDevices.flatMap((item) => {
+      const fid = item.get('fid')
+      return typeof fid === 'string' && fid ? [[fid, item] as const] : []
+    })
+  )
+
+  if (staleDevices.length) {
+    const staleBatch = adminDb.batch()
+    staleDevices.forEach((item) => staleBatch.delete(item.ref))
+    await staleBatch.commit()
+  }
+
+  const fids = [...deviceByFid.keys()]
   if (!fids.length) {
-    await dispatchRef.update({ state: 'no-devices', updatedAt: FieldValue.serverTimestamp() })
+    await dispatchRef.set({
+      state: 'no-devices',
+      staleDeviceCount: staleDevices.length,
+      updatedAt: FieldValue.serverTimestamp(),
+    }, { merge: true })
     return { state: 'no-devices', successCount: 0, failureCount: 0 }
   }
 
+  await dispatchRef.set({
+    employeeId: params.employeeId,
+    title: params.title,
+    body: params.body,
+    link: params.link,
+    source: params.source,
+    sourceId: params.sourceId,
+    status: params.status,
+    state: 'sending',
+    staleDeviceCount: staleDevices.length,
+    lastAttemptAt: FieldValue.serverTimestamp(),
+    updatedAt: FieldValue.serverTimestamp(),
+  }, { merge: true })
+
+  const invalidCodes = new Set([
+    'messaging/registration-token-not-registered',
+    'messaging/invalid-registration-token',
+  ])
+  const retryableCodes = new Set([
+    'messaging/internal-error',
+    'messaging/server-unavailable',
+    'messaging/unknown-error',
+    'messaging/message-rate-exceeded',
+    'messaging/device-message-rate-exceeded',
+  ])
+  const successfulFids = new Set<string>()
+  const invalidFids = new Set<string>()
+  const finalErrors: string[] = []
+  let pendingFids = fids
+  let attemptsUsed = 0
+
   try {
-    const response = await adminMessaging.sendEachForMulticast({
-      fids,
-      notification: {
-        title: params.title,
-        body: params.body,
-      },
-      data: {
-        title: params.title,
-        body: params.body,
-        link: params.link,
-        source: params.source,
-        sourceId: params.sourceId,
-        status: params.status,
-      },
-      webpush: {
-        notification: {
-          icon: '/pwa-icon-192.png',
-          badge: '/pwa-icon-192.png',
-        },
-        fcmOptions: { link: params.link },
-      },
-    })
-    const invalidCodes = new Set([
-      'messaging/registration-token-not-registered',
-      'messaging/invalid-registration-token',
-      'messaging/invalid-argument',
-    ])
-    const batch = adminDb.batch()
-    response.responses.forEach((item, index) => {
-      if (!item.success && item.error?.code && invalidCodes.has(item.error.code)) {
-        batch.delete(devices.docs[index].ref)
+    for (let attempt = 1; attempt <= 3 && pendingFids.length; attempt += 1) {
+      attemptsUsed = attempt
+      try {
+        const response = await adminMessaging.sendEachForMulticast({
+          fids: pendingFids,
+          notification: {
+            title: params.title,
+            body: params.body,
+          },
+          data: {
+            title: params.title,
+            body: params.body,
+            link: params.link,
+            source: params.source,
+            sourceId: params.sourceId,
+            status: params.status,
+          },
+          webpush: {
+            headers: {
+              TTL: '86400',
+              Urgency: 'high',
+            },
+            notification: {
+              icon: '/pwa-icon-192.png',
+              badge: '/pwa-icon-192.png',
+              tag: `${params.source}:${params.sourceId}`.slice(0, 64),
+              renotify: false,
+            },
+            fcmOptions: { link: params.link },
+          },
+        })
+
+        const retryFids: string[] = []
+        response.responses.forEach((item, index) => {
+          const fid = pendingFids[index]
+          if (item.success) {
+            successfulFids.add(fid)
+            return
+          }
+
+          const code = item.error?.code || 'messaging/unknown-error'
+          if (invalidCodes.has(code)) {
+            invalidFids.add(fid)
+          } else if (attempt < 3 && retryableCodes.has(code)) {
+            retryFids.push(fid)
+          } else {
+            finalErrors.push(code)
+          }
+        })
+        pendingFids = retryFids
+      } catch (error) {
+        if (attempt === 3) throw error
       }
-    })
-    batch.update(dispatchRef, {
-      state: response.failureCount ? 'partial' : 'sent',
-      successCount: response.successCount,
-      failureCount: response.failureCount,
+
+      if (pendingFids.length && attempt < 3) {
+        await new Promise((resolve) => setTimeout(resolve, attempt * 350))
+      }
+    }
+
+    if (invalidFids.size) {
+      const invalidBatch = adminDb.batch()
+      invalidFids.forEach((fid) => {
+        const device = deviceByFid.get(fid)
+        if (device) invalidBatch.delete(device.ref)
+      })
+      await invalidBatch.commit()
+    }
+
+    const successCount = successfulFids.size
+    const failureCount = fids.length - successCount
+    const state = failureCount === 0 ? 'sent' : successCount > 0 ? 'partial' : 'failed'
+    await dispatchRef.set({
+      state,
+      successCount,
+      failureCount,
+      invalidDeviceCount: invalidFids.size,
+      attemptCount: FieldValue.increment(attemptsUsed),
+      errorCodes: [...new Set(finalErrors)].slice(0, 20),
       updatedAt: FieldValue.serverTimestamp(),
-    })
-    await batch.commit()
+    }, { merge: true })
     return {
-      state: response.failureCount ? 'partial' : 'sent',
-      successCount: response.successCount,
-      failureCount: response.failureCount,
+      state,
+      successCount,
+      failureCount,
     }
   } catch (error) {
     const message = error instanceof Error ? error.message.slice(0, 1000) : 'Lỗi FCM không xác định'
-    await dispatchRef.update({ state: 'failed', error: message, updatedAt: FieldValue.serverTimestamp() })
-    return { state: 'failed', successCount: 0, failureCount: fids.length }
+    await dispatchRef.set({
+      state: 'failed',
+      error: message,
+      successCount: successfulFids.size,
+      failureCount: fids.length - successfulFids.size,
+      attemptCount: FieldValue.increment(Math.max(attemptsUsed, 1)),
+      updatedAt: FieldValue.serverTimestamp(),
+    }, { merge: true })
+    return { state: 'failed', successCount: successfulFids.size, failureCount: fids.length - successfulFids.size }
   }
 }

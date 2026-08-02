@@ -1,9 +1,16 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
-import Image from 'next/image'
 import { usePathname } from 'next/navigation'
-import { BellRing, CheckCircle2, LoaderCircle, RotateCw, Settings, Smartphone } from 'lucide-react'
+import {
+  BellRing,
+  CheckCircle2,
+  LoaderCircle,
+  RotateCw,
+  Settings,
+  Smartphone,
+  X,
+} from 'lucide-react'
 import { useAuth } from '@/lib/hooks/useAuth'
 import {
   enablePushNotifications,
@@ -15,9 +22,20 @@ import {
 
 type GateState = PushPermissionState | 'checking'
 
+function isAppleMobile(): boolean {
+  if (typeof navigator === 'undefined') return false
+  return /iPhone|iPad|iPod/i.test(navigator.userAgent)
+}
+
+function isStandaloneApp(): boolean {
+  if (typeof window === 'undefined') return false
+  return window.matchMedia('(display-mode: standalone)').matches ||
+    ('standalone' in navigator && navigator.standalone === true)
+}
+
 function blockedInstructions(): string {
   if (typeof navigator === 'undefined') return ''
-  if (/iPhone|iPad|iPod/i.test(navigator.userAgent)) {
+  if (isAppleMobile()) {
     return 'Mở Cài đặt → Ứng dụng → Trí Candy → Thông báo, sau đó bật “Cho phép thông báo”.'
   }
   if (/Android/i.test(navigator.userAgent)) {
@@ -26,15 +44,29 @@ function blockedInstructions(): string {
   return 'Mở cài đặt quyền của trang web trong trình duyệt và chuyển Thông báo sang Cho phép.'
 }
 
+function unavailableInstructions(): string {
+  if (isAppleMobile() && !isStandaloneApp()) {
+    return 'Trên iPhone, hãy chọn Chia sẻ → Thêm vào Màn hình chính, rồi mở Trí Candy từ biểu tượng vừa tạo.'
+  }
+  if (isAppleMobile()) {
+    return 'Thiết bị hoặc phiên bản iOS này chưa hỗ trợ thông báo web. Bạn vẫn nhận đầy đủ thông báo khi mở Trí Candy.'
+  }
+  if (typeof navigator !== 'undefined' && /Android/i.test(navigator.userAgent)) {
+    return 'Hãy cập nhật Chrome nếu có thể. Nếu máy vẫn không hỗ trợ, bạn vẫn nhận đầy đủ thông báo khi mở Trí Candy.'
+  }
+  return 'Trình duyệt này chưa hỗ trợ thông báo đẩy. Bạn vẫn nhận đầy đủ thông báo khi đang mở Trí Candy.'
+}
+
 export function NotificationPermissionGate({ children }: { children: React.ReactNode }) {
   const pathname = usePathname()
   const { authUser, employee, isLoading, isPreviewMode } = useAuth()
   const [permission, setPermission] = useState<GateState>('checking')
   const [registered, setRegistered] = useState(false)
   const [working, setWorking] = useState(false)
+  const [dismissed, setDismissed] = useState(false)
   const [message, setMessage] = useState('')
   const exempt = pathname.startsWith('/auth/') || pathname === '/profile/setup'
-  const mustEnable = !isLoading && !!authUser && !!employee && !isPreviewMode && !exempt
+  const shouldCheck = !isLoading && !!authUser && !!employee && !isPreviewMode && !exempt
 
   const refreshState = useCallback(async (syncDevice = true) => {
     if (!authUser || isPreviewMode) return
@@ -51,7 +83,11 @@ export function NotificationPermissionGate({ children }: { children: React.React
         deviceRegistered = !!(await syncPushDeviceRegistration(authUser.uid))
       }
       setRegistered(deviceRegistered)
-      if (!deviceRegistered) setMessage('Quyền đã bật nhưng thiết bị chưa đăng ký xong. Hãy nhấn nút bên dưới để thử lại.')
+      if (!deviceRegistered) {
+        setMessage('Quyền đã bật nhưng thiết bị chưa đăng ký xong. Hãy nhấn thử lại; ứng dụng vẫn dùng được bình thường.')
+      } else {
+        setMessage('')
+      }
     } catch (error) {
       setRegistered(false)
       setMessage(error instanceof Error ? error.message : 'Chưa thể kiểm tra trạng thái thông báo.')
@@ -59,14 +95,18 @@ export function NotificationPermissionGate({ children }: { children: React.React
   }, [authUser, isPreviewMode])
 
   useEffect(() => {
-    if (!mustEnable) return
-    setPermission('checking')
-    setMessage('')
-    void refreshState()
-  }, [mustEnable, refreshState])
+    if (!shouldCheck) return
+    const timer = window.setTimeout(() => {
+      setDismissed(sessionStorage.getItem(`push-prompt-dismissed:${authUser.uid}`) === '1')
+      setPermission('checking')
+      setMessage('')
+      void refreshState()
+    }, 0)
+    return () => window.clearTimeout(timer)
+  }, [authUser, refreshState, shouldCheck])
 
   useEffect(() => {
-    if (!mustEnable) return
+    if (!shouldCheck) return
     const recheck = () => {
       if (document.visibilityState === 'visible') void refreshState()
     }
@@ -76,7 +116,12 @@ export function NotificationPermissionGate({ children }: { children: React.React
       window.removeEventListener('focus', recheck)
       document.removeEventListener('visibilitychange', recheck)
     }
-  }, [mustEnable, refreshState])
+  }, [refreshState, shouldCheck])
+
+  const dismiss = () => {
+    setDismissed(true)
+    if (authUser) sessionStorage.setItem(`push-prompt-dismissed:${authUser.uid}`, '1')
+  }
 
   const enable = async () => {
     if (!authUser) return
@@ -91,7 +136,9 @@ export function NotificationPermissionGate({ children }: { children: React.React
       const nextPermission = await getPushPermissionState()
       setPermission(nextPermission)
       if (nextPermission === 'granted') {
-        setRegistered(await isPushDeviceRegistered(authUser.uid))
+        const deviceRegistered = await isPushDeviceRegistered(authUser.uid)
+        setRegistered(deviceRegistered)
+        if (deviceRegistered) setDismissed(true)
       }
     } catch (error) {
       setPermission(await getPushPermissionState())
@@ -102,70 +149,67 @@ export function NotificationPermissionGate({ children }: { children: React.React
     }
   }
 
-  if (!mustEnable || (permission === 'granted' && registered)) return <>{children}</>
-
   const unavailable = permission === 'unsupported' || permission === 'unavailable'
   const denied = permission === 'denied'
+  const showPrompt = shouldCheck && !dismissed && permission !== 'checking' && !(permission === 'granted' && registered)
 
   return (
-    <div className="fixed inset-0 z-[90] overflow-y-auto bg-slate-100 px-4 py-[max(1.25rem,env(safe-area-inset-top))] dark:bg-slate-950">
-      <main className="mx-auto flex min-h-[calc(100svh-2.5rem)] max-w-md items-center justify-center">
-        <section className="w-full overflow-hidden rounded-[2rem] border border-indigo-100 bg-white shadow-2xl shadow-indigo-950/10 dark:border-indigo-500/20 dark:bg-slate-900">
-          <div className="bg-slate-950 px-6 py-8 text-center text-white">
-            <Image src="/pwa-maskable-512.png" alt="Trí Candy" width={80} height={80} className="mx-auto h-20 w-20 rounded-[1.6rem] object-cover shadow-xl shadow-black/25" priority />
-            <div className="mx-auto mt-5 flex w-fit items-center gap-2 rounded-full bg-white/10 px-3 py-1.5 text-xs font-bold text-indigo-100">
-              <BellRing className="h-4 w-4" /> Thông báo công việc
+    <>
+      {children}
+      {showPrompt && (
+        <aside
+          aria-labelledby="push-prompt-title"
+          className="fixed inset-x-3 bottom-[calc(5.25rem+env(safe-area-inset-bottom))] z-[70] mx-auto max-w-md overflow-hidden rounded-[1.75rem] border border-slate-200/80 bg-white shadow-2xl shadow-slate-950/20 dark:border-slate-700 dark:bg-slate-900 md:bottom-5"
+        >
+          <div className="flex items-start gap-3 p-4 sm:p-5">
+            <div className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-indigo-600 text-white shadow-lg shadow-indigo-600/20">
+              {unavailable ? <Smartphone className="h-5 w-5" /> : denied ? <Settings className="h-5 w-5" /> : <BellRing className="h-5 w-5" />}
             </div>
-            <h1 className="mt-4 text-2xl font-black">Cho phép thông báo</h1>
-            <p className="mx-auto mt-2 max-w-xs text-sm leading-6 text-slate-300">
-              Trí Candy cần gửi yêu cầu mới, kết quả lịch làm và phản hồi công việc đến thiết bị đúng lúc.
+            <div className="min-w-0 flex-1">
+              <p id="push-prompt-title" className="font-black text-slate-950 dark:text-white">
+                {unavailable ? 'Máy này dùng thông báo trong ứng dụng' : denied ? 'Thông báo đang bị chặn' : 'Bật thông báo công việc'}
+              </p>
+              <p className="mt-1 text-sm leading-5 text-slate-600 dark:text-slate-300">
+                {unavailable
+                  ? unavailableInstructions()
+                  : denied
+                    ? blockedInstructions()
+                    : 'Nhận ngay kết quả lịch làm và yêu cầu mới, kể cả khi Trí Candy đang chạy nền.'}
+              </p>
+            </div>
+            <button type="button" onClick={dismiss} aria-label="Để sau" className="grid h-9 w-9 shrink-0 place-items-center rounded-xl text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800">
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+
+          {message && (
+            <p aria-live="polite" className="mx-4 rounded-xl bg-rose-50 px-3 py-2 text-xs font-semibold leading-5 text-rose-700 dark:bg-rose-500/10 dark:text-rose-200 sm:mx-5">
+              {message}
             </p>
+          )}
+
+          <div className="flex items-center gap-2 px-4 pb-4 pt-3 sm:px-5 sm:pb-5">
+            <button
+              type="button"
+              onClick={() => void enable()}
+              disabled={working}
+              className="flex min-h-11 flex-1 items-center justify-center gap-2 rounded-xl bg-indigo-600 px-4 text-sm font-extrabold text-white transition active:scale-[0.98] disabled:opacity-60"
+            >
+              {working ? <LoaderCircle className="h-4 w-4 animate-spin" /> : unavailable || denied ? <RotateCw className="h-4 w-4" /> : <BellRing className="h-4 w-4" />}
+              {working ? 'Đang kiểm tra…' : unavailable || denied ? 'Kiểm tra lại' : permission === 'granted' ? 'Đăng ký lại thiết bị' : 'Cho phép thông báo'}
+            </button>
+            <button type="button" onClick={dismiss} className="min-h-11 rounded-xl px-4 text-sm font-bold text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800">
+              Tiếp tục
+            </button>
           </div>
 
-          <div className="p-5">
-            {permission === 'checking' ? (
-              <div className="flex min-h-44 flex-col items-center justify-center text-center">
-                <LoaderCircle className="h-7 w-7 animate-spin text-indigo-600" />
-                <p className="mt-4 font-extrabold">Đang kiểm tra thiết bị…</p>
-                <p className="mt-1 text-sm text-muted-foreground">Quá trình này chỉ mất vài giây.</p>
-              </div>
-            ) : (
-              <>
-                <div className="space-y-3">
-                  <div className="flex items-start gap-3 rounded-2xl bg-slate-50 p-3 dark:bg-slate-800/70">
-                    <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0 text-indigo-600" />
-                    <div><p className="text-sm font-extrabold">Không bỏ lỡ công việc</p><p className="mt-0.5 text-xs leading-5 text-muted-foreground">Nhân viên nhận kết quả; quản lý nhận ngay yêu cầu mới cần xử lý.</p></div>
-                  </div>
-                  <div className="flex items-start gap-3 rounded-2xl bg-slate-50 p-3 dark:bg-slate-800/70">
-                    <Smartphone className="mt-0.5 h-5 w-5 shrink-0 text-indigo-600" />
-                    <div><p className="text-sm font-extrabold">Chỉ dùng cho công việc</p><p className="mt-0.5 text-xs leading-5 text-muted-foreground">Ứng dụng không gửi quảng cáo hoặc nội dung không liên quan.</p></div>
-                  </div>
-                </div>
-
-                {(denied || unavailable) && (
-                  <div className="mt-4 rounded-2xl bg-amber-50 p-4 text-amber-950 dark:bg-amber-500/10 dark:text-amber-100">
-                    <div className="flex items-center gap-2 font-extrabold"><Settings className="h-5 w-5" /> {denied ? 'Quyền đang bị chặn' : 'Chưa thể bật trên màn hình này'}</div>
-                    <p className="mt-2 text-sm leading-6">
-                      {denied
-                        ? blockedInstructions()
-                        : 'Nếu dùng iPhone, hãy thêm Trí Candy vào Màn hình chính rồi mở lại từ biểu tượng ứng dụng. Nếu dùng Android, hãy mở bằng Chrome và cài ứng dụng trước.'}
-                    </p>
-                  </div>
-                )}
-
-                {message && <p aria-live="polite" className="mt-4 rounded-xl bg-rose-50 p-3 text-sm font-semibold text-rose-700 dark:bg-rose-500/10 dark:text-rose-200">{message}</p>}
-
-                <button type="button" onClick={() => void enable()} disabled={working} className="mt-5 flex min-h-13 w-full items-center justify-center gap-2 rounded-2xl bg-indigo-600 px-4 font-extrabold text-white shadow-lg shadow-indigo-600/20 transition active:scale-[0.98] disabled:opacity-60">
-                  {working ? <LoaderCircle className="h-5 w-5 animate-spin" /> : unavailable || denied ? <RotateCw className="h-5 w-5" /> : <BellRing className="h-5 w-5" />}
-                  {working ? 'Đang kiểm tra…' : unavailable || denied ? 'Tôi đã bật quyền – kiểm tra lại' : permission === 'granted' ? 'Hoàn tất đăng ký thiết bị' : 'Cho phép thông báo'}
-                </button>
-
-                <p className="mt-4 text-center text-[11px] leading-5 text-slate-400">Bạn cần hoàn tất bước này để tiếp tục sử dụng ứng dụng.</p>
-              </>
-            )}
-          </div>
-        </section>
-      </main>
-    </div>
+          {unavailable && (
+            <div className="flex items-center gap-2 border-t border-slate-100 bg-emerald-50/70 px-4 py-2.5 text-xs font-semibold text-emerald-800 dark:border-slate-800 dark:bg-emerald-500/10 dark:text-emerald-200 sm:px-5">
+              <CheckCircle2 className="h-4 w-4 shrink-0" /> Không bị khóa ứng dụng và không mất thông báo đã lưu.
+            </div>
+          )}
+        </aside>
+      )}
+    </>
   )
 }

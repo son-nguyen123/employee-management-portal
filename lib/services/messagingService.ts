@@ -36,6 +36,11 @@ export interface PushRegistrationResult {
   permission: NotificationPermission
 }
 
+type BadgeNavigator = Navigator & {
+  setAppBadge?: (contents?: number) => Promise<void>
+  clearAppBadge?: () => Promise<void>
+}
+
 function assertBrowser(): void {
   if (typeof window === 'undefined' || typeof navigator === 'undefined') {
     throw new Error('Thông báo đẩy chỉ hoạt động trên trình duyệt.')
@@ -225,4 +230,23 @@ export async function subscribeToForegroundMessages(
 
   const messaging = await getMessagingInstance()
   return onMessage(messaging, callback)
+}
+
+/**
+ * Keep the installed PWA icon in sync where the Badging API is available.
+ * Unsupported and older devices silently keep using the in-app navigation badge.
+ */
+export async function syncAppIconBadge(unreadCount: number): Promise<void> {
+  if (typeof navigator === 'undefined') return
+  const badgeNavigator = navigator as BadgeNavigator
+  try {
+    if (unreadCount > 0 && badgeNavigator.setAppBadge) {
+      await badgeNavigator.setAppBadge(Math.min(unreadCount, 99))
+    } else if (unreadCount === 0 && badgeNavigator.clearAppBadge) {
+      await badgeNavigator.clearAppBadge()
+    }
+  } catch (error) {
+    // Badge support varies by browser/installation mode and must never affect app use.
+    console.debug('Không thể đồng bộ huy hiệu ứng dụng:', error)
+  }
 }

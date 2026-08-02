@@ -9,6 +9,7 @@ import {
   subscribeToEmployeeNotifications,
   subscribeToManagementPendingCount,
 } from '@/lib/services/notificationService'
+import { syncAppIconBadge } from '@/lib/services/messagingService'
 
 const hiddenPrefixes = ['/auth', '/profile/setup']
 
@@ -39,6 +40,11 @@ export function PersistentBottomNav() {
       setPendingNotificationCount(notifications.filter((item) => !item.isRead).length)
     })
   }, [authUser, isManagement, isPreviewMode, role])
+
+  useEffect(() => {
+    if (isPreviewMode) return
+    void syncAppIconBadge(authUser ? pendingNotificationCount : 0)
+  }, [authUser, isPreviewMode, pendingNotificationCount])
 
   if (isLoading || !authUser || hidden || (employee?.role === 'employee' && employee.status !== 'active')) return null
 
