@@ -619,7 +619,8 @@ export async function submitSchedules(actor: RequestActor, raw: unknown) {
     })
 
     if (shouldPenalize && workflowPolicy.scheduleLatePenalty > 0) {
-      transaction.create(penaltyRef, penaltyData({
+      transaction.create(penaltyRef, {
+        ...penaltyData({
         employeeId: actor.uid,
         title: 'Đăng ký lịch trễ hạn',
         description: `Gửi lịch sau hạn quy định. Khấu trừ ${workflowPolicy.scheduleLatePenalty.toLocaleString('vi-VN')}đ.`,
@@ -627,7 +628,9 @@ export async function submitSchedules(actor: RequestActor, raw: unknown) {
         amount: workflowPolicy.scheduleLatePenalty,
         sourceType: 'scheduleSubmission',
         sourceId: id,
-      }))
+        }),
+        status: 'Pending',
+      })
       transaction.create(notificationRef, warningNotification(
         actor.uid,
         'Phát sinh khoản phạt đăng ký lịch trễ',
@@ -990,6 +993,7 @@ export async function replaceSchedules(actor: RequestActor, raw: unknown) {
         revisionCount,
         weeklyShiftCount: revisedShiftCount,
         underMinimumWarning: revisedShiftCount < workflowPolicy.minimumWeeklyShifts,
+        penaltyId: penalizedRejectedResubmission && workflowPolicy.scheduleLatePenalty > 0 ? resubmissionPenaltyRef.id : null,
         createdAt: now,
         updatedAt: now,
         lockedAt: null,
@@ -1004,7 +1008,8 @@ export async function replaceSchedules(actor: RequestActor, raw: unknown) {
       createdAt: now,
     })
     if (penalizedRejectedResubmission && workflowPolicy.scheduleLatePenalty > 0) {
-      transaction.create(resubmissionPenaltyRef, penaltyData({
+      transaction.create(resubmissionPenaltyRef, {
+        ...penaltyData({
         employeeId: actor.uid,
         title: 'Gửi lại lịch bị từ chối quá hạn',
         description: 'Lịch bị từ chối nhưng được gửi lại từ Chủ Nhật hoặc sau khi tuần làm việc đã bắt đầu.',
@@ -1012,7 +1017,9 @@ export async function replaceSchedules(actor: RequestActor, raw: unknown) {
         amount: workflowPolicy.scheduleLatePenalty,
         sourceType: 'scheduleResubmission',
         sourceId: newRefs[0].id,
-      }))
+        }),
+        status: 'Pending',
+      })
     }
     transaction.set(adminDb.collection('notifications').doc(`schedule-status-${newRefs[0].id}`), {
       employeeId: actor.uid,
@@ -2352,9 +2359,7 @@ export async function reviewScheduleBatch(actor: RequestActor, raw: unknown) {
         !hasPreviousSchedule
       )
     }
-    const penaltyIds = shouldWaivePenalty
-      ? Array.from(new Set(schedules.map((schedule) => schedule.penaltyId).filter((value): value is string => typeof value === 'string' && value.length > 0)))
-      : []
+    const penaltyIds = Array.from(new Set(schedules.map((schedule) => schedule.penaltyId).filter((value): value is string => typeof value === 'string' && value.length > 0)))
     const penaltySnapshots = await Promise.all(penaltyIds.map((id) => transaction.get(adminDb.collection('penalties').doc(id))))
     const now = FieldValue.serverTimestamp()
     refs.forEach((ref) => transaction.set(ref, {
@@ -2368,13 +2373,23 @@ export async function reviewScheduleBatch(actor: RequestActor, raw: unknown) {
       lockedAt: status === 'Approved' ? now : null,
     }, { merge: true }))
     penaltySnapshots.forEach((snapshot) => {
-      if (snapshot.exists) transaction.set(snapshot.ref, {
-        status: 'Cancelled',
-        amount: 0,
-        cancellationReason: 'Miễn phạt lần đầu cho nhân viên mới khi quản lý xác nhận.',
-        cancelledAt: FieldValue.serverTimestamp(),
-        updatedAt: FieldValue.serverTimestamp(),
-      }, { merge: true })
+      if (!snapshot.exists) return
+      if (shouldWaivePenalty) {
+        transaction.set(snapshot.ref, {
+          status: 'Cancelled',
+          amount: 0,
+          cancellationReason: 'Miễn phạt lần đầu cho nhân viên mới khi quản lý xác nhận.',
+          cancelledAt: now,
+          updatedAt: now,
+        }, { merge: true })
+      } else if (snapshot.get('status') !== 'Cancelled' && Number(snapshot.get('amount') || 0) > 0) {
+        transaction.set(snapshot.ref, {
+          status: 'Active',
+          confirmedBy: actor.uid,
+          confirmedAt: now,
+          updatedAt: now,
+        }, { merge: true })
+      }
     })
     transaction.set(notificationRef, {
       employeeId,

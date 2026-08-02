@@ -25,5 +25,7 @@ export interface EmployeeReviewContext {
   archiveUsed: boolean
   archiveAvailable: boolean
   liveWarnings?: string[]
+  confirmedPenaltyCount: number
+  confirmedPenaltyAmount: number
   disclaimer: string
 }

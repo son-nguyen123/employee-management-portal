@@ -203,12 +203,14 @@ function quickReview(item: ManagementPendingItem): { level: EmployeeReviewLevel;
 
 function ReviewAssessment({
   context,
+  item,
   requestWarning,
   loading,
   error,
   onRetry,
 }: {
   context?: EmployeeReviewContext
+  item: ManagementPendingItem
   requestWarning?: string
   loading: boolean
   error: string
@@ -221,6 +223,9 @@ function ReviewAssessment({
     return <div className="rounded-3xl border border-rose-200 bg-rose-50 p-4 text-rose-950 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-100"><p className="font-black">Chưa tải được bản đánh giá</p><p className="mt-1 text-sm leading-6 opacity-80">{error || 'Hệ thống chưa nhận được kết quả tổng hợp. Đây là lỗi tải dữ liệu, không phải kết luận rằng nhân viên không có dữ liệu.'}</p><button type="button" onClick={onRetry} className="mt-3 inline-flex min-h-10 items-center gap-2 rounded-xl bg-rose-600 px-4 text-sm font-extrabold text-white"><RotateCcw className="h-4 w-4" /> Thử tải lại</button></div>
   }
   const tone = reviewTone[context.level]
+  const currentIssue = item.violationLabel
+    ? `${item.violationLabel}${Number(item.proposedPenaltyAmount || 0) > 0 ? ` · dự kiến phạt ${Number(item.proposedPenaltyAmount).toLocaleString('vi-VN')}đ` : ''}`
+    : ''
   return (
     <section className={`rounded-3xl border p-4 ${tone.box}`}>
       <div className="flex items-start gap-3">
@@ -231,9 +236,15 @@ function ReviewAssessment({
           <h3 className="mt-0.5 text-2xl font-black">{tone.rating}</h3>
         </div>
       </div>
+      {(currentIssue || requestWarning) && (
+        <div className="mt-4 space-y-1.5 rounded-2xl bg-amber-500/12 px-3.5 py-3 text-sm font-extrabold leading-5 text-amber-950 dark:text-amber-100">
+          {currentIssue && <p>{currentIssue}</p>}
+          {requestWarning && requestWarning !== item.violationLabel && <p>{requestWarning}</p>}
+        </div>
+      )}
       <div className="mt-4 space-y-2 border-t border-current/10 pt-3">
-        {requestWarning && <p className="text-sm font-extrabold leading-5">• {requestWarning}</p>}
         {context.facts.map((fact) => <p key={fact} className="text-sm font-semibold leading-5">• {fact}</p>)}
+        <p className={`inline-flex rounded-full px-3 py-1.5 text-xs font-black ${context.confirmedPenaltyCount > 0 ? 'bg-rose-600 text-white' : 'bg-white/70 dark:bg-slate-950/30'}`}>Đã bị phạt: {context.confirmedPenaltyCount} lần / 4 tuần</p>
       </div>
     </section>
   )
@@ -500,6 +511,8 @@ export default function NotificationsPage() {
           weeks: [],
           archiveUsed: false,
           archiveAvailable: false,
+          confirmedPenaltyCount: 0,
+          confirmedPenaltyAmount: 0,
           disclaimer: 'Chỉ là cảnh báo từ dữ liệu trên app, không kết luận nhân viên.',
         },
       }))
@@ -756,7 +769,7 @@ export default function NotificationsPage() {
               </section>
 
               <section className="space-y-5 p-4">
-                {selectedPending.type !== 'account' && <ReviewAssessment context={selectedReview} requestWarning={selectedPending.warning} loading={reviewLoadingId === selectedPending.id} error={reviewError} onRetry={() => void openPending(selectedPending)} />}
+                {selectedPending.type !== 'account' && <ReviewAssessment context={selectedReview} item={selectedPending} requestWarning={selectedPending.warning} loading={reviewLoadingId === selectedPending.id} error={reviewError} onRetry={() => void openPending(selectedPending)} />}
                 {selectedPending.managerMessageStatus && (
                   <p className="rounded-2xl bg-sky-50 p-3 text-sm font-semibold text-sky-900 dark:bg-sky-500/10 dark:text-sky-100">
                     Xác nhận liên hệ: {selectedPending.managerMessageStatus === 'messagedTri' ? 'đã nhắn anh Trí' : selectedPending.managerMessageStatus === 'notMessaged' ? 'chưa nhắn riêng' : 'đã nhắn quản lý khác'}.

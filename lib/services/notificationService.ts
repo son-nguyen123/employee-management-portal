@@ -52,6 +52,8 @@ export interface ManagementPendingItem {
   underMinimumWarning?: boolean
   penaltyIfApproved?: number
   penaltyIfRejected?: number
+  violationLabel?: string
+  proposedPenaltyAmount?: number
   managerMessageStatus?: 'messagedTri' | 'notMessaged' | 'messagedOtherManager'
 }
 
@@ -241,6 +243,7 @@ export function subscribeToManagementPendingItems(
     lateRequests: [],
     salaryAdvances: [],
     staffRequests: [],
+    penalties: [],
   }
 
   const now = new Date()
@@ -253,6 +256,7 @@ export function subscribeToManagementPendingItems(
   nextSunday.setHours(23, 59, 59, 999)
 
   const publish = () => {
+    const penalties = new Map(state.penalties.map(({ id, data }) => [id, data]))
     const employees = new Map(
       state.employees.map(({ id, data }) => [
         id,
@@ -310,6 +314,9 @@ export function subscribeToManagementPendingItems(
         },
         new Date(0)
       )
+      const penalty = rows
+        .map((row) => typeof row.data.penaltyId === 'string' ? penalties.get(row.data.penaltyId) : undefined)
+        .find((item) => item && Number(item.amount || 0) > 0)
       items.push({
         id: `schedule-${batchKey}`,
         type: 'schedule',
@@ -332,6 +339,8 @@ export function subscribeToManagementPendingItems(
         warning: rows.some((row) => row.data.underMinimumWarning === true)
           ? `Lịch chỉ có ${rows.filter((row) => !String(row.data.note || '').includes('[DUTY_ONLY]')).length}/6 ca tối thiểu.`
           : undefined,
+        violationLabel: penalty ? 'Đăng ký lịch trễ' : undefined,
+        proposedPenaltyAmount: penalty ? Number(penalty.amount || 0) : undefined,
       })
     })
 
@@ -360,6 +369,10 @@ export function subscribeToManagementPendingItems(
         underMinimumWarning: data.underMinimumWarning === true,
         penaltyIfApproved: Number(data.penaltyIfApproved || 0),
         penaltyIfRejected: Number(data.penaltyIfRejected || 0),
+        violationLabel: data.noticeClass === 'late'
+          ? 'Báo nghỉ sát hạn'
+          : data.underMinimumWarning === true ? 'Nghỉ làm tuần này dưới 6 ca' : undefined,
+        proposedPenaltyAmount: Number(data.penaltyIfApproved || 0),
       })
     })
 
@@ -390,6 +403,8 @@ export function subscribeToManagementPendingItems(
         warning: data.noticeClass === 'late' ? 'Báo đi trễ dưới 60 phút trước ca.' : undefined,
         penaltyIfApproved: Number(data.penaltyIfApproved || 0),
         penaltyIfRejected: Number(data.penaltyIfRejected || 0),
+        violationLabel: data.noticeClass === 'late' ? 'Báo đi trễ sát giờ' : undefined,
+        proposedPenaltyAmount: Number(data.penaltyIfApproved || 0),
         managerMessageStatus: data.managerMessageStatus === 'messagedTri' || data.managerMessageStatus === 'notMessaged' || data.managerMessageStatus === 'messagedOtherManager'
           ? data.managerMessageStatus
           : undefined,
@@ -489,6 +504,7 @@ export function subscribeToManagementPendingItems(
     watch('lateRequests', pendingQuery('lateRequests')),
     watch('salaryAdvances', pendingQuery('salaryAdvances')),
     watch('staffRequests', pendingQuery('staffRequests')),
+    watch('penalties', query(collection(db, 'penalties'))),
   ]
 
   return () => unsubscribes.forEach((unsubscribe) => unsubscribe())

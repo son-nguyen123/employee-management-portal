@@ -6,7 +6,7 @@ import { adminDb } from '@/lib/server/firebase-admin'
 import { listWeeklyArchives, readWeeklyArchive } from '@/lib/server/google-drive-archive'
 import { workflowPolicy } from '@/lib/server/workflow-policy'
 
-type ReviewCollection = 'workSchedules' | 'leaveRequests' | 'lateRequests'
+type ReviewCollection = 'workSchedules' | 'leaveRequests' | 'lateRequests' | 'penalties'
 
 interface ReviewRecord {
   path: string
@@ -76,7 +76,7 @@ function archiveRecords(payload: unknown, employeeId: string): ReviewRecord[] {
   if (!payload || typeof payload !== 'object') return []
   const records = (payload as ArchivePayload).records
   if (!records || typeof records !== 'object') return []
-  const collections: ReviewCollection[] = ['workSchedules', 'leaveRequests', 'lateRequests']
+  const collections: ReviewCollection[] = ['workSchedules', 'leaveRequests', 'lateRequests', 'penalties']
   return collections.flatMap((collection) => {
     const rows = records[collection]
     if (!Array.isArray(rows)) return []
@@ -91,6 +91,7 @@ function archiveRecords(payload: unknown, employeeId: string): ReviewRecord[] {
 
 function recordDate(record: ReviewRecord): Date | null {
   if (record.collection === 'workSchedules' || record.collection === 'lateRequests') return asDate(record.data.date)
+  if (record.collection === 'penalties') return asDate(record.data.penaltyDate ?? record.data.createdAt)
   return asDate(record.data.leaveDate)
 }
 
@@ -143,7 +144,7 @@ function buildWeeks(records: ReviewRecord[], referenceWeekStart: string): Employ
   })
 }
 
-function assessment(weeks: EmployeeReviewWeek[], minimum: number): {
+function assessment(weeks: EmployeeReviewWeek[], minimum: number, confirmedPenaltyCount: number): {
   level: EmployeeReviewLevel
   headline: string
   explanation: string
@@ -165,7 +166,7 @@ function assessment(weeks: EmployeeReviewWeek[], minimum: number): {
     `${leaveRequests} nghỉ · ${lateRequests} báo trễ · ${shortNoticeEvents} báo sát hạn${longLeaveWeeks ? ` · ${longLeaveWeeks} tuần nghỉ dài hạn` : ''}.`,
   ]
 
-  if (!observed.length) {
+  if (!weeksWithSchedule && !leaveRequests && !lateRequests) {
     return {
       level: 'neutral',
       headline: 'Chưa đủ dữ liệu để đánh giá',
@@ -173,7 +174,7 @@ function assessment(weeks: EmployeeReviewWeek[], minimum: number): {
       facts,
     }
   }
-  if (underMinimum.length >= 2 && (shortNoticeEvents >= 1 || lateRequests >= 2)) {
+  if (confirmedPenaltyCount >= 3 || (underMinimum.length >= 2 && (shortNoticeEvents >= 1 || lateRequests >= 2))) {
     return {
       level: 'warning',
       headline: 'Cần xem kỹ trước khi quyết định',
@@ -181,7 +182,7 @@ function assessment(weeks: EmployeeReviewWeek[], minimum: number): {
       facts,
     }
   }
-  if (underMinimum.length >= 1 || shortNoticeEvents >= 1 || leaveRequests >= 2 || lateRequests >= 2) {
+  if (confirmedPenaltyCount >= 1 || underMinimum.length >= 1 || shortNoticeEvents >= 1 || leaveRequests >= 2 || lateRequests >= 2) {
     return {
       level: 'attention',
       headline: 'Có yếu tố cần xem xét',
@@ -230,6 +231,16 @@ async function liveRecords(employeeId: string, start: Date, end: Date): Promise<
       .where('date', '>=', Timestamp.fromDate(start))
       .where('date', '<', Timestamp.fromDate(end))
       .orderBy('date', 'desc')
+      .get(),
+    },
+    {
+      label: 'lịch sử phạt',
+      collection: 'penalties' as const,
+      query: adminDb.collection('penalties')
+      .where('employeeId', '==', employeeId)
+      .where('penaltyDate', '>=', Timestamp.fromDate(start))
+      .where('penaltyDate', '<', Timestamp.fromDate(end))
+      .orderBy('penaltyDate', 'desc')
       .get(),
     },
   ]
@@ -286,7 +297,7 @@ export async function buildEmployeeReviewContext(
     archivedRecords(employeeId, weekKeys),
   ])
 
-  if (live.warnings.length === 3 && !archived.records.length) {
+  if (live.warnings.length === 4 && !archived.records.length) {
     throw new Error('Không đọc được dữ liệu lịch, nghỉ và đi trễ từ Firebase hoặc kho lưu trữ.')
   }
 
@@ -295,7 +306,12 @@ export async function buildEmployeeReviewContext(
   live.records.forEach((record) => merged.set(record.path, record))
   const records = [...merged.values()]
   const weeks = buildWeeks(records, referenceWeekStart)
-  const result = assessment(weeks, workflowPolicy.minimumWeeklyShifts)
+  const confirmedPenalties = records.filter((record) =>
+    record.collection === 'penalties' &&
+    record.data.status === 'Active' &&
+    Number(record.data.amount || 0) > 0
+  )
+  const result = assessment(weeks, workflowPolicy.minimumWeeklyShifts, confirmedPenalties.length)
 
   return {
     employeeId,
@@ -306,6 +322,8 @@ export async function buildEmployeeReviewContext(
     archiveUsed: records.some((record) => record.source === 'drive'),
     archiveAvailable: archived.available,
     liveWarnings: live.warnings,
+    confirmedPenaltyCount: confirmedPenalties.length,
+    confirmedPenaltyAmount: confirmedPenalties.reduce((total, record) => total + Number(record.data.amount || 0), 0),
     disclaimer: 'Chỉ là cảnh báo từ dữ liệu trên app, không kết luận nhân viên.',
   }
 }
