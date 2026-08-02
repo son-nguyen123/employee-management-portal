@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react'
 import { BellRing, X } from 'lucide-react'
 import { useAuth } from '@/lib/hooks/useAuth'
 import {
+  showForegroundSystemNotification,
   subscribeToForegroundMessages,
   syncPushDeviceRegistration,
 } from '@/lib/services/messagingService'
@@ -34,11 +35,12 @@ export function ForegroundNotificationListener() {
       const now = Date.now()
       // FCM and the Firestore fallback can report the same event a few seconds
       // apart on slow devices. Keep one visible toast without suppressing later events.
-      if (lastNotice.current?.key === key && now - lastNotice.current.at < 30000) return
+      if (lastNotice.current?.key === key && now - lastNotice.current.at < 30000) return false
       lastNotice.current = { key, at: now }
       setNotice({ title, body })
       if (dismissTimer.current) clearTimeout(dismissTimer.current)
       dismissTimer.current = setTimeout(() => setNotice(null), 7000)
+      return true
     }
 
     void syncPushDeviceRegistration(authUser.uid).catch((error) => {
@@ -48,15 +50,27 @@ export function ForegroundNotificationListener() {
     void subscribeToForegroundMessages((payload) => {
       if (cancelled) return
 
-      showNotice(
-          payload.notification?.title ||
-          payload.data?.title ||
-          'Trí Candy',
-          payload.notification?.body ||
-          payload.data?.body ||
-          payload.data?.message ||
-          'Bạn có một thông báo mới.'
-      )
+      const title =
+        payload.notification?.title ||
+        payload.data?.title ||
+        'Trí Candy'
+      const body =
+        payload.notification?.body ||
+        payload.data?.body ||
+        payload.data?.message ||
+        'Bạn có một thông báo mới.'
+
+      if (showNotice(title, body)) {
+        const source = payload.data?.source || 'push'
+        const sourceId = payload.data?.sourceId || `${Date.now()}`
+        const status = payload.data?.status || 'new'
+        void showForegroundSystemNotification({
+          title,
+          body,
+          link: payload.data?.link || '/notifications',
+          tag: `${source}:${sourceId}:${status}`,
+        })
+      }
     }).then((stopListening) => {
       if (cancelled) {
         stopListening()
@@ -75,7 +89,14 @@ export function ForegroundNotificationListener() {
       }
       const newest = items.find((item) => item.id && !knownNotificationIds.has(item.id))
       items.forEach((item) => item.id && knownNotificationIds.add(item.id))
-      if (newest && !newest.isRead) showNotice(newest.title, newest.message)
+      if (newest && !newest.isRead && showNotice(newest.title, newest.message)) {
+        void showForegroundSystemNotification({
+          title: newest.title,
+          body: newest.message,
+          link: '/notifications',
+          tag: `notification:${newest.id}`,
+        })
+      }
     })
 
     return () => {

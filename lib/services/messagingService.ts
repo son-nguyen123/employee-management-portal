@@ -249,6 +249,46 @@ export async function subscribeToForegroundMessages(
   return onMessage(messaging, callback)
 }
 
+interface ForegroundSystemNotification {
+  title: string
+  body: string
+  link?: string
+  tag?: string
+}
+
+/**
+ * FCM forwards foreground messages to onMessage() instead of asking the
+ * browser to display them. Mirror those messages through the active service
+ * worker so iOS can retain them in Notification Center as well as showing the
+ * in-app notice.
+ */
+export async function showForegroundSystemNotification({
+  title,
+  body,
+  link = '/notifications',
+  tag,
+}: ForegroundSystemNotification): Promise<boolean> {
+  const state = await getPushPermissionState()
+  if (state !== 'granted' || !('serviceWorker' in navigator)) return false
+
+  try {
+    const registration = await navigator.serviceWorker.ready
+    await registration.showNotification(title, {
+      body,
+      icon: '/pwa-icon-192.png',
+      badge: '/pwa-icon-192.png',
+      ...(tag ? { tag: tag.slice(0, 64), renotify: true } : {}),
+      data: { link },
+    })
+    return true
+  } catch (error) {
+    // A foreground notification must never interrupt the app if a browser
+    // accepts push subscriptions but does not support showNotification here.
+    console.debug('Khong the hien thong bao he thong khi ung dung dang mo:', error)
+    return false
+  }
+}
+
 /**
  * Keep the installed PWA icon in sync where the Badging API is available.
  * Unsupported and older devices silently keep using the in-app navigation badge.
