@@ -161,10 +161,9 @@ function SimpleShiftList({ title, items }: { title: string; items?: ManagementSh
       <div className={`flex items-center gap-2 px-4 py-3 text-white ${isRemoval ? 'bg-gradient-to-r from-rose-500 to-pink-500' : 'bg-gradient-to-r from-violet-600 to-indigo-600'}`}><CalendarDays className="h-4 w-4" /><p className="text-[11px] font-black uppercase tracking-[0.14em]">{title}</p></div>
       <div className="space-y-2 p-2.5">
         {[...grouped.values()].sort((a, b) => a.date.getTime() - b.date.getTime()).map((row) => (
-          <div key={row.date.toISOString()} className="flex min-h-14 items-center gap-3 rounded-2xl bg-white px-3 py-2 shadow-sm dark:bg-slate-900">
+          <div key={row.date.toISOString()} className="flex items-start gap-3 rounded-2xl bg-white px-3 py-2.5 shadow-sm dark:bg-slate-900">
             <div className={`grid h-10 w-10 shrink-0 place-items-center rounded-xl text-center leading-none ${isRemoval ? 'bg-rose-50 text-rose-700 dark:bg-rose-500/15 dark:text-rose-200' : 'bg-violet-50 text-violet-700 dark:bg-violet-500/15 dark:text-violet-200'}`}><span className="text-[9px] font-black">{row.date.getDay() === 0 ? 'CN' : `T${row.date.getDay() + 1}`}</span><span className="-mt-2 text-sm font-black">{String(row.date.getDate()).padStart(2, '0')}</span></div>
-            <p className="min-w-0 flex-1 text-sm font-black capitalize">{row.date.toLocaleDateString('vi-VN', { weekday: 'long', day: '2-digit', month: '2-digit' })}</p>
-            <div className="flex shrink-0 flex-wrap justify-end gap-1">{row.shifts.map((shift) => <span key={shift} className={`rounded-lg px-2.5 py-1 text-xs font-black ${shiftTone[shift]}`}>{shiftNames[shift].replace('Ca ', '')}</span>)}</div>
+            <div className="min-w-0 flex-1"><p className="text-sm font-black capitalize">{row.date.toLocaleDateString('vi-VN', { weekday: 'long', day: '2-digit', month: '2-digit' })}</p><div className="mt-1.5 flex flex-wrap gap-1">{row.shifts.map((shift) => <span key={shift} className={`rounded-lg px-2.5 py-1 text-xs font-black ${shiftTone[shift]}`}>{shiftNames[shift].replace('Ca ', '')}</span>)}</div></div>
           </div>
         ))}
       </div>
