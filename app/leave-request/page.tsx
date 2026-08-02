@@ -227,7 +227,8 @@ export default function LeaveRequestPage() {
     }
   }
 
-  const hasPendingRequest = requests.some((item) => ['Pending', 'AwaitingEmployeeConsent'].includes(item.status))
+  const activeProcessingRequest = requests.find((item) => ['Pending', 'AwaitingEmployeeConsent'].includes(item.status))
+  const hasActiveProcessingRequest = Boolean(activeProcessingRequest)
 
   return (
     <main className="min-h-screen pb-8">
@@ -235,7 +236,13 @@ export default function LeaveRequestPage() {
       <PageContainer>
         <StaffBanner icon={Palmtree} tone="emerald" eyebrow="Xin nghỉ" title="Bạn cần nghỉ khi nào?" description="Nghỉ ngắn hạn chọn các ca cụ thể trong một hoặc nhiều ngày. Nghỉ dài hạn chọn một khoảng ngày liên tục." note="Ghi lý do chính tại đây; hình ảnh hoặc giấy tờ làm bằng chứng gửi riêng cho quản lý qua Messenger." />
 
-        {(!hasPendingRequest || editingId) && <form onSubmit={submit} className="mobile-card min-w-0 overflow-hidden p-4 sm:p-6">
+        {hasActiveProcessingRequest && !editingId && (
+          <div className="mb-4 rounded-2xl border border-amber-200 bg-amber-50 p-3 text-sm leading-6 text-amber-900 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-100">
+            Bạn đang có một yêu cầu nghỉ {activeProcessingRequest.status === 'AwaitingEmployeeConsent' ? 'chờ bạn xác nhận mức trừ' : 'đang chờ quản lý xử lý'}. Biểu mẫu sẽ hiện lại ngay khi yêu cầu này được duyệt, từ chối hoặc hủy.
+          </div>
+        )}
+
+        {(!hasActiveProcessingRequest || editingId) && <form onSubmit={submit} className="mobile-card min-w-0 overflow-hidden p-4 sm:p-6">
           <div className="grid grid-cols-2 gap-2 rounded-2xl bg-slate-100 p-1 dark:bg-slate-800">
             {[
               { value: 'short' as const, label: 'Nghỉ ngắn hạn', note: 'Chọn ca' },

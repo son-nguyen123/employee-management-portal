@@ -279,24 +279,29 @@ for (const [index, weekStart] of ['2026-07-20', '2026-07-27'].entries()) {
 }
 
 const leaves = await queryCollection('leaveRequests', 'employeeId', employeeId)
-const activePending = leaves.find((record) => record.data.status === 'Pending' && record.id !== `${TEST_PREFIX}leave-pending-review`)
-const pendingRequestId = activePending?.id || `${TEST_PREFIX}leave-pending-review`
+const oldTestPendingLeave = leaves.find((record) => record.id === `${TEST_PREFIX}leave-pending-review`)
+if (oldTestPendingLeave) writes.push(deleteWrite(oldTestPendingLeave.name))
+
+const lateRequests = await queryCollection('lateRequests', 'employeeId', employeeId)
+const activePending = lateRequests.find((record) => record.data.status === 'Pending' && record.id !== `${TEST_PREFIX}late-pending-review`)
+const pendingRequestId = activePending?.id || `${TEST_PREFIX}late-pending-review`
 if (!activePending) {
   const pendingScheduleId = `${TEST_PREFIX}schedule-w3-3`
-  writes.push(updateWrite('leaveRequests', pendingRequestId, {
+  writes.push(updateWrite('lateRequests', pendingRequestId, {
     employeeId,
     workScheduleId: pendingScheduleId,
     workScheduleIds: [pendingScheduleId],
-    leaveDate: atNoon('2026-07-29'),
-    endDate: atNoon('2026-07-29'),
-    duration: 'short',
-    leaveType: 'personal',
-    reason: `${testTag} Yêu cầu chờ duyệt để mở mục Kiểm tra.`,
+    date: atNoon('2026-07-29'),
+    shift: 'Evening',
+    lateMinutes: 30,
+    expectedArrival: '18:30',
+    noticeMinutes: 20,
+    noticeClass: 'late',
+    managerMessageStatus: 'notMessaged',
+    reason: `${testTag} Thông báo đi trễ chờ duyệt để mở mục Kiểm tra.`,
     status: 'Pending',
-    noticeClass: 'onTime',
-    weeklyShiftCount: 4,
-    weeklyShiftCountAfterLeave: 3,
-    underMinimumWarning: true,
+    penaltyIfApproved: 500,
+    penaltyIfRejected: 1000,
     testDataBatch: TEST_BATCH,
     createdAt: now,
     updatedAt: now,
@@ -311,6 +316,7 @@ console.log(JSON.stringify({
   approvedLeaveRequestId: `${TEST_PREFIX}leave-approved-three-shifts`,
   markedScheduleIds: approvedLeaveSchedules.map((record) => record.id),
   pendingRequestId,
+  pendingResource: 'lateRequests',
   reusedExistingPending: Boolean(activePending),
   writtenDocuments: writes.length,
   cleanupCommand: 'npm run seed:review-test -- --cleanup',
