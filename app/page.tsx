@@ -196,18 +196,21 @@ export default function Page() {
 
   return (
     <main className="min-h-screen pb-24 md:pb-10">
-      <section className="home-hero overflow-hidden rounded-b-[2rem] border-b border-pink-200/70 bg-pink-50 px-4 pb-7 pt-[max(1rem,env(safe-area-inset-top))] text-slate-950 shadow-sm lg:mx-auto lg:mt-7 lg:w-[calc(100%-2.5rem)] lg:max-w-6xl lg:rounded-[2rem] lg:border lg:px-7 lg:py-7 lg:shadow-lg lg:shadow-slate-950/5">
-        <div className="mx-auto max-w-2xl md:max-w-4xl lg:grid lg:max-w-none lg:grid-cols-[0.82fr_1.18fr] lg:items-stretch lg:gap-5">
-          <div className="flex items-center justify-between lg:rounded-[1.6rem] lg:border lg:border-white/80 lg:bg-white/65 lg:p-5 lg:shadow-sm lg:backdrop-blur-sm">
+      <section className="home-hero overflow-hidden rounded-b-[2rem] border-b border-pink-200/70 bg-pink-50 px-4 pb-7 pt-[max(1rem,env(safe-area-inset-top))] text-slate-950 shadow-sm md:mx-auto md:mt-5 md:w-[calc(100%-2.5rem)] md:max-w-6xl md:rounded-[2rem] md:border md:px-5 md:py-5 md:shadow-lg md:shadow-slate-950/5 lg:mt-7 lg:px-7 lg:py-7">
+        <div className="mx-auto max-w-2xl md:grid md:max-w-none md:grid-cols-[0.82fr_1.18fr] md:items-stretch md:gap-4 lg:gap-5">
+          <div className="flex items-center justify-between md:rounded-[1.6rem] md:border md:border-white/80 md:bg-white/65 md:p-4 md:shadow-sm md:backdrop-blur-sm lg:p-5">
             <div className="flex items-center gap-3">
-              <div className="grid h-12 w-12 shrink-0 place-items-center overflow-hidden rounded-2xl border-2 border-white bg-gradient-to-br from-fuchsia-500 to-violet-600 text-white shadow-md shadow-fuchsia-900/10 dark:border-white/15 lg:h-14 lg:w-14">
+              <div className="grid h-12 w-12 shrink-0 place-items-center overflow-hidden rounded-2xl border-2 border-white bg-gradient-to-br from-fuchsia-500 to-violet-600 text-white shadow-md shadow-fuchsia-900/10 dark:border-white/15 md:h-14 md:w-14">
                 {avatarURL
                   ? <img src={avatarURL} alt={`Ảnh đại diện của ${displayName}`} width={48} height={48} loading="eager" fetchPriority="high" decoding="async" className="h-full w-full object-cover" />
                   : isAdmin ? <ShieldCheck className="h-5 w-5" /> : <UserRound className="h-5 w-5" />}
               </div>
               <div>
-                <p className="text-xs font-bold text-fuchsia-600">{isAdmin ? 'Tài khoản quản lý · Trí Candy' : 'Xin chào, thành viên Trí Candy'}</p>
-                <h1 className="max-w-[190px] truncate text-lg font-bold lg:mt-1 lg:max-w-[230px] lg:text-xl">{displayName}</h1>
+                <p className="text-xs font-bold text-fuchsia-600">
+                  <span className="md:hidden lg:inline">{isAdmin ? 'Tài khoản quản lý · Trí Candy' : 'Xin chào, thành viên Trí Candy'}</span>
+                  <span className="hidden md:inline lg:hidden">{isAdmin ? 'Tài khoản quản lý' : 'Trí Candy'}</span>
+                </p>
+                <h1 className="max-w-[190px] truncate text-lg font-bold md:mt-1 md:max-w-[210px] md:text-xl lg:max-w-[230px]">{displayName}</h1>
               </div>
             </div>
             <div className="flex gap-1">
@@ -228,11 +231,11 @@ export default function Page() {
             </div>
           </div>
 
-          <div className="mt-6 rounded-3xl bg-gradient-to-br from-violet-600 via-fuchsia-600 to-rose-500 p-5 text-white shadow-xl shadow-fuchsia-950/20 lg:mt-0 lg:p-6 lg:shadow-lg lg:shadow-fuchsia-950/15">
+          <div className="mt-6 rounded-3xl bg-gradient-to-br from-violet-600 via-fuchsia-600 to-rose-500 p-5 text-white shadow-xl shadow-fuchsia-950/20 md:mt-0 md:p-5 md:shadow-lg md:shadow-fuchsia-950/15 lg:p-6">
             <div className="flex items-start justify-between gap-4">
               <div>
                 <p className="text-xs font-semibold text-indigo-100">{isAdmin ? 'Tiến độ gửi lịch tuần này' : 'Lịch làm việc tuần này'}</p>
-                <p className="mt-1 text-2xl font-extrabold">
+                <p className="mt-1 text-2xl font-extrabold md:text-xl lg:text-2xl">
                   {isAdmin ? `${adminStats.confirmed}/${adminStats.total} nhân viên` : '4 ca đã đăng ký'}
                 </p>
                 <p className="mt-1 text-sm text-indigo-100">
@@ -345,12 +348,12 @@ export default function Page() {
               <h2 className="shrink-0 text-lg font-black tracking-tight">Tiện ích của bạn</h2>
               <span className="h-px flex-1 bg-gradient-to-r from-fuchsia-300 via-indigo-200 to-transparent" />
             </div>
-            <div className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-4 lg:gap-4">
+            <div className="grid grid-cols-2 gap-3 md:grid-cols-2 md:gap-4 lg:grid-cols-4">
               {staffFeatures.map(({ title, note, href, icon: Icon, tone }, index) => (
-                <Link key={title} href={href} className={`mobile-card group flex min-h-[148px] flex-col p-4 transition duration-200 hover:-translate-y-1 hover:border-indigo-200 hover:shadow-lg hover:shadow-indigo-950/5 active:scale-[0.98] lg:min-h-[136px] lg:p-5 ${index === 0 ? 'col-span-2 min-h-[118px] md:col-span-1 md:min-h-[148px] lg:col-span-2 lg:min-h-[136px] lg:flex-row lg:items-center lg:gap-5 lg:border-indigo-200/80 lg:bg-gradient-to-r lg:from-indigo-50 lg:via-white lg:to-fuchsia-50 dark:lg:from-indigo-500/15 dark:lg:via-slate-900 dark:lg:to-fuchsia-500/10' : ''}`}>
-                  <div className={`grid h-11 w-11 shrink-0 place-items-center rounded-2xl text-white shadow-sm ${tone} ${index === 0 ? 'lg:h-14 lg:w-14' : ''}`}><Icon className="h-5 w-5" /></div>
-                  <div className={`mt-auto pt-4 ${index === 0 ? 'lg:mt-0 lg:pt-0' : ''}`}><h3 className="font-extrabold leading-tight lg:text-[15px]">{title}</h3><p className="mt-1 line-clamp-2 text-xs leading-5 text-muted-foreground">{note}</p></div>
-                  <ChevronRight className="ml-auto hidden h-5 w-5 shrink-0 text-slate-300 transition group-hover:translate-x-0.5 group-hover:text-indigo-500 lg:block" />
+                <Link key={title} href={href} className={`mobile-card group flex min-h-[148px] flex-col p-4 transition duration-200 hover:-translate-y-1 hover:border-indigo-200 hover:shadow-lg hover:shadow-indigo-950/5 active:scale-[0.98] md:min-h-[132px] md:p-5 lg:min-h-[136px] ${index === 0 ? 'col-span-2 min-h-[118px] md:min-h-[132px] md:flex-row md:items-center md:gap-5 md:border-indigo-200/80 md:bg-gradient-to-r md:from-indigo-50 md:via-white md:to-fuchsia-50 dark:md:from-indigo-500/15 dark:md:via-slate-900 dark:md:to-fuchsia-500/10 lg:col-span-2 lg:min-h-[136px]' : ''}`}>
+                  <div className={`grid h-11 w-11 shrink-0 place-items-center rounded-2xl text-white shadow-sm ${tone} ${index === 0 ? 'md:h-14 md:w-14' : ''}`}><Icon className="h-5 w-5" /></div>
+                  <div className={`mt-auto pt-4 ${index === 0 ? 'md:mt-0 md:pt-0' : ''}`}><h3 className="font-extrabold leading-tight lg:text-[15px]">{title}</h3><p className="mt-1 line-clamp-2 text-xs leading-5 text-muted-foreground">{note}</p></div>
+                  <ChevronRight className="ml-auto hidden h-5 w-5 shrink-0 text-slate-300 transition group-hover:translate-x-0.5 group-hover:text-indigo-500 md:block" />
                 </Link>
               ))}
             </div>
