@@ -48,6 +48,7 @@ export interface ManagementPendingItem {
   shifts?: ManagementShift[]
   removedShifts?: ManagementShift[]
   warning?: string
+  underMinimumWarning?: boolean
   penaltyIfApproved?: number
   penaltyIfRejected?: number
   managerMessageStatus?: 'messagedTri' | 'notMessaged' | 'messagedOtherManager'
@@ -355,6 +356,7 @@ export function subscribeToManagementPendingItems(
         warning: data.underMinimumWarning === true
           ? `Sau yêu cầu nghỉ, tuần này nhân viên còn ${Number(data.weeklyShiftCountAfterLeave || 0)}/6 ca.`
           : data.noticeClass === 'late' ? 'Yêu cầu được gửi sau 16:00 của ngày hôm trước.' : undefined,
+        underMinimumWarning: data.underMinimumWarning === true,
         penaltyIfApproved: Number(data.penaltyIfApproved || 0),
         penaltyIfRejected: Number(data.penaltyIfRejected || 0),
       })

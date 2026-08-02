@@ -1962,6 +1962,12 @@ export async function reviewRequest(actor: RequestActor, raw: unknown) {
     if (data.status === status) {
       throw new ApiError(409, 'Yêu cầu đã ở trạng thái này.')
     }
+    if (resource === 'late' && managerPenaltyAmount != null) {
+      throw new ApiError(400, 'Khoản trừ đi trễ được tính tự động, không nhập mức trừ thủ công.')
+    }
+    if (resource === 'leave' && managerPenaltyAmount != null && data.underMinimumWarning !== true) {
+      throw new ApiError(400, 'Chỉ được chọn mức trừ riêng khi yêu cầu nghỉ làm nhân viên xuống dưới mức ca tối thiểu.')
+    }
     employeeId = data.employeeId
     const employeeSnapshot = await transaction.get(adminDb.collection('employees').doc(employeeId))
     const employeeName = String(employeeSnapshot.get('fullName') || 'Nhân viên')
