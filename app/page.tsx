@@ -189,7 +189,10 @@ export default function Page() {
     { title: 'Kho dữ liệu', note: 'Xem lịch sử đã lưu trên Google Drive', href: '/admin/archive', icon: Archive },
     { title: 'Cài đặt', note: 'Email biên nhận và cấu hình quản lý', href: '/admin/settings', icon: Settings },
   ]
-  const collapsibleStaffFeatures = staffFeatures.slice(1)
+  // Management accounts can use the same self-service utilities as staff.
+  // Keep schedule registration here as the first card so managers do not
+  // need to leave management mode to submit their own availability.
+  const collapsibleStaffFeatures = staffFeatures
 
   return (
     <main className="min-h-screen pb-24 md:pb-8">
@@ -317,7 +320,7 @@ export default function Page() {
               <div className="min-w-0 flex-1">
                 <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-indigo-600">Chế độ nhân viên</p>
                 <h2 className="mt-0.5 font-extrabold">Các tiện ích dành cho bạn</h2>
-                <p className="mt-1 truncate text-xs text-muted-foreground">Xin nghỉ · Đi trễ · Ứng lương · Tiện ích khác</p>
+                <p className="mt-1 truncate text-xs text-muted-foreground">Đăng ký lịch · Xin nghỉ · Đi trễ · Ứng lương</p>
               </div>
               <div className="flex shrink-0 items-center gap-1.5 text-xs font-bold text-slate-500">
                 <span className="hidden sm:inline">{employeeModeOpen ? 'Thu gọn' : 'Mở'}</span>
