@@ -1247,15 +1247,34 @@ export async function normalizeLeaveRequests(actor: RequestActor, raw: unknown) 
 }
 
 function shiftStart(date: Date, shift: Shift): Date {
-  const day = date.toISOString().slice(0, 10)
+  const day = vietnamDateKey(date)
   return new Date(`${day}T${shiftStartTime[shift]}:00+07:00`)
+}
+
+function lateScheduleIds(body: Record<string, unknown>): string[] {
+  const legacyId = body.workScheduleId == null ? '' : text(body.workScheduleId, 'Mã ca làm', 128)
+  const raw = Array.isArray(body.workScheduleIds) ? body.workScheduleIds : legacyId ? [legacyId] : []
+  const ids = [...new Set(raw.map((value, index) => text(value, `Mã ca làm ${index + 1}`, 128)))]
+  if (!ids.length) throw new ApiError(400, 'Vui lòng chọn ít nhất một ca đã được xác nhận.')
+  if (ids.length > 21) throw new ApiError(400, 'Mỗi yêu cầu đi trễ chỉ được chọn tối đa 21 ca.')
+  return ids
+}
+
+function lateArrivalDate(date: Date, arrivalTime: string): Date {
+  return new Date(`${vietnamDateKey(date)}T${arrivalTime}:00+07:00`)
+}
+
+function lateNoticeDeadline(starts: Date[], multi: boolean): Date {
+  if (!multi) return new Date(starts[0].getTime() - workflowPolicy.lateNoticeMinutes * 60_000)
+  const earliest = starts.reduce((value, item) => value < item ? value : item, starts[0])
+  return new Date(`${vietnamDateKey(earliest)}T00:00:00+07:00`)
 }
 
 export async function submitLate(actor: RequestActor, raw: unknown) {
   requireStaff(actor)
   const body = objectBody(raw)
   const id = requestId(body)
-  const scheduleId = text(body.workScheduleId, 'Mã ca làm', 128)
+  const scheduleIds = lateScheduleIds(body)
   const arrivalTime = text(body.expectedArrival, 'Giờ dự kiến', 5)
   if (!/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(arrivalTime)) {
     throw new ApiError(400, 'Giờ dự kiến không hợp lệ.')
@@ -1268,35 +1287,40 @@ export async function submitLate(actor: RequestActor, raw: unknown) {
   if (!['messagedTri', 'notMessaged', 'messagedOtherManager'].includes(managerMessageStatus)) {
     throw new ApiError(400, 'Vui lòng xác nhận bạn đã nhắn cho ai trước khi gửi.')
   }
-  const scheduleRef = adminDb.collection('workSchedules').doc(scheduleId)
   const workflow = workflowRef(actor, id)
   const lateRef = adminDb.collection('lateRequests').doc()
   const managerIds = await activeManagerIds()
   let computedPenalty = 0
 
   await adminDb.runTransaction(async (transaction) => {
-    const [workflowSnapshot, scheduleSnapshot] = await Promise.all([
-      transaction.get(workflow),
-      transaction.get(scheduleRef),
-    ])
+    const workflowSnapshot = await transaction.get(workflow)
+    const scheduleSnapshots = []
+    for (const scheduleId of scheduleIds) {
+      scheduleSnapshots.push(await transaction.get(adminDb.collection('workSchedules').doc(scheduleId)))
+    }
     if (workflowSnapshot.exists) throw new ApiError(409, 'Thông báo đi trễ này đã được gửi.')
-    if (!scheduleSnapshot.exists) throw new ApiError(404, 'Không tìm thấy ca làm.')
-    const schedule = scheduleSnapshot.data()!
-    if (schedule.employeeId !== actor.uid || schedule.status !== 'Approved') {
-      throw new ApiError(403, 'Bạn chỉ được báo trễ cho ca đã được duyệt của mình.')
-    }
-    const shift = schedule.shift as Shift
-    if (!shifts.includes(shift)) throw new ApiError(400, 'Ca làm không hợp lệ.')
-    const date = (schedule.date as Timestamp).toDate()
-    if (vietnamDateKey(date) !== vietnamDateKey(new Date())) {
-      throw new ApiError(400, 'Bạn chỉ được báo đi trễ cho ca làm trong hôm nay.')
-    }
-    const start = shiftStart(date, shift)
-    const arrival = new Date(`${date.toISOString().slice(0, 10)}T${arrivalTime}:00+07:00`)
-    const lateMinutes = Math.ceil((arrival.getTime() - start.getTime()) / 60_000)
-    if (lateMinutes < 1 || lateMinutes > 720) throw new ApiError(400, 'Giờ dự kiến phải sau giờ bắt đầu ca.')
-    const noticeMinutes = (start.getTime() - Date.now()) / 60_000
-    const isLateNotice = noticeMinutes < workflowPolicy.lateNoticeMinutes
+    const entries = scheduleSnapshots.map((snapshot, index) => {
+      if (!snapshot.exists) throw new ApiError(404, 'Không tìm thấy ca làm.')
+      const schedule = snapshot.data()!
+      if (schedule.employeeId !== actor.uid || schedule.status !== 'Approved') {
+        throw new ApiError(403, 'Bạn chỉ được báo trễ cho ca đã được duyệt của mình.')
+      }
+      const shift = schedule.shift as Shift
+      if (!shifts.includes(shift)) throw new ApiError(400, 'Ca làm không hợp lệ.')
+      const date = (schedule.date as Timestamp).toDate()
+      if (vietnamDateKey(date) < vietnamDateKey(new Date())) {
+        throw new ApiError(400, 'Chỉ được chọn ca hôm nay hoặc ca sắp tới.')
+      }
+      const start = shiftStart(date, shift)
+      const arrival = lateArrivalDate(date, arrivalTime)
+      const lateMinutes = Math.ceil((arrival.getTime() - start.getTime()) / 60_000)
+      if (lateMinutes < 1 || lateMinutes > 720) throw new ApiError(400, 'Giờ dự kiến phải sau giờ bắt đầu ca.')
+      return { scheduleId: scheduleIds[index], date, shift, scheduleDate: schedule.date, start, lateMinutes }
+    })
+    const starts = entries.map((entry) => entry.start)
+    const deadline = lateNoticeDeadline(starts, entries.length > 1)
+    const noticeMinutes = (deadline.getTime() - Date.now()) / 60_000
+    const isLateNotice = noticeMinutes < 0
     const contactPenalty = managerMessageStatus === 'messagedOtherManager'
       ? workflowPolicy.lateWrongManagerMessagePenalty
       : managerMessageStatus === 'notMessaged'
@@ -1304,12 +1328,15 @@ export async function submitLate(actor: RequestActor, raw: unknown) {
         : 0
     computedPenalty = Math.max(isLateNotice ? workflowPolicy.lateNoticePenalty : 0, contactPenalty)
     const now = FieldValue.serverTimestamp()
+    const first = entries[0]
     transaction.create(lateRef, {
       employeeId: actor.uid,
-      workScheduleId: scheduleId,
-      date: schedule.date,
-      shift,
-      lateMinutes,
+      workScheduleId: first.scheduleId,
+      workScheduleIds: scheduleIds,
+      date: first.scheduleDate,
+      shift: first.shift,
+      lateMinutes: Math.max(...entries.map((entry) => entry.lateMinutes)),
+      lateEntries: entries.map((entry) => ({ workScheduleId: entry.scheduleId, date: entry.scheduleDate, shift: entry.shift, lateMinutes: entry.lateMinutes })),
       expectedArrival: arrivalTime,
       noticeMinutes: Math.floor(noticeMinutes),
       noticeClass: isLateNotice ? 'late' : 'onTime',
@@ -1605,24 +1632,38 @@ export async function reviseRequest(actor: RequestActor, raw: unknown) {
       updates.workScheduleId = scheduleIds[0] || FieldValue.delete()
       updates.workScheduleIds = scheduleIds.length ? scheduleIds : FieldValue.delete()
     } else {
-      const scheduleId = text(body.workScheduleId, 'Mã ca làm', 128)
+      const scheduleIds = lateScheduleIds(body)
       const expectedArrival = text(body.expectedArrival, 'Giờ dự kiến', 5)
       if (!/^(?:[01]\d|2[0-3]):[0-5]\d$/.test(expectedArrival)) throw new ApiError(400, 'Giờ dự kiến không hợp lệ.')
-      const schedule = await transaction.get(adminDb.collection('workSchedules').doc(scheduleId))
-      if (!schedule.exists || schedule.get('employeeId') !== actor.uid || schedule.get('status') !== 'Approved') {
-        throw new ApiError(403, 'Bạn chỉ được báo trễ cho ca đã được duyệt của mình.')
+      const schedules = []
+      for (const scheduleId of scheduleIds) {
+        schedules.push(await transaction.get(adminDb.collection('workSchedules').doc(scheduleId)))
       }
-      const shift = schedule.get('shift') as Shift
-      const date = (schedule.get('date') as Timestamp).toDate()
-      const start = shiftStart(date, shift)
-      const arrival = new Date(`${date.toISOString().slice(0, 10)}T${expectedArrival}:00+07:00`)
-      const lateMinutes = Math.ceil((arrival.getTime() - start.getTime()) / 60_000)
-      if (lateMinutes < 1 || lateMinutes > 720) throw new ApiError(400, 'Giờ dự kiến phải sau giờ bắt đầu ca.')
-      updates.workScheduleId = scheduleId
-      updates.date = schedule.get('date')
-      updates.shift = shift
+      const entries = schedules.map((schedule, index) => {
+        if (!schedule.exists || schedule.get('employeeId') !== actor.uid || schedule.get('status') !== 'Approved') {
+          throw new ApiError(403, 'Bạn chỉ được báo trễ cho ca đã được duyệt của mình.')
+        }
+        const shift = schedule.get('shift') as Shift
+        const date = (schedule.get('date') as Timestamp).toDate()
+        if (vietnamDateKey(date) < vietnamDateKey(new Date())) throw new ApiError(400, 'Chỉ được chọn ca hôm nay hoặc ca sắp tới.')
+        const start = shiftStart(date, shift)
+        const arrival = lateArrivalDate(date, expectedArrival)
+        const lateMinutes = Math.ceil((arrival.getTime() - start.getTime()) / 60_000)
+        if (lateMinutes < 1 || lateMinutes > 720) throw new ApiError(400, 'Giờ dự kiến phải sau giờ bắt đầu ca.')
+        return { scheduleId: scheduleIds[index], scheduleDate: schedule.get('date'), date, shift, start, lateMinutes }
+      })
+      const deadline = lateNoticeDeadline(entries.map((entry) => entry.start), entries.length > 1)
+      const noticeMinutes = (deadline.getTime() - Date.now()) / 60_000
+      const first = entries[0]
+      updates.workScheduleId = first.scheduleId
+      updates.workScheduleIds = scheduleIds
+      updates.date = first.scheduleDate
+      updates.shift = first.shift
       updates.expectedArrival = expectedArrival
-      updates.lateMinutes = lateMinutes
+      updates.lateMinutes = Math.max(...entries.map((entry) => entry.lateMinutes))
+      updates.lateEntries = entries.map((entry) => ({ workScheduleId: entry.scheduleId, date: entry.scheduleDate, shift: entry.shift, lateMinutes: entry.lateMinutes }))
+      updates.noticeMinutes = Math.floor(noticeMinutes)
+      updates.noticeClass = noticeMinutes < 0 ? 'late' : 'onTime'
       updates.reason = text(body.reason, 'Lý do', 1000)
     }
 

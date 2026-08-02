@@ -38,6 +38,8 @@ import { Badge } from '@/components/ui/badge'
 import { getManagementContact } from '@/lib/services/managementSettingsService'
 import { toMessengerUrl } from '@/lib/utils/messenger'
 import { submitStaffRequest } from '@/lib/services/staffRequestService'
+import { subscribeToEmployeeLeaves } from '@/lib/services/leaveService'
+import type { LeaveRequest } from '@/lib/models/types'
 
 type Shift = 'Morning' | 'Afternoon' | 'Evening' | 'Custom'
 type DayItem = { key: string; name: string; shortName: string; date: Date }
@@ -118,7 +120,39 @@ export default function SchedulePage() {
   const [hasExistingSchedules, setHasExistingSchedules] = useState<boolean | null>(null)
   const [referenceNow] = useState(() => Date.now())
   const [portalReady, setPortalReady] = useState(false)
+  const [leaveMarks, setLeaveMarks] = useState<Record<string, { fullDay: boolean; shifts: string[] }>>({})
   const dutyWheelRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!authUser || isPreviewMode) return
+    return subscribeToEmployeeLeaves(authUser.uid, (requests: LeaveRequest[]) => {
+      const active = requests.filter((request) => ['Pending', 'AwaitingEmployeeConsent', 'Approved'].includes(request.status))
+      const marks: Record<string, { fullDay: boolean; shifts: string[] }> = {}
+      const add = (key: string, shift?: string) => {
+        marks[key] ||= { fullDay: false, shifts: [] }
+        if (shift && !marks[key].shifts.includes(shift)) marks[key].shifts.push(shift)
+      }
+      active.forEach((request) => {
+        const start = request.leaveDate instanceof Date ? request.leaveDate : request.leaveDate.toDate()
+        const end = request.endDate ? (request.endDate instanceof Date ? request.endDate : request.endDate.toDate()) : start
+        if (request.duration === 'long') {
+          for (const cursor = new Date(start); cursor <= end; cursor.setDate(cursor.getDate() + 1)) {
+            const key = localDateKey(cursor)
+            add(key)
+            marks[key].fullDay = true
+          }
+          return
+        }
+        if (request.workScheduleIds?.length) {
+          request.workScheduleIds.forEach((id) => {
+            const match = Object.entries(originalScheduleIds).find(([, scheduleId]) => scheduleId === id)?.[0]
+            add(match?.slice(0, 10) || localDateKey(start), match?.slice(11))
+          })
+        } else add(localDateKey(start))
+      })
+      setLeaveMarks(marks)
+    }, () => setLeaveMarks({}))
+  }, [authUser, isPreviewMode, originalScheduleIds])
 
   useEffect(() => setPortalReady(true), [])
 
@@ -856,12 +890,15 @@ export default function SchedulePage() {
                     </div>
                     {!!selected[day.key]?.length && <Badge variant="success">{overtimeMode ? `+${selected[day.key].filter((shift) => !original[day.key]?.includes(shift)).length} ca mới` : `${selected[day.key].length} ca`}</Badge>}
                   </div>
+                  {leaveMarks[day.key]?.fullDay && <div className="mb-3 rounded-2xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-extrabold text-rose-700 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-200">Đã xin nghỉ cả ngày</div>}
+                  {!leaveMarks[day.key]?.fullDay && !!leaveMarks[day.key]?.shifts.length && <div className="mb-3 rounded-2xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-extrabold text-rose-700 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-200">{leaveMarks[day.key].shifts.map((shift) => `${shiftOptions.find((item) => item.value === shift)?.shortLabel || 'Ca'} · Đã xin nghỉ`).join(' • ')}</div>}
                   <div className="grid grid-cols-2 gap-2">
                     {shiftOptions.filter((shift) => (!overtimeMode && !changeMode) || shift.value !== 'Custom').map((shift) => {
                       const today = new Date()
                       today.setHours(0, 0, 0, 0)
                       const isPastDay = changeMode && day.date < today
                       const active = selected[day.key]?.includes(shift.value)
+                      const requestedLeave = leaveMarks[day.key]?.fullDay || leaveMarks[day.key]?.shifts.includes(shift.value)
                       const wasSaved = (editing || overtimeMode || changeMode) && original[day.key]?.includes(shift.value)
                       const activeClass = wasSaved
                         ? overtimeMode || changeMode
@@ -875,10 +912,10 @@ export default function SchedulePage() {
                           onClick={() => chooseShift(day.key, shift.value)}
                           disabled={(overtimeMode && (wasSaved || !submittedIds.length)) || (changeMode && (!submittedIds.length || isPastDay))}
                           className={`min-h-[58px] rounded-2xl border px-3 text-left transition active:scale-[0.98] ${
-                            active ? activeClass : 'border-slate-200 bg-slate-50 dark:border-slate-700 dark:bg-slate-800'
+                            active ? activeClass : requestedLeave ? 'border-rose-400 bg-rose-50 text-rose-700 dark:border-rose-500/50 dark:bg-rose-500/10 dark:text-rose-200' : 'border-slate-200 bg-slate-50 dark:border-slate-700 dark:bg-slate-800'
                           } disabled:cursor-not-allowed disabled:active:scale-100`}
                         >
-                          <span className="flex items-center justify-between text-sm font-bold">{shift.label}{active && <Check className="h-4 w-4" />}</span>
+                          <span className="flex items-center justify-between text-sm font-bold">{shift.label}{active ? <Check className="h-4 w-4" /> : requestedLeave ? <span className="text-[10px]">Đã xin nghỉ</span> : null}</span>
                           <span className={`mt-0.5 block text-[11px] ${active ? 'text-white/80' : 'text-muted-foreground'}`}>
                             {shift.value === 'Custom' && customData[day.key]
                               ? `${customData[day.key].start}–${customData[day.key].end}`

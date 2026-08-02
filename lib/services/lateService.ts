@@ -14,6 +14,7 @@ export async function createLateRequest(
   const result = await callWorkflowApi<{ id: string; penalty: number }>('submitLate', {
     requestId: newWorkflowRequestId(),
     workScheduleId: lateData.workScheduleId,
+    workScheduleIds: lateData.workScheduleIds,
     expectedArrival: lateData.expectedArrival,
     reason: lateData.reason,
     managerMessageStatus: lateData.managerMessageStatus,
@@ -21,11 +22,12 @@ export async function createLateRequest(
   return result.id
 }
 
-export async function reviseLateRequest(id: string, data: Pick<LateRequest, 'workScheduleId' | 'expectedArrival' | 'reason'>): Promise<void> {
+export async function reviseLateRequest(id: string, data: Pick<LateRequest, 'workScheduleId' | 'workScheduleIds' | 'expectedArrival' | 'reason'>): Promise<void> {
   await callWorkflowApi('reviseRequest', {
     resource: 'late',
     id,
     workScheduleId: data.workScheduleId,
+    workScheduleIds: data.workScheduleIds,
     expectedArrival: data.expectedArrival,
     reason: data.reason,
   })

@@ -92,8 +92,8 @@ function asShiftList(value: unknown, includeScheduleId = false): ManagementShift
     return [{
       date,
       shift,
-      ...(includeScheduleId && typeof row.scheduleId === 'string'
-        ? { scheduleId: row.scheduleId }
+      ...(includeScheduleId && typeof (row.scheduleId || row.workScheduleId) === 'string'
+        ? { scheduleId: String(row.scheduleId || row.workScheduleId) }
         : {}),
     }]
   })
@@ -366,6 +366,10 @@ export function subscribeToManagementPendingItems(
       const employeeId = String(data.employeeId || '')
       const employee = identity(employeeId)
       const minutes = typeof data.lateMinutes === 'number' ? `${data.lateMinutes} phút` : 'Chưa rõ số phút'
+      const shifts = asShiftList(data.lateEntries, true)
+      const lateDetail = shifts.length > 1
+        ? `${shifts.length} ca · trễ ${minutes}`
+        : `${shortDate(data.date)} · ${minutes}`
       items.push({
         id: `late-${id}`,
         type: 'late',
@@ -376,11 +380,12 @@ export function subscribeToManagementPendingItems(
         employeePhone: employee.phone,
         employeeFacebookURL: employee.facebookURL,
         title: 'Yêu cầu đi trễ',
-        detail: `${shortDate(data.date)} · ${minutes}`,
+        detail: lateDetail,
         reason: typeof data.reason === 'string' && data.reason.trim() ? data.reason : 'Không ghi lý do',
         createdAt: asDate(data.updatedAt || data.createdAt),
         referenceDate: asDate(data.date, asDate(data.updatedAt || data.createdAt)),
         targetIds: [id],
+        shifts: shifts.length ? shifts : undefined,
         warning: data.noticeClass === 'late' ? 'Báo đi trễ dưới 60 phút trước ca.' : undefined,
         penaltyIfApproved: Number(data.penaltyIfApproved || 0),
         penaltyIfRejected: Number(data.penaltyIfRejected || 0),

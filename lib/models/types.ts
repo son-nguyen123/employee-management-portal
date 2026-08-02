@@ -113,8 +113,15 @@ export interface LateRequest {
   id?: string
   employeeId: string
   workScheduleId: string
+  workScheduleIds?: string[]
   date: Timestamp | Date
   shift: 'Morning' | 'Afternoon' | 'Evening'
+  lateEntries?: Array<{
+    workScheduleId: string
+    date: Timestamp | Date
+    shift: 'Morning' | 'Afternoon' | 'Evening'
+    lateMinutes: number
+  }>
   lateMinutes: number
   reason: string
   expectedArrival?: string
