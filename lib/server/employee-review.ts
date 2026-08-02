@@ -150,11 +150,9 @@ function assessment(weeks: EmployeeReviewWeek[], minimum: number): {
   const shortNoticeEvents = weeks.reduce((total, week) => total + week.shortNoticeEvents, 0)
   const longLeaveWeeks = weeks.filter((week) => week.hasLongLeave).length
   const facts = [
-    `${eligible.length} tuần có lịch được ghi nhận trong cửa sổ 4 tuần.`,
-    `${underMinimum.length} tuần có lịch dưới mức ${minimum} ca.`,
-    `${leaveRequests} yêu cầu nghỉ · ${lateRequests} thông báo đi trễ · ${shortNoticeEvents} lần báo sát hạn/chưa nhắn đúng quản lý.`,
+    `${eligible.length}/4 tuần có lịch · ${underMinimum.length} tuần dưới ${minimum} ca.`,
+    `${leaveRequests} nghỉ · ${lateRequests} báo trễ · ${shortNoticeEvents} báo sát hạn${longLeaveWeeks ? ` · ${longLeaveWeeks} tuần nghỉ dài hạn` : ''}.`,
   ]
-  if (longLeaveWeeks) facts.push(`${longLeaveWeeks} tuần có dữ liệu nghỉ dài hạn; đây là ngữ cảnh để quản lý xem thêm, không tạo ngoại lệ mới cho luật hiện tại.`)
 
   if (!observed.length) {
     return {
@@ -168,7 +166,7 @@ function assessment(weeks: EmployeeReviewWeek[], minimum: number): {
     return {
       level: 'warning',
       headline: 'Cần xem kỹ trước khi quyết định',
-      explanation: 'Có nhiều tuần lịch dưới mức tối thiểu và đồng thời xuất hiện tình huống báo sát hạn hoặc đi trễ. Đây là cảnh báo để quản lý đọc ngữ cảnh, không phải kết luận nhân viên không tốt.',
+      explanation: 'Lịch dưới mức tối thiểu kèm báo trễ hoặc sát hạn. Nên kiểm tra hoàn cảnh trước khi quyết định.',
       facts,
     }
   }
@@ -176,14 +174,14 @@ function assessment(weeks: EmployeeReviewWeek[], minimum: number): {
     return {
       level: 'attention',
       headline: 'Có yếu tố cần xem xét',
-      explanation: 'Dữ liệu có biến động về số ca hoặc yêu cầu nghỉ/trễ. Quản lý nên đối chiếu hoàn cảnh thực tế trước khi duyệt hoặc từ chối.',
+      explanation: 'Số ca hoặc yêu cầu nghỉ/trễ có biến động. Nên kiểm tra hoàn cảnh thực tế.',
       facts,
     }
   }
   return {
     level: 'stable',
     headline: 'Lịch làm tương đối ổn định',
-    explanation: 'Trong phần dữ liệu hệ thống còn lưu, chưa thấy cảnh báo lặp lại về thiếu ca hoặc báo sát hạn.',
+    explanation: 'Chưa thấy cảnh báo lặp lại về thiếu ca hoặc báo sát hạn.',
     facts,
   }
 }
@@ -297,6 +295,6 @@ export async function buildEmployeeReviewContext(
     archiveUsed: records.some((record) => record.source === 'drive'),
     archiveAvailable: archived.available,
     liveWarnings: live.warnings,
-    disclaimer: 'Đánh giá chỉ tóm tắt lịch và yêu cầu đã ghi nhận trên app. Màu cảnh báo không kết luận thái độ, năng lực hay nguyên nhân khách quan của nhân viên.',
+    disclaimer: 'Chỉ là cảnh báo từ dữ liệu trên app, không kết luận nhân viên.',
   }
 }

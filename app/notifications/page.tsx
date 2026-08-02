@@ -225,7 +225,7 @@ function ReviewAssessment({
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2"><p className="font-black">Đánh giá hỗ trợ quản lý</p><span className={`rounded-full px-2.5 py-1 text-[10px] font-black uppercase tracking-wide ${tone.badge}`}>{tone.label}</span></div>
           <h3 className="mt-2 text-lg font-black">{requestWarning || context.headline}</h3>
-          <p className="mt-1 text-sm font-medium leading-6 opacity-85">{requestWarning ? `${context.explanation} Yêu cầu đang mở có thêm cảnh báo riêng ở trên.` : context.explanation}</p>
+          <p className="mt-1 text-sm font-medium leading-6 opacity-85">{context.explanation}</p>
         </div>
       </div>
       <div className="mt-4 space-y-2 border-t border-current/10 pt-3">
@@ -505,12 +505,12 @@ export default function NotificationsPage() {
           minimumWeeklyShifts: 6,
           level: 'attention',
           headline: 'Có yếu tố cần xem xét',
-          explanation: 'Đây là dữ liệu xem thử: lịch có thay đổi trong tuần nên quản lý cần đọc hoàn cảnh trước khi quyết định.',
-          facts: ['2 tuần có lịch được ghi nhận.', '1 tuần có lịch dưới mức 6 ca.', '1 yêu cầu thay đổi lịch trong cửa sổ kiểm tra.'],
+          explanation: 'Lịch có thay đổi. Nên kiểm tra hoàn cảnh trước khi quyết định.',
+          facts: ['2/4 tuần có lịch · 1 tuần dưới 6 ca.', '1 yêu cầu đổi lịch.'],
           weeks: [],
           archiveUsed: false,
           archiveAvailable: false,
-          disclaimer: 'Đánh giá chỉ tóm tắt dữ liệu trên app, không kết luận thái độ hay nguyên nhân khách quan của nhân viên.',
+          disclaimer: 'Chỉ là cảnh báo từ dữ liệu trên app, không kết luận nhân viên.',
         },
       }))
       return
