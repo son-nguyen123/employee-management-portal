@@ -42,6 +42,7 @@ export interface ManagementPendingItem {
   detail: string
   reason?: string
   createdAt: Date
+  referenceDate: Date
   targetIds: string[]
   staffRequestType?: StaffRequestType
   shifts?: ManagementShift[]
@@ -285,6 +286,7 @@ export function subscribeToManagementPendingItems(
         title: 'Tài khoản mới chờ duyệt',
         detail: typeof data.email === 'string' ? data.email : 'Hồ sơ nhân viên mới',
         createdAt: asDate(data.updatedAt || data.createdAt),
+        referenceDate: asDate(data.updatedAt || data.createdAt),
         targetIds: [id],
       }))
 
@@ -318,6 +320,7 @@ export function subscribeToManagementPendingItems(
         title: 'Lịch làm chờ xác nhận',
         detail: `${rows.length} ca · tuần ${weekRange(nextMonday)}`,
         createdAt,
+        referenceDate: nextMonday,
         targetIds: rows.map((row) => row.id),
         shifts: rows.flatMap((row) => {
           const date = asDate(row.data.date)
@@ -347,6 +350,7 @@ export function subscribeToManagementPendingItems(
         detail: `${shortDate(data.leaveDate)}${endDate}`,
         reason: typeof data.reason === 'string' && data.reason.trim() ? data.reason : 'Không ghi lý do',
         createdAt: asDate(data.updatedAt || data.createdAt),
+        referenceDate: asDate(data.leaveDate, asDate(data.updatedAt || data.createdAt)),
         targetIds: [id],
         warning: data.underMinimumWarning === true
           ? `Sau yêu cầu nghỉ, tuần này nhân viên còn ${Number(data.weeklyShiftCountAfterLeave || 0)}/6 ca.`
@@ -373,6 +377,7 @@ export function subscribeToManagementPendingItems(
         detail: `${shortDate(data.date)} · ${minutes}`,
         reason: typeof data.reason === 'string' && data.reason.trim() ? data.reason : 'Không ghi lý do',
         createdAt: asDate(data.updatedAt || data.createdAt),
+        referenceDate: asDate(data.date, asDate(data.updatedAt || data.createdAt)),
         targetIds: [id],
         warning: data.noticeClass === 'late' ? 'Báo đi trễ dưới 60 phút trước ca.' : undefined,
         penaltyIfApproved: Number(data.penaltyIfApproved || 0),
@@ -400,6 +405,7 @@ export function subscribeToManagementPendingItems(
         detail: `${amount.toLocaleString('vi-VN')}đ`,
         reason: typeof data.reason === 'string' && data.reason.trim() ? data.reason : 'Không ghi lý do',
         createdAt: asDate(data.updatedAt || data.createdAt),
+        referenceDate: asDate(data.updatedAt || data.createdAt),
         targetIds: [id],
       })
     })
@@ -435,6 +441,7 @@ export function subscribeToManagementPendingItems(
         detail,
         reason: typeof data.content === 'string' && data.content.trim() ? data.content : undefined,
         createdAt: asDate(data.updatedAt || data.createdAt),
+        referenceDate: shifts[0]?.date || removedShifts[0]?.date || asDate(data.weekStart || data.updatedAt || data.createdAt),
         targetIds: [id],
         staffRequestType: requestType,
         shifts,

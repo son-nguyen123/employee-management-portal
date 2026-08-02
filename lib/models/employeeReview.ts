@@ -1,0 +1,28 @@
+export type EmployeeReviewLevel = 'stable' | 'attention' | 'warning' | 'neutral'
+
+export interface EmployeeReviewWeek {
+  weekStart: string
+  weekEnd: string
+  scheduledShifts: number
+  approvedShifts: number
+  leaveRequests: number
+  approvedLeaveRequests: number
+  lateRequests: number
+  shortNoticeEvents: number
+  hasLongLeave: boolean
+  source: 'firestore' | 'drive' | 'mixed' | 'none'
+}
+
+export interface EmployeeReviewContext {
+  employeeId: string
+  referenceWeekStart: string
+  minimumWeeklyShifts: number
+  level: EmployeeReviewLevel
+  headline: string
+  explanation: string
+  facts: string[]
+  weeks: EmployeeReviewWeek[]
+  archiveUsed: boolean
+  archiveAvailable: boolean
+  disclaimer: string
+}

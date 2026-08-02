@@ -58,7 +58,7 @@ export function OtherRequestWorkspace({ employees }: { employees: Employee[] }) 
       const timeout = window.setTimeout(() => {
         setPending([{
           id: 'preview-leave-pending', type: 'leave', employeeId: 'demo-user-001', employeeName: 'Nguyễn Minh An', employeeCode: 'NV-001',
-          title: 'Yêu cầu xin nghỉ', detail: 'Ngày mai · việc gia đình', reason: 'Em cần nghỉ để giải quyết việc gia đình.', createdAt: now,
+          title: 'Yêu cầu xin nghỉ', detail: 'Ngày mai · việc gia đình', reason: 'Em cần nghỉ để giải quyết việc gia đình.', createdAt: now, referenceDate: now,
           targetIds: ['preview-leave-pending'],
         }])
         setDecisions([{

@@ -17,6 +17,8 @@ import {
   Loader2,
   MessageSquareText,
   Phone,
+  Search,
+  ShieldCheck,
   UserRound,
   X,
   RotateCcw,
@@ -25,7 +27,8 @@ import { useRouter } from 'next/navigation'
 import { Header } from '@/components/layout/header'
 import { PageContainer } from '@/components/layout/page-container'
 import { useAuth, useUserRole } from '@/lib/hooks/useAuth'
-import type { Notification, WorkSchedule } from '@/lib/models/types'
+import type { Notification } from '@/lib/models/types'
+import type { EmployeeReviewContext, EmployeeReviewLevel } from '@/lib/models/employeeReview'
 import { updateLateStatus } from '@/lib/services/lateService'
 import { updateLeaveStatus } from '@/lib/services/leaveService'
 import {
@@ -36,10 +39,8 @@ import {
   type ManagementPendingItem,
   type ManagementShift,
 } from '@/lib/services/notificationService'
-import { getPreviewSchedules } from '@/lib/services/previewWorkflow'
 import { updateSalaryAdvanceStatus } from '@/lib/services/salaryService'
 import {
-  getEmployeeSchedules,
   reviewWorkScheduleBatch,
 } from '@/lib/services/scheduleService'
 import { updateStaffRequestStatus } from '@/lib/services/staffRequestService'
@@ -48,8 +49,8 @@ import { profileImageUrl } from '@/lib/utils/profileImage'
 import { subscribeToWeeklyDecisionHistory, type DecisionHistoryItem } from '@/lib/services/decisionHistoryService'
 import { setEmployeeAccountStatus, subscribeToAllEmployees } from '@/lib/services/employeeService'
 import type { Employee } from '@/lib/models/types'
+import { getEmployeeReviewContext } from '@/lib/services/employeeReviewService'
 
-type CurrentSchedule = Pick<WorkSchedule, 'id' | 'shift' | 'status'> & { date: Date }
 type WeekView = 'current' | 'previous'
 
 function weekWindow(view: WeekView) {
@@ -78,10 +79,6 @@ const shiftNames = {
   Morning: 'Ca sáng',
   Afternoon: 'Ca chiều',
   Evening: 'Ca tối',
-}
-
-function asDate(value: WorkSchedule['date']): Date {
-  return value instanceof Date ? value : value.toDate()
 }
 
 function startOfWeek(date: Date): Date {
@@ -168,6 +165,87 @@ function SimpleShiftList({ title, items }: { title: string; items?: ManagementSh
   )
 }
 
+const reviewTone: Record<EmployeeReviewLevel, { label: string; box: string; badge: string }> = {
+  stable: {
+    label: 'Ổn định',
+    box: 'border-emerald-200 bg-emerald-50 text-emerald-950 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-100',
+    badge: 'bg-emerald-600 text-white',
+  },
+  attention: {
+    label: 'Cần xem',
+    box: 'border-amber-200 bg-amber-50 text-amber-950 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-100',
+    badge: 'bg-amber-500 text-white',
+  },
+  warning: {
+    label: 'Cảnh báo',
+    box: 'border-rose-200 bg-rose-50 text-rose-950 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-100',
+    badge: 'bg-rose-600 text-white',
+  },
+  neutral: {
+    label: 'Chưa đủ dữ liệu',
+    box: 'border-slate-200 bg-slate-50 text-slate-900 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100',
+    badge: 'bg-slate-600 text-white',
+  },
+}
+
+function quickReview(item: ManagementPendingItem): { level: EmployeeReviewLevel; text: string } {
+  if (item.warning) return { level: 'attention', text: item.warning }
+  if (item.type === 'schedule') return { level: 'stable', text: 'Lịch vừa gửi đạt số ca tối thiểu theo luật hiện tại.' }
+  if (item.type === 'leave') return { level: 'attention', text: 'Cần đối chiếu số ca và các yêu cầu trong 4 tuần gần nhất.' }
+  if (item.type === 'late') return { level: 'attention', text: 'Cần kiểm tra thời điểm báo và lịch sử đi trễ gần đây.' }
+  if (item.type === 'staff') return { level: 'attention', text: 'Cần xem ảnh hưởng của thay đổi này tới lịch làm.' }
+  return { level: 'neutral', text: 'Yêu cầu này không tự động dùng để đánh giá chuyên cần.' }
+}
+
+function ReviewAssessment({
+  context,
+  requestWarning,
+  loading,
+  error,
+}: {
+  context?: EmployeeReviewContext
+  requestWarning?: string
+  loading: boolean
+  error: string
+}) {
+  if (loading) {
+    return <div className="flex min-h-28 items-center justify-center gap-2 rounded-3xl border border-indigo-100 bg-indigo-50 text-sm font-bold text-indigo-700 dark:border-indigo-500/20 dark:bg-indigo-500/10 dark:text-indigo-100"><Loader2 className="h-4 w-4 animate-spin" /> Đang đối chiếu 4 tuần và kho lưu trữ…</div>
+  }
+  if (!context) {
+    return <div className="rounded-3xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-700 dark:bg-slate-800"><p className="font-black">Chưa có bản đánh giá</p><p className="mt-1 text-sm leading-6 text-muted-foreground">{error || 'Hệ thống chưa đủ dữ liệu để tổng hợp. Quản lý vẫn có thể đọc yêu cầu và quyết định theo hoàn cảnh thực tế.'}</p></div>
+  }
+  const level = requestWarning && context.level === 'stable' ? 'attention' : context.level
+  const tone = reviewTone[level]
+  return (
+    <section className={`rounded-3xl border p-4 ${tone.box}`}>
+      <div className="flex items-start gap-3">
+        <div className="grid h-10 w-10 shrink-0 place-items-center rounded-2xl bg-white/80 shadow-sm dark:bg-slate-950/40"><ShieldCheck className="h-5 w-5" /></div>
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-2"><p className="font-black">Đánh giá hỗ trợ quản lý</p><span className={`rounded-full px-2.5 py-1 text-[10px] font-black uppercase tracking-wide ${tone.badge}`}>{tone.label}</span></div>
+          <h3 className="mt-2 text-lg font-black">{requestWarning || context.headline}</h3>
+          <p className="mt-1 text-sm font-medium leading-6 opacity-85">{requestWarning ? `${context.explanation} Yêu cầu đang mở có thêm cảnh báo riêng ở trên.` : context.explanation}</p>
+        </div>
+      </div>
+      <div className="mt-4 space-y-2 border-t border-current/10 pt-3">
+        {context.facts.map((fact) => <p key={fact} className="text-sm font-semibold leading-5">• {fact}</p>)}
+      </div>
+      <p className="mt-4 rounded-2xl bg-white/60 p-3 text-xs font-semibold leading-5 opacity-80 dark:bg-slate-950/30">{context.disclaimer}</p>
+      <details className="mt-3 rounded-2xl bg-white/70 dark:bg-slate-950/30">
+        <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3 text-sm font-black"><span>Kiểm tra thêm dữ liệu từng tuần</span><ChevronDown className="h-4 w-4" /></summary>
+        <div className="space-y-2 border-t border-current/10 p-3">
+          {context.weeks.map((week) => (
+            <div key={week.weekStart} className="rounded-2xl bg-white p-3 text-sm text-slate-800 shadow-sm dark:bg-slate-900 dark:text-slate-100">
+              <div className="flex items-center justify-between gap-2"><p className="font-black">{new Date(`${week.weekStart}T12:00:00+07:00`).toLocaleDateString('vi-VN')} – {new Date(`${week.weekEnd}T12:00:00+07:00`).toLocaleDateString('vi-VN')}</p><span className="text-[10px] font-bold uppercase text-slate-400">{week.source === 'drive' ? 'Kho lưu' : week.source === 'mixed' ? 'Firebase + kho' : week.source === 'firestore' ? 'Firebase' : 'Không có dữ liệu'}</span></div>
+              <p className="mt-2 leading-6 text-slate-600 dark:text-slate-300">{week.scheduledShifts} ca ghi nhận · {week.approvedShifts} ca đã duyệt · {week.leaveRequests} yêu cầu nghỉ · {week.lateRequests} báo trễ{week.hasLongLeave ? ' · có nghỉ dài hạn' : ''}</p>
+            </div>
+          ))}
+          {!context.archiveAvailable && <p className="rounded-2xl bg-amber-50 p-3 text-xs font-semibold leading-5 text-amber-800 dark:bg-amber-500/10 dark:text-amber-100">Kho Drive tạm thời không đọc được; đánh giá vẫn dùng dữ liệu Firebase hiện có.</p>}
+        </div>
+      </details>
+    </section>
+  )
+}
+
 export default function NotificationsPage() {
   const router = useRouter()
   const { authUser, isPreviewMode } = useAuth()
@@ -179,10 +257,11 @@ export default function NotificationsPage() {
   const [message, setMessage] = useState('')
   const [weekView, setWeekView] = useState<WeekView>('current')
   const [selectedPending, setSelectedPending] = useState<ManagementPendingItem | null>(null)
+  const [rejectIntentId, setRejectIntentId] = useState<string | null>(null)
   const [selectedNotification, setSelectedNotification] = useState<Notification | null>(null)
-  const [scheduleOpenId, setScheduleOpenId] = useState<string | null>(null)
-  const [scheduleLoadingId, setScheduleLoadingId] = useState<string | null>(null)
-  const [employeeSchedules, setEmployeeSchedules] = useState<Record<string, CurrentSchedule[]>>({})
+  const [reviewContexts, setReviewContexts] = useState<Record<string, EmployeeReviewContext>>({})
+  const [reviewLoadingId, setReviewLoadingId] = useState<string | null>(null)
+  const [reviewError, setReviewError] = useState('')
   const [processingId, setProcessingId] = useState<string | null>(null)
   const [reviewNotes, setReviewNotes] = useState<Record<string, string>>({})
   const [allowSundayResubmissionWithoutPenalty, setAllowSundayResubmissionWithoutPenalty] = useState(false)
@@ -253,6 +332,7 @@ export default function NotificationsPage() {
           detail: '1 ca muốn hủy · 1 ca muốn thêm',
           reason: 'Em cần đổi lịch vì có việc gia đình.',
           createdAt: new Date(),
+          referenceDate: new Date(),
           targetIds: ['preview-request'],
           removedShifts: [{ date: new Date(), shift: 'Morning', scheduleId: 'preview-schedule-1' }],
           shifts: [{ date: new Date(Date.now() + 86400000), shift: 'Afternoon' }],
@@ -320,7 +400,6 @@ export default function NotificationsPage() {
     setSelectedPending(null)
     setSelectedNotification(null)
     setSelectedDecision(null)
-    setScheduleOpenId(null)
   }, [weekView])
 
   useEffect(() => {
@@ -407,42 +486,40 @@ export default function NotificationsPage() {
     }
   }
 
-  const toggleCurrentSchedule = async (item: ManagementPendingItem) => {
-    if (scheduleOpenId === item.id) {
-      setScheduleOpenId(null)
+  const openPending = async (item: ManagementPendingItem, intent: 'inspect' | 'reject' = 'inspect') => {
+    setAllowSundayResubmissionWithoutPenalty(false)
+    setSelectedPending(item)
+    setRejectIntentId(intent === 'reject' ? item.id : null)
+    setMessage('')
+    setReviewError('')
+    if (item.type === 'account' || reviewContexts[item.id]) return
+    if (isPreviewMode) {
+      setReviewContexts((current) => ({
+        ...current,
+        [item.id]: {
+          employeeId: item.employeeId,
+          referenceWeekStart: item.referenceDate.toISOString().slice(0, 10),
+          minimumWeeklyShifts: 6,
+          level: 'attention',
+          headline: 'Có yếu tố cần xem xét',
+          explanation: 'Đây là dữ liệu xem thử: lịch có thay đổi trong tuần nên quản lý cần đọc hoàn cảnh trước khi quyết định.',
+          facts: ['2 tuần có lịch được ghi nhận.', '1 tuần có lịch dưới mức 6 ca.', '1 yêu cầu thay đổi lịch trong cửa sổ kiểm tra.'],
+          weeks: [],
+          archiveUsed: false,
+          archiveAvailable: false,
+          disclaimer: 'Đánh giá chỉ tóm tắt dữ liệu trên app, không kết luận thái độ hay nguyên nhân khách quan của nhân viên.',
+        },
+      }))
       return
     }
-    setScheduleOpenId(item.id)
-    if (employeeSchedules[item.employeeId]) return
-    setScheduleLoadingId(item.id)
+    setReviewLoadingId(item.id)
     try {
-      const schedules = isPreviewMode
-        ? getPreviewSchedules()
-          .filter((row) => row.employeeId === item.employeeId)
-          .map((row) => ({
-            id: row.id,
-            date: new Date(row.date),
-            shift: row.shift,
-            status: row.status,
-          }))
-        : (await getEmployeeSchedules(item.employeeId)).map((row) => ({
-            id: row.id,
-            date: asDate(row.date),
-            shift: row.shift,
-            status: row.status,
-          }))
-      setEmployeeSchedules((current) => ({
-        ...current,
-        [item.employeeId]: schedules
-          .filter((row) => row.status !== 'Cancelled')
-          .sort((left, right) => left.date.getTime() - right.date.getTime())
-          .slice(0, 24),
-      }))
-    } catch {
-      setMessage(`Chưa thể tải lịch hiện tại của ${item.employeeName}.`)
-      setScheduleOpenId(null)
+      const context = await getEmployeeReviewContext(item.employeeId, item.referenceDate)
+      setReviewContexts((current) => ({ ...current, [item.id]: context }))
+    } catch (error) {
+      setReviewError(error instanceof Error ? error.message : 'Chưa thể tải đánh giá nhân viên.')
     } finally {
-      setScheduleLoadingId(null)
+      setReviewLoadingId(null)
     }
   }
 
@@ -493,7 +570,7 @@ export default function NotificationsPage() {
         setPendingItems((current) => current.filter((row) => row.id !== item.id))
       }
       setSelectedPending(null)
-      setScheduleOpenId(null)
+      setRejectIntentId(null)
     } catch {
       setMessage('Chưa thể xử lý yêu cầu này. Vui lòng thử lại.')
     } finally {
@@ -502,7 +579,7 @@ export default function NotificationsPage() {
   }
 
   const selectedPendingMeta = selectedPending ? managementMeta[selectedPending.type] : null
-  const selectedCurrentSchedules = selectedPending ? employeeSchedules[selectedPending.employeeId] || [] : []
+  const selectedReview = selectedPending ? reviewContexts[selectedPending.id] : undefined
   const selectedNotificationMeta = selectedNotification ? notificationMetaFor(selectedNotification) : null
 
   return (
@@ -537,21 +614,14 @@ export default function NotificationsPage() {
           <div className="space-y-3">
             {visiblePendingItems.map((item) => {
               const meta = managementMeta[item.type]
+              const quick = quickReview(item)
+              const quickTone = reviewTone[quick.level]
               const targetDates = item.type === 'schedule' || item.staffRequestType === 'scheduleChange' || item.staffRequestType === 'overtime'
                 ? [...(item.shifts || []), ...(item.removedShifts || [])].map((shift) => shift.date)
                 : []
               return (
-                <article key={item.id} className={`mobile-card overflow-hidden transition active:scale-[0.99] ${item.type === 'account' ? 'border-dashed bg-transparent' : ''}`}>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setAllowSundayResubmissionWithoutPenalty(false)
-                      setSelectedPending(item)
-                      setScheduleOpenId(null)
-                      setMessage('')
-                    }}
-                    className="flex w-full items-start gap-3 p-4 text-left"
-                  >
+                <article key={item.id} className={`mobile-card overflow-hidden ${item.type === 'account' ? 'border-dashed bg-transparent' : ''}`}>
+                  <div className="flex w-full items-start gap-3 p-4 text-left">
                     <IdentityAvatar name={item.employeeName} photoURL={item.employeePhotoURL} icon={meta.icon} color={meta.color} />
                     <div className="min-w-0 flex-1">
                       <div className="flex items-start justify-between gap-2">
@@ -567,8 +637,15 @@ export default function NotificationsPage() {
                       <p className="mt-1 text-sm text-muted-foreground">{item.detail}</p>
                       <SubmissionStamp date={item.createdAt} targetDates={targetDates} />
                     </div>
-                    <ChevronRight className="mt-3 h-5 w-5 shrink-0 text-slate-400" />
-                  </button>
+                  </div>
+                  <div className={`mx-4 rounded-2xl border p-3 ${quickTone.box}`}>
+                    <div className="flex items-center gap-2"><span className={`rounded-full px-2 py-1 text-[10px] font-black uppercase tracking-wide ${quickTone.badge}`}>{quickTone.label}</span><p className="text-xs font-black uppercase tracking-wide">Đánh giá nhanh</p></div>
+                    <p className="mt-2 text-sm font-semibold leading-5">{quick.text}</p>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2 p-4">
+                    <button type="button" onClick={() => void openPending(item, 'reject')} className="flex min-h-12 items-center justify-center gap-2 rounded-2xl border border-rose-200 font-extrabold text-rose-600 transition active:scale-[0.98]"><X className="h-4 w-4" /> Từ chối</button>
+                    <button type="button" onClick={() => void openPending(item, 'inspect')} className={`flex min-h-12 items-center justify-center gap-2 rounded-2xl bg-gradient-to-r ${meta.gradient} font-extrabold text-white shadow-lg transition active:scale-[0.98]`}><Search className="h-4 w-4" /> Kiểm tra</button>
+                  </div>
                 </article>
               )
             })}
@@ -657,19 +734,20 @@ export default function NotificationsPage() {
       </PageContainer>
 
       {selectedPending && selectedPendingMeta && (
-        <div className="fixed inset-0 z-[75] overflow-y-auto bg-slate-100 dark:bg-slate-950">
-          <header className="sticky top-0 z-10 border-b border-slate-200/70 bg-white/95 backdrop-blur-xl dark:border-white/10 dark:bg-slate-950/95">
-            <div className="mx-auto flex min-h-20 max-w-lg items-center gap-3 px-4 pt-[env(safe-area-inset-top)]">
-              <button type="button" onClick={() => setSelectedPending(null)} className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-slate-100 dark:bg-slate-800" aria-label="Quay lại danh sách thông báo">
-                <ArrowLeft className="h-5 w-5" />
+        <div className="fixed inset-0 z-[75] grid place-items-center overflow-hidden bg-slate-950/45 p-3 backdrop-blur-sm sm:p-6">
+          <div role="dialog" aria-modal="true" aria-labelledby="employee-review-title" className="flex max-h-[min(88dvh,760px)] w-full max-w-lg flex-col overflow-hidden rounded-[2rem] border border-white/70 bg-white shadow-2xl shadow-slate-950/30 dark:border-white/10 dark:bg-slate-900">
+          <header className="z-10 shrink-0 border-b border-slate-200/70 bg-white/95 backdrop-blur-xl dark:border-white/10 dark:bg-slate-900/95">
+            <div className="flex min-h-18 items-center gap-3 px-4">
+              <button type="button" onClick={() => { setSelectedPending(null); setRejectIntentId(null) }} className="grid h-10 w-10 shrink-0 place-items-center rounded-2xl bg-slate-100 transition hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700" aria-label="Đóng kiểm tra">
+                <X className="h-5 w-5" />
               </button>
-              <div><h1 className="text-lg font-black">Chi tiết yêu cầu</h1><p className="text-sm text-muted-foreground">Xem thông tin và xử lý công việc</p></div>
+              <div><h1 id="employee-review-title" className="text-lg font-black">{rejectIntentId === selectedPending.id ? 'Từ chối yêu cầu' : 'Kiểm tra nhân viên'}</h1><p className="text-sm text-muted-foreground">{rejectIntentId === selectedPending.id ? 'Nhập lý do trước khi xác nhận' : 'Đánh giá nhanh rồi mới quyết định'}</p></div>
             </div>
           </header>
 
-          <main className="mx-auto max-w-lg p-3 pb-[calc(2rem+env(safe-area-inset-bottom))]">
-            <article className="overflow-hidden rounded-[2rem] border border-white bg-white shadow-xl shadow-slate-950/10 dark:border-white/10 dark:bg-slate-900">
-              <section className={`bg-gradient-to-br ${selectedPendingMeta.gradient} p-5 text-white`}>
+          <main className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
+            <article className="overflow-hidden bg-white dark:bg-slate-900">
+              <section className={`bg-gradient-to-br ${selectedPendingMeta.gradient} p-4 text-white`}>
                 <div className="flex items-start gap-3">
                   <IdentityAvatar name={selectedPending.employeeName} photoURL={selectedPending.employeePhotoURL} icon={selectedPendingMeta.icon} color={selectedPendingMeta.color} />
                   <div className="min-w-0 flex-1">
@@ -682,21 +760,10 @@ export default function NotificationsPage() {
                     <p className="mt-2 text-xs font-semibold text-white/80">Gửi lúc {selectedPending.createdAt.toLocaleDateString('vi-VN')} · {selectedPending.createdAt.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}</p>
                   </div>
                 </div>
-
-                <div className="mt-5 grid grid-cols-2 gap-2">
-                  {selectedPending.employeePhone ? (
-                    <a href={`tel:${selectedPending.employeePhone.replace(/\s/g, '')}`} className="flex min-h-12 items-center justify-center gap-2 rounded-2xl bg-white/15 px-3 text-sm font-extrabold backdrop-blur transition active:scale-[0.98]"><Phone className="h-4 w-4" /> Gọi điện</a>
-                  ) : <span className="flex min-h-12 items-center justify-center gap-2 rounded-2xl bg-white/10 px-3 text-sm font-bold text-white/60"><Phone className="h-4 w-4" /> Chưa có SĐT</span>}
-                  {selectedPending.employeeFacebookURL ? (
-                    <a href={selectedPending.employeeFacebookURL} target="_blank" rel="noreferrer" className="flex min-h-12 items-center justify-center gap-2 rounded-2xl bg-blue-600 px-3 text-sm font-extrabold shadow-lg shadow-blue-950/15 transition active:scale-[0.98]"><ExternalLink className="h-4 w-4" /> Facebook</a>
-                  ) : <span className="flex min-h-12 items-center justify-center gap-2 rounded-2xl bg-white/10 px-3 text-sm font-bold text-white/60"><ExternalLink className="h-4 w-4" /> Chưa có link</span>}
-                </div>
               </section>
 
               <section className="space-y-5 p-4">
-                {selectedPending.warning && (
-                  <p className="rounded-2xl border border-amber-200 bg-amber-50 p-3 text-sm font-bold leading-6 text-amber-900 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-100">⚠ {selectedPending.warning}</p>
-                )}
+                {selectedPending.type !== 'account' && <ReviewAssessment context={selectedReview} requestWarning={selectedPending.warning} loading={reviewLoadingId === selectedPending.id} error={reviewError} />}
                 {selectedPending.managerMessageStatus && (
                   <p className="rounded-2xl bg-sky-50 p-3 text-sm font-semibold text-sky-900 dark:bg-sky-500/10 dark:text-sky-100">
                     Xác nhận liên hệ: {selectedPending.managerMessageStatus === 'messagedTri' ? 'đã nhắn anh Trí' : selectedPending.managerMessageStatus === 'notMessaged' ? 'chưa nhắn riêng' : 'đã nhắn quản lý khác'}.
@@ -705,36 +772,37 @@ export default function NotificationsPage() {
                 {selectedPending.reason && (
                   <p className="rounded-2xl bg-slate-50 p-3 text-sm leading-6 text-slate-700 dark:bg-slate-800 dark:text-slate-200"><span className="font-black">Ghi chú:</span> {selectedPending.reason}</p>
                 )}
-                <SimpleShiftList
-                  title={selectedPending.staffRequestType === 'overtime' ? 'Ca muốn làm thêm' : selectedPending.type === 'schedule' ? 'Lịch vừa gửi' : 'Ca muốn thêm / đổi'}
-                  items={selectedPending.shifts}
-                />
-                <SimpleShiftList title="Ca muốn hủy" items={selectedPending.removedShifts} />
+                <details className="rounded-2xl border border-slate-200 dark:border-slate-700">
+                  <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3 text-sm font-black"><span>Kiểm tra thêm yêu cầu và liên hệ</span><ChevronDown className="h-4 w-4" /></summary>
+                  <div className="space-y-4 border-t border-slate-100 p-4 dark:border-slate-700">
+                    <div className="grid grid-cols-2 gap-2">
+                      {selectedPending.employeePhone ? <a href={`tel:${selectedPending.employeePhone.replace(/\s/g, '')}`} className="flex min-h-11 items-center justify-center gap-2 rounded-2xl bg-slate-100 text-sm font-extrabold dark:bg-slate-800"><Phone className="h-4 w-4" /> Gọi điện</a> : <span className="flex min-h-11 items-center justify-center rounded-2xl bg-slate-100 text-xs font-bold text-slate-400 dark:bg-slate-800">Chưa có SĐT</span>}
+                      {selectedPending.employeeFacebookURL ? <a href={selectedPending.employeeFacebookURL} target="_blank" rel="noreferrer" className="flex min-h-11 items-center justify-center gap-2 rounded-2xl bg-blue-600 text-sm font-extrabold text-white"><ExternalLink className="h-4 w-4" /> Facebook</a> : <span className="flex min-h-11 items-center justify-center rounded-2xl bg-slate-100 text-xs font-bold text-slate-400 dark:bg-slate-800">Chưa có Facebook</span>}
+                    </div>
+                    <SimpleShiftList title={selectedPending.staffRequestType === 'overtime' ? 'Ca muốn làm thêm' : selectedPending.type === 'schedule' ? 'Lịch vừa gửi' : 'Ca muốn thêm / đổi'} items={selectedPending.shifts} />
+                    <SimpleShiftList title="Ca muốn hủy" items={selectedPending.removedShifts} />
+                  </div>
+                </details>
 
-                {selectedPending.type !== 'account' && <button type="button" onClick={() => void toggleCurrentSchedule(selectedPending)} className="flex min-h-12 w-full items-center justify-between rounded-2xl border border-slate-200 px-4 text-sm font-extrabold dark:border-slate-700">
-                  <span>{scheduleOpenId === selectedPending.id ? 'Ẩn lịch hiện tại' : 'Xem lịch hiện tại'}</span>
-                  {scheduleLoadingId === selectedPending.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <ChevronDown className={`h-4 w-4 transition ${scheduleOpenId === selectedPending.id ? 'rotate-180' : ''}`} />}
-                </button>}
-                {scheduleOpenId === selectedPending.id && scheduleLoadingId !== selectedPending.id && (
-                  selectedCurrentSchedules.length
-                    ? <SimpleShiftList title="Lịch hiện tại" items={selectedCurrentSchedules} />
-                    : <p className="rounded-2xl bg-slate-50 p-4 text-sm text-muted-foreground dark:bg-slate-800">Nhân viên chưa có lịch hiện tại.</p>
-                )}
-
-                <textarea value={reviewNotes[selectedPending.id] || ''} onChange={(event) => setReviewNotes((current) => ({ ...current, [selectedPending.id]: event.target.value }))} placeholder="Ghi chú phản hồi (bắt buộc nếu từ chối)" rows={3} className="w-full resize-none rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none focus:border-indigo-400 dark:border-slate-700 dark:bg-slate-900" />
+                <textarea value={reviewNotes[selectedPending.id] || ''} onChange={(event) => setReviewNotes((current) => ({ ...current, [selectedPending.id]: event.target.value }))} placeholder={rejectIntentId === selectedPending.id ? 'Nhập lý do từ chối…' : 'Ghi chú phản hồi (bắt buộc nếu từ chối)'} rows={3} autoFocus={rejectIntentId === selectedPending.id} className="w-full resize-none rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none focus:border-indigo-400 dark:border-slate-700 dark:bg-slate-900" />
                 {selectedPending.type === 'schedule' && new Date().getDay() === 0 && (
                   <label className="flex cursor-pointer items-start gap-3 rounded-2xl border border-indigo-200 bg-indigo-50 p-3 text-sm leading-5 text-indigo-950 dark:border-indigo-500/30 dark:bg-indigo-500/10 dark:text-indigo-100">
                     <input type="checkbox" checked={allowSundayResubmissionWithoutPenalty} onChange={(event) => setAllowSundayResubmissionWithoutPenalty(event.target.checked)} className="mt-1 h-4 w-4 accent-indigo-600" />
                     <span><strong>Cho phép nhân viên ghi lại lịch vào Chủ nhật mà không trừ tiền.</strong><br />Nếu không cho phép, lịch gửi lại sẽ áp dụng khoản trừ theo luật hiện tại.</span>
                   </label>
                 )}
-                <div className="grid grid-cols-2 gap-3">
-                  <button type="button" disabled={processingId === selectedPending.id} onClick={() => void processPending(selectedPending, 'Rejected')} className="flex min-h-13 items-center justify-center gap-2 rounded-2xl border border-rose-200 font-extrabold text-rose-600 disabled:opacity-60"><X className="h-4 w-4" /> Từ chối</button>
-                  <button type="button" disabled={processingId === selectedPending.id} onClick={() => void processPending(selectedPending, 'Approved')} className={`flex min-h-13 items-center justify-center gap-2 rounded-2xl bg-gradient-to-r ${selectedPendingMeta.gradient} font-extrabold text-white shadow-lg disabled:opacity-60`}>{processingId === selectedPending.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />} Xác nhận</button>
-                </div>
+                {rejectIntentId === selectedPending.id ? (
+                  <button type="button" disabled={processingId === selectedPending.id || !(reviewNotes[selectedPending.id] || '').trim()} onClick={() => void processPending(selectedPending, 'Rejected')} className="flex min-h-13 w-full items-center justify-center gap-2 rounded-2xl bg-rose-600 font-extrabold text-white disabled:opacity-50">{processingId === selectedPending.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <X className="h-4 w-4" />} Xác nhận từ chối</button>
+                ) : (
+                  <div className="grid grid-cols-2 gap-3">
+                    <button type="button" disabled={processingId === selectedPending.id} onClick={() => void processPending(selectedPending, 'Rejected')} className="flex min-h-13 items-center justify-center gap-2 rounded-2xl border border-rose-200 font-extrabold text-rose-600 disabled:opacity-60"><X className="h-4 w-4" /> Từ chối</button>
+                    <button type="button" disabled={processingId === selectedPending.id} onClick={() => void processPending(selectedPending, 'Approved')} className={`flex min-h-13 items-center justify-center gap-2 rounded-2xl bg-gradient-to-r ${selectedPendingMeta.gradient} font-extrabold text-white shadow-lg disabled:opacity-60`}>{processingId === selectedPending.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />} Duyệt</button>
+                  </div>
+                )}
               </section>
             </article>
           </main>
+          </div>
         </div>
       )}
 
