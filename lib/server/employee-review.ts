@@ -23,7 +23,6 @@ interface ArchivePayload {
 }
 
 const DAY_MS = 24 * 60 * 60 * 1000
-const ACTIVE_SCHEDULE_STATUSES = new Set(['Registered', 'Pending', 'Editing', 'ChangesRequested', 'Approved'])
 const ACTIVE_REQUEST_STATUSES = new Set(['Pending', 'AwaitingEmployeeConsent', 'Approved'])
 
 function dateKey(date: Date): string {
@@ -114,8 +113,16 @@ function buildWeeks(records: ReviewRecord[], referenceWeekStart: string): Employ
     })
     const schedules = rows.filter((record) => record.collection === 'workSchedules' && !String(record.data.note || '').includes('[DUTY_ONLY]'))
     const leaves = rows.filter((record) => record.collection === 'leaveRequests' && ACTIVE_REQUEST_STATUSES.has(String(record.data.status)))
-    const lateRequests = rows.filter((record) => record.collection === 'lateRequests' && ACTIVE_REQUEST_STATUSES.has(String(record.data.status)))
-    const shortNoticeLeaves = leaves.filter((record) => record.data.noticeClass === 'late').length
+    const approvedLeaves = leaves.filter((record) => record.data.status === 'Approved')
+    const approvedLeaveScheduleIds = new Set(approvedLeaves.flatMap((record) => {
+      const ids = Array.isArray(record.data.workScheduleIds) ? record.data.workScheduleIds : []
+      return [...ids, record.data.workScheduleId].filter((id): id is string => typeof id === 'string' && !!id)
+    }))
+    const approvedSchedules = schedules.filter((record) =>
+      record.data.status === 'Approved' && !approvedLeaveScheduleIds.has(record.path.split('/').pop() || '')
+    )
+    const lateRequests = rows.filter((record) => record.collection === 'lateRequests' && record.data.status === 'Approved')
+    const shortNoticeLeaves = approvedLeaves.filter((record) => record.data.noticeClass === 'late').length
     const shortNoticeLate = lateRequests.filter((record) =>
       Number(record.data.noticeMinutes ?? workflowPolicy.lateNoticeMinutes) < workflowPolicy.lateNoticeMinutes ||
       record.data.managerMessageStatus === 'notMessaged' ||
@@ -124,13 +131,13 @@ function buildWeeks(records: ReviewRecord[], referenceWeekStart: string): Employ
     return {
       weekStart,
       weekEnd: shiftKey(weekStart, 6),
-      scheduledShifts: schedules.filter((record) => ACTIVE_SCHEDULE_STATUSES.has(String(record.data.status))).length,
-      approvedShifts: schedules.filter((record) => record.data.status === 'Approved').length,
+      scheduledShifts: approvedSchedules.length,
+      approvedShifts: approvedSchedules.length,
       leaveRequests: leaves.length,
-      approvedLeaveRequests: leaves.filter((record) => record.data.status === 'Approved').length,
+      approvedLeaveRequests: approvedLeaves.length,
       lateRequests: lateRequests.length,
       shortNoticeEvents: shortNoticeLeaves + shortNoticeLate,
-      hasLongLeave: leaves.some((record) => record.data.duration === 'long'),
+      hasLongLeave: approvedLeaves.some((record) => record.data.duration === 'long'),
       source: sourceFor(rows),
     }
   })
@@ -142,13 +149,16 @@ function assessment(weeks: EmployeeReviewWeek[], minimum: number): {
   explanation: string
   facts: string[]
 } {
-  const observed = weeks.filter((week) => week.source !== 'none')
-  const eligible = observed.filter((week) => week.scheduledShifts > 0)
+  const historicalWeeks = weeks.slice(0, -1)
+  const observed = historicalWeeks.filter((week) => week.source !== 'none')
+  const eligible = observed.filter((week) =>
+    !week.hasLongLeave && (week.scheduledShifts > 0 || week.approvedLeaveRequests > 0)
+  )
   const underMinimum = eligible.filter((week) => week.scheduledShifts < minimum)
-  const leaveRequests = weeks.reduce((total, week) => total + week.leaveRequests, 0)
-  const lateRequests = weeks.reduce((total, week) => total + week.lateRequests, 0)
-  const shortNoticeEvents = weeks.reduce((total, week) => total + week.shortNoticeEvents, 0)
-  const longLeaveWeeks = weeks.filter((week) => week.hasLongLeave).length
+  const leaveRequests = historicalWeeks.reduce((total, week) => total + week.approvedLeaveRequests, 0)
+  const lateRequests = historicalWeeks.reduce((total, week) => total + week.lateRequests, 0)
+  const shortNoticeEvents = historicalWeeks.reduce((total, week) => total + week.shortNoticeEvents, 0)
+  const longLeaveWeeks = historicalWeeks.filter((week) => week.hasLongLeave).length
   const facts = [
     `${eligible.length}/4 tuần có lịch · ${underMinimum.length} tuần dưới ${minimum} ca.`,
     `${leaveRequests} nghỉ · ${lateRequests} báo trễ · ${shortNoticeEvents} báo sát hạn${longLeaveWeeks ? ` · ${longLeaveWeeks} tuần nghỉ dài hạn` : ''}.`,

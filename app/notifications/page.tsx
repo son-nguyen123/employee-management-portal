@@ -220,14 +220,15 @@ function ReviewAssessment({
   if (!context) {
     return <div className="rounded-3xl border border-rose-200 bg-rose-50 p-4 text-rose-950 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-100"><p className="font-black">Chưa tải được bản đánh giá</p><p className="mt-1 text-sm leading-6 opacity-80">{error || 'Hệ thống chưa nhận được kết quả tổng hợp. Đây là lỗi tải dữ liệu, không phải kết luận rằng nhân viên không có dữ liệu.'}</p><button type="button" onClick={onRetry} className="mt-3 inline-flex min-h-10 items-center gap-2 rounded-xl bg-rose-600 px-4 text-sm font-extrabold text-white"><RotateCcw className="h-4 w-4" /> Thử tải lại</button></div>
   }
-  const level = requestWarning && context.level === 'stable' ? 'attention' : context.level
-  const tone = reviewTone[level]
+  const tone = reviewTone[context.level]
+  const badgeLabel = requestWarning ? 'Cảnh báo' : tone.label
+  const badgeClass = requestWarning ? 'bg-amber-500 text-white' : tone.badge
   return (
     <section className={`rounded-3xl border p-4 ${tone.box}`}>
       <div className="flex items-start gap-3">
         <div className="grid h-10 w-10 shrink-0 place-items-center rounded-2xl bg-white/80 shadow-sm dark:bg-slate-950/40"><ShieldCheck className="h-5 w-5" /></div>
         <div className="min-w-0 flex-1">
-          <div className="flex flex-wrap items-center gap-2"><p className="font-black">Đánh giá hỗ trợ quản lý</p><span className={`rounded-full px-2.5 py-1 text-[10px] font-black uppercase tracking-wide ${tone.badge}`}>{tone.label}</span></div>
+          <div className="flex flex-wrap items-center gap-2"><p className="font-black">Đánh giá hỗ trợ quản lý</p><span className={`rounded-full px-2.5 py-1 text-[10px] font-black uppercase tracking-wide ${badgeClass}`}>{badgeLabel}</span></div>
           <p className="mt-3 text-sm font-bold opacity-75">Quá trình làm việc</p>
           <h3 className="mt-0.5 text-2xl font-black">{tone.rating}</h3>
         </div>
