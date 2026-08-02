@@ -784,7 +784,7 @@ export default function NotificationsPage() {
                   </div>
                 </details>
 
-                <textarea value={reviewNotes[selectedPending.id] || ''} onChange={(event) => setReviewNotes((current) => ({ ...current, [selectedPending.id]: event.target.value }))} placeholder={rejectIntentId === selectedPending.id ? 'Nhập lý do từ chối…' : 'Ghi chú phản hồi (bắt buộc nếu từ chối)'} rows={3} autoFocus={rejectIntentId === selectedPending.id} className="w-full resize-none rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm outline-none focus:border-indigo-400 dark:border-slate-700 dark:bg-slate-900" />
+                <textarea value={reviewNotes[selectedPending.id] || ''} onChange={(event) => setReviewNotes((current) => ({ ...current, [selectedPending.id]: event.target.value }))} placeholder={rejectIntentId === selectedPending.id ? 'Nhập lý do từ chối…' : 'Ghi chú phản hồi (bắt buộc nếu từ chối)'} rows={3} autoFocus={rejectIntentId === selectedPending.id} className="w-full resize-none rounded-2xl border border-slate-200 bg-white px-4 py-3 text-base leading-6 outline-none focus:border-indigo-400 dark:border-slate-700 dark:bg-slate-900" />
                 {selectedPending.type === 'schedule' && new Date().getDay() === 0 && (
                   <label className="flex cursor-pointer items-start gap-3 rounded-2xl border border-indigo-200 bg-indigo-50 p-3 text-sm leading-5 text-indigo-950 dark:border-indigo-500/30 dark:bg-indigo-500/10 dark:text-indigo-100">
                     <input type="checkbox" checked={allowSundayResubmissionWithoutPenalty} onChange={(event) => setAllowSundayResubmissionWithoutPenalty(event.target.checked)} className="mt-1 h-4 w-4 accent-indigo-600" />
@@ -843,7 +843,7 @@ export default function NotificationsPage() {
                   <div className="border-t border-slate-100 pt-4 dark:border-white/10">
                     <div className="flex items-center gap-2"><RotateCcw className="h-4 w-4 text-indigo-600" /><h3 className="font-black">Hoàn tác quyết định</h3></div>
                     <p className="mt-1 text-xs text-muted-foreground">Không mở trang sửa lịch. Thao tác này chỉ đổi quyết định quản lý.</p>
-                    {nextStatus === 'Rejected' && <textarea value={undoReason} onChange={(event) => setUndoReason(event.target.value)} rows={3} placeholder="Nhập lý do chuyển thành từ chối..." className="mt-3 w-full resize-none rounded-2xl border border-slate-200 px-4 py-3 text-sm dark:border-slate-700 dark:bg-slate-900" />}
+                    {nextStatus === 'Rejected' && <textarea value={undoReason} onChange={(event) => setUndoReason(event.target.value)} rows={3} placeholder="Nhập lý do chuyển thành từ chối..." className="mt-3 w-full resize-none rounded-2xl border border-slate-200 px-4 py-3 text-base leading-6 dark:border-slate-700 dark:bg-slate-900" />}
                     <button type="button" disabled={processingId === selectedDecision.key || (nextStatus === 'Rejected' && !undoReason.trim())} onClick={() => void changeDecision(selectedDecision)} className={`mt-3 flex min-h-12 w-full items-center justify-center gap-2 rounded-2xl font-extrabold text-white disabled:opacity-50 ${nextStatus === 'Rejected' ? 'bg-rose-600' : 'bg-emerald-600'}`}>
                       {processingId === selectedDecision.key ? <Loader2 className="h-4 w-4 animate-spin" /> : <RotateCcw className="h-4 w-4" />} Hoàn tác và chuyển thành {nextStatus === 'Rejected' ? 'Từ chối' : 'Duyệt'}
                     </button>

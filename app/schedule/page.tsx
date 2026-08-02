@@ -120,25 +120,28 @@ export default function SchedulePage() {
   const [hasExistingSchedules, setHasExistingSchedules] = useState<boolean | null>(null)
   const [referenceNow] = useState(() => Date.now())
   const [portalReady, setPortalReady] = useState(false)
-  const [leaveMarks, setLeaveMarks] = useState<Record<string, { fullDay: boolean; shifts: string[] }>>({})
+  const [leaveMarks, setLeaveMarks] = useState<Record<string, { fullDay: boolean; shifts: string[]; status: 'Pending' | 'AwaitingEmployeeConsent' | 'Approved' }>>({})
   const dutyWheelRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     if (!authUser || isPreviewMode) return
     return subscribeToEmployeeLeaves(authUser.uid, (requests: LeaveRequest[]) => {
       const active = requests.filter((request) => ['Pending', 'AwaitingEmployeeConsent', 'Approved'].includes(request.status))
-      const marks: Record<string, { fullDay: boolean; shifts: string[] }> = {}
-      const add = (key: string, shift?: string) => {
-        marks[key] ||= { fullDay: false, shifts: [] }
+      const marks: Record<string, { fullDay: boolean; shifts: string[]; status: 'Pending' | 'AwaitingEmployeeConsent' | 'Approved' }> = {}
+      const statusRank = (status: 'Pending' | 'AwaitingEmployeeConsent' | 'Approved') => status === 'Approved' ? 3 : status === 'AwaitingEmployeeConsent' ? 2 : 1
+      const add = (key: string, status: 'Pending' | 'AwaitingEmployeeConsent' | 'Approved', shift?: string) => {
+        marks[key] ||= { fullDay: false, shifts: [], status }
+        if (statusRank(status) > statusRank(marks[key].status)) marks[key].status = status
         if (shift && !marks[key].shifts.includes(shift)) marks[key].shifts.push(shift)
       }
       active.forEach((request) => {
+        const requestStatus = request.status as 'Pending' | 'AwaitingEmployeeConsent' | 'Approved'
         const start = request.leaveDate instanceof Date ? request.leaveDate : request.leaveDate.toDate()
         const end = request.endDate ? (request.endDate instanceof Date ? request.endDate : request.endDate.toDate()) : start
         if (request.duration === 'long') {
           for (const cursor = new Date(start); cursor <= end; cursor.setDate(cursor.getDate() + 1)) {
             const key = localDateKey(cursor)
-            add(key)
+            add(key, requestStatus)
             marks[key].fullDay = true
           }
           return
@@ -146,9 +149,9 @@ export default function SchedulePage() {
         if (request.workScheduleIds?.length) {
           request.workScheduleIds.forEach((id) => {
             const match = Object.entries(originalScheduleIds).find(([, scheduleId]) => scheduleId === id)?.[0]
-            add(match?.slice(0, 10) || localDateKey(start), match?.slice(11))
+            add(match?.slice(0, 10) || localDateKey(start), requestStatus, match?.slice(11))
           })
-        } else add(localDateKey(start))
+        } else add(localDateKey(start), requestStatus)
       })
       setLeaveMarks(marks)
     }, () => setLeaveMarks({}))
@@ -890,8 +893,8 @@ export default function SchedulePage() {
                     </div>
                     {!!selected[day.key]?.length && <Badge variant="success">{overtimeMode ? `+${selected[day.key].filter((shift) => !original[day.key]?.includes(shift)).length} ca mới` : `${selected[day.key].length} ca`}</Badge>}
                   </div>
-                  {leaveMarks[day.key]?.fullDay && <div className="mb-3 rounded-2xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-extrabold text-rose-700 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-200">Đã xin nghỉ cả ngày</div>}
-                  {!leaveMarks[day.key]?.fullDay && !!leaveMarks[day.key]?.shifts.length && <div className="mb-3 rounded-2xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-extrabold text-rose-700 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-200">{leaveMarks[day.key].shifts.map((shift) => `${shiftOptions.find((item) => item.value === shift)?.shortLabel || 'Ca'} · Đã xin nghỉ`).join(' • ')}</div>}
+                  {leaveMarks[day.key]?.fullDay && <div className="mb-3 rounded-2xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-extrabold text-rose-700 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-200">{leaveMarks[day.key].status === 'Approved' ? 'Đã duyệt nghỉ cả ngày' : 'Đang chờ duyệt nghỉ cả ngày'}</div>}
+                  {!leaveMarks[day.key]?.fullDay && !!leaveMarks[day.key]?.shifts.length && <div className="mb-3 rounded-2xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-extrabold text-rose-700 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-200">{leaveMarks[day.key].shifts.map((shift) => `${shiftOptions.find((item) => item.value === shift)?.shortLabel || 'Ca'} · ${leaveMarks[day.key].status === 'Approved' ? 'Đã duyệt nghỉ' : 'Đang chờ duyệt'}`).join(' • ')}</div>}
                   <div className="grid grid-cols-2 gap-2">
                     {shiftOptions.filter((shift) => (!overtimeMode && !changeMode) || shift.value !== 'Custom').map((shift) => {
                       const today = new Date()
@@ -915,7 +918,7 @@ export default function SchedulePage() {
                             active ? activeClass : requestedLeave ? 'border-rose-400 bg-rose-50 text-rose-700 dark:border-rose-500/50 dark:bg-rose-500/10 dark:text-rose-200' : 'border-slate-200 bg-slate-50 dark:border-slate-700 dark:bg-slate-800'
                           } disabled:cursor-not-allowed disabled:active:scale-100`}
                         >
-                          <span className="flex items-center justify-between text-sm font-bold">{shift.label}{active ? <Check className="h-4 w-4" /> : requestedLeave ? <span className="text-[10px]">Đã xin nghỉ</span> : null}</span>
+                          <span className="flex items-center justify-between text-sm font-bold">{shift.label}{active ? <Check className="h-4 w-4" /> : requestedLeave ? <span className="text-[10px]">{leaveMarks[day.key].status === 'Approved' ? 'Đã duyệt nghỉ' : 'Đang chờ duyệt'}</span> : null}</span>
                           <span className={`mt-0.5 block text-[11px] ${active ? 'text-white/80' : 'text-muted-foreground'}`}>
                             {shift.value === 'Custom' && customData[day.key]
                               ? `${customData[day.key].start}–${customData[day.key].end}`
