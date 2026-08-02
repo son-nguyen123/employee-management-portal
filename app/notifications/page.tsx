@@ -740,8 +740,8 @@ export default function NotificationsPage() {
       </PageContainer>
 
       {selectedPending && selectedPendingMeta && (
-        <div className="fixed inset-0 z-[75] flex items-end justify-center overflow-y-auto bg-slate-950/45 p-0 backdrop-blur-sm sm:items-center sm:p-6">
-          <div role="dialog" aria-modal="true" aria-labelledby="employee-review-title" className="flex max-h-[calc(100dvh-0.75rem)] w-full max-w-lg flex-col overflow-hidden rounded-t-[2rem] border border-white/70 bg-white shadow-2xl shadow-slate-950/30 sm:max-h-[min(88dvh,760px)] sm:rounded-[2rem] dark:border-white/10 dark:bg-slate-900">
+        <div className="fixed inset-0 z-[75] grid place-items-center overflow-hidden bg-slate-950/45 p-3 backdrop-blur-sm sm:p-6">
+          <div role="dialog" aria-modal="true" aria-labelledby="employee-review-title" className="flex max-h-[calc(100dvh-1.5rem)] w-full max-w-lg flex-col overflow-hidden rounded-[2rem] border border-white/70 bg-white shadow-2xl shadow-slate-950/30 sm:max-h-[min(88dvh,760px)] dark:border-white/10 dark:bg-slate-900">
           <header className="z-10 shrink-0 border-b border-slate-200/70 bg-white/95 backdrop-blur-xl dark:border-white/10 dark:bg-slate-900/95">
             <div className="flex min-h-18 items-center gap-3 px-4">
               <button type="button" onClick={() => { setSelectedPending(null); setRejectIntentId(null) }} className="grid h-10 w-10 shrink-0 place-items-center rounded-2xl bg-slate-100 transition hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700" aria-label="Đóng kiểm tra">
