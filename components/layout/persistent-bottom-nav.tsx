@@ -20,6 +20,7 @@ export function PersistentBottomNav() {
   const isManagement = role === 'admin' || role === 'manager'
   const [pendingNotificationCount, setPendingNotificationCount] = useState(0)
   const hidden = hiddenPrefixes.some((prefix) => pathname.startsWith(prefix))
+  const showNavigation = !isLoading && !!authUser && !hidden && !(employee?.role === 'employee' && employee.status !== 'active')
 
   useEffect(() => {
     if (!authUser) {
@@ -46,11 +47,16 @@ export function PersistentBottomNav() {
     void syncAppIconBadge(authUser ? pendingNotificationCount : 0)
   }, [authUser, isPreviewMode, pendingNotificationCount])
 
-  if (isLoading || !authUser || hidden || (employee?.role === 'employee' && employee.status !== 'active')) return null
+  useEffect(() => {
+    document.body.classList.toggle('has-app-navigation', showNavigation)
+    return () => document.body.classList.remove('has-app-navigation')
+  }, [showNavigation])
+
+  if (!showNavigation) return null
 
   return (
     <>
-      <div className="h-[calc(4.5rem+env(safe-area-inset-bottom))] md:h-28" aria-hidden />
+      <div className="h-[calc(4.5rem+env(safe-area-inset-bottom))] md:h-28 xl:hidden" aria-hidden />
       <BottomNav items={[
         { href: '/', icon: <LayoutDashboard className="h-5 w-5" />, label: 'Trang chủ' },
         isManagement
