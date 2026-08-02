@@ -222,6 +222,7 @@ function ReviewAssessment({
   error: string
   onRetry: () => void
 }) {
+  const [penaltiesOpen, setPenaltiesOpen] = useState(false)
   if (loading) {
     return <div className="flex min-h-28 items-center justify-center gap-2 rounded-3xl border border-indigo-100 bg-indigo-50 text-sm font-bold text-indigo-700 dark:border-indigo-500/20 dark:bg-indigo-500/10 dark:text-indigo-100"><Loader2 className="h-4 w-4 animate-spin" /> Đang đối chiếu 4 tuần và kho lưu trữ…</div>
   }
@@ -232,6 +233,10 @@ function ReviewAssessment({
   const currentIssue = item.violationLabel
     ? `${item.violationLabel}${Number(item.proposedPenaltyAmount || 0) > 0 ? ` · dự kiến phạt ${Number(item.proposedPenaltyAmount).toLocaleString('vi-VN')}đ` : ''}`
     : ''
+  const penaltyMonths = [...new Set(context.confirmedPenalties.map((penalty) => new Date(`${penalty.date}T12:00:00+07:00`).toLocaleDateString('vi-VN', { month: 'long' })))]
+  const penaltyLabel = context.confirmedPenaltyCount
+    ? `Đã bị phạt: ${context.confirmedPenaltyCount} lần · ${penaltyMonths.join(', ')}`
+    : 'Chưa bị phạt'
   return (
     <section className={`rounded-3xl border p-4 ${tone.box}`}>
       <div className="flex items-start gap-3">
@@ -250,7 +255,8 @@ function ReviewAssessment({
       )}
       <div className="mt-4 space-y-2 border-t border-current/10 pt-3">
         {context.facts.map((fact) => <p key={fact} className="text-sm font-semibold leading-5">• {fact}</p>)}
-        <p className={`inline-flex rounded-full px-3 py-1.5 text-xs font-black ${context.confirmedPenaltyCount > 0 ? 'bg-rose-600 text-white' : 'bg-white/70 dark:bg-slate-950/30'}`}>Đã bị phạt: {context.confirmedPenaltyCount} lần / 4 tuần</p>
+        <button type="button" onClick={() => setPenaltiesOpen((open) => !open)} className={`inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-left text-xs font-black transition active:scale-[0.98] ${context.confirmedPenaltyCount > 0 ? 'bg-rose-600 text-white' : 'bg-white/70 dark:bg-slate-950/30'}`}><span>{penaltyLabel}</span>{context.confirmedPenaltyCount > 0 && <ChevronDown className={`h-3.5 w-3.5 transition-transform ${penaltiesOpen ? 'rotate-180' : ''}`} />}</button>
+        {penaltiesOpen && context.confirmedPenaltyCount > 0 && <div className="overflow-hidden rounded-2xl border border-rose-100 bg-white shadow-sm dark:border-rose-500/20 dark:bg-slate-900">{context.confirmedPenalties.map((penalty) => <div key={penalty.id} className="flex items-center gap-3 border-b border-slate-100 px-3 py-2.5 last:border-b-0 dark:border-white/10"><div className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-rose-50 text-[10px] font-black text-rose-700 dark:bg-rose-500/10 dark:text-rose-200">{new Date(`${penalty.date}T12:00:00+07:00`).toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit' })}</div><p className="min-w-0 flex-1 text-xs font-bold leading-5">{penalty.title}</p><p className="shrink-0 text-xs font-black text-rose-600 dark:text-rose-300">{penalty.amount.toLocaleString('vi-VN')}đ</p></div>)}</div>}
       </div>
     </section>
   )
@@ -519,6 +525,7 @@ export default function NotificationsPage() {
           archiveAvailable: false,
           confirmedPenaltyCount: 0,
           confirmedPenaltyAmount: 0,
+          confirmedPenalties: [],
           disclaimer: 'Chỉ là cảnh báo từ dữ liệu trên app, không kết luận nhân viên.',
         },
       }))

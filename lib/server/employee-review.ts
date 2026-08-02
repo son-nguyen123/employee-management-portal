@@ -311,6 +311,18 @@ export async function buildEmployeeReviewContext(
     record.data.status === 'Active' &&
     Number(record.data.amount || 0) > 0
   )
+  const confirmedPenaltySummaries = confirmedPenalties
+    .flatMap((record) => {
+      const penaltyDate = recordDate(record)
+      if (!penaltyDate) return []
+      return [{
+        id: record.path,
+        date: dateKey(penaltyDate),
+        title: typeof record.data.title === 'string' && record.data.title.trim() ? record.data.title : 'Khoản phạt',
+        amount: Number(record.data.amount || 0),
+      }]
+    })
+    .sort((left, right) => right.date.localeCompare(left.date))
   const result = assessment(weeks, workflowPolicy.minimumWeeklyShifts, confirmedPenalties.length)
 
   return {
@@ -324,6 +336,7 @@ export async function buildEmployeeReviewContext(
     liveWarnings: live.warnings,
     confirmedPenaltyCount: confirmedPenalties.length,
     confirmedPenaltyAmount: confirmedPenalties.reduce((total, record) => total + Number(record.data.amount || 0), 0),
+    confirmedPenalties: confirmedPenaltySummaries,
     disclaimer: 'Chỉ là cảnh báo từ dữ liệu trên app, không kết luận nhân viên.',
   }
 }

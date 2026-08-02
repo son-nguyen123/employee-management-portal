@@ -13,6 +13,13 @@ export interface EmployeeReviewWeek {
   source: 'firestore' | 'drive' | 'mixed' | 'none'
 }
 
+export interface ConfirmedPenaltySummary {
+  id: string
+  date: string
+  title: string
+  amount: number
+}
+
 export interface EmployeeReviewContext {
   employeeId: string
   referenceWeekStart: string
@@ -27,5 +34,6 @@ export interface EmployeeReviewContext {
   liveWarnings?: string[]
   confirmedPenaltyCount: number
   confirmedPenaltyAmount: number
+  confirmedPenalties: ConfirmedPenaltySummary[]
   disclaimer: string
 }
