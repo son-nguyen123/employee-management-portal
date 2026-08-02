@@ -22,12 +22,12 @@ const PageContainer = React.forwardRef<HTMLDivElement, PageContainerProps>(
       sm: 'max-w-sm',
       md: 'max-w-md',
       lg: 'max-w-lg',
-      xl: 'max-w-2xl',
-      '2xl': 'max-w-4xl',
+      xl: 'max-w-2xl md:max-w-3xl lg:max-w-4xl',
+      '2xl': 'max-w-4xl lg:max-w-6xl',
       full: 'w-full',
     }
 
-    const paddingStyles = padded ? 'px-3 py-4 sm:px-6 sm:py-8' : ''
+    const paddingStyles = padded ? 'px-3 py-4 sm:px-6 sm:py-8 lg:px-8' : ''
 
     return (
       <div

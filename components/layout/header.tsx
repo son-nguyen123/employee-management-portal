@@ -32,7 +32,7 @@ const Header = React.forwardRef<HTMLDivElement, HeaderProps>(
         ref={ref}
         className={`sticky top-0 z-40 border-b border-slate-200/70 bg-white/90 backdrop-blur-xl dark:border-white/10 dark:bg-slate-950/90 ${className}`}
       >
-        <div className="mx-auto flex max-w-2xl items-center justify-between px-3 py-3 sm:px-5">
+        <div className="mx-auto flex max-w-2xl items-center justify-between px-3 py-3 sm:px-5 md:max-w-4xl lg:max-w-5xl">
           <div className="flex items-center gap-3 flex-1">
             {showBackButton && (
               <button
