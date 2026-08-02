@@ -19,6 +19,7 @@ type WorkflowAction =
   | 'reviewScheduleBatch'
   | 'getWeeklyScheduleTarget'
   | 'getDutyAvailability'
+  | 'normalizeLeaveRequests'
   | 'updateWeeklyScheduleTarget'
   | 'getManagementContact'
   | 'getAuditReceiptSettings'

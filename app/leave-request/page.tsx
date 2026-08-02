@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { CalendarDays, Check, CheckCircle2, ChevronRight, Loader2, Palmtree, Pencil, Send, Trash2, X } from 'lucide-react'
 import { useAuth } from '@/lib/hooks/useAuth'
-import { cancelLeaveRequest, createLeaveRequest, respondToLeavePenalty, reviseLeaveRequest, subscribeToEmployeeLeaves } from '@/lib/services/leaveService'
+import { cancelLeaveRequest, createLeaveRequest, normalizeLeaveRequests, respondToLeavePenalty, reviseLeaveRequest, subscribeToEmployeeLeaves } from '@/lib/services/leaveService'
 import { mockLeaveRequests } from '@/lib/services/mockData'
 import { subscribeToEmployeeSchedules } from '@/lib/services/scheduleService'
 import { getPreviewSchedules } from '@/lib/services/previewWorkflow'
@@ -56,6 +56,8 @@ export default function LeaveRequestPage() {
       updateApprovedShifts(getPreviewSchedules().filter((item) => item.employeeId === authUser.uid))
       return
     }
+
+    void normalizeLeaveRequests().catch(() => undefined)
 
     const handleError = () => setRequests([])
     const unsubscribeLeaves = subscribeToEmployeeLeaves(
@@ -203,7 +205,7 @@ export default function LeaveRequestPage() {
     }
   }
 
-  const hasPendingRequest = requests.some((item) => item.status === 'Pending')
+  const hasPendingRequest = requests.some((item) => ['Pending', 'AwaitingEmployeeConsent'].includes(item.status))
 
   return (
     <main className="min-h-screen pb-8">

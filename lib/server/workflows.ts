@@ -1114,7 +1114,13 @@ export async function submitLeave(actor: RequestActor, raw: unknown) {
   let weeklyShiftCountAfterLeave = 0
 
   await adminDb.runTransaction(async (transaction) => {
-    if ((await transaction.get(workflow)).exists) throw new ApiError(409, 'Yêu cầu nghỉ này đã được gửi.')
+    const [workflowSnapshot, existingLeaves] = await Promise.all([
+      transaction.get(workflow),
+      transaction.get(adminDb.collection('leaveRequests').where('employeeId', '==', actor.uid)),
+    ])
+    if (workflowSnapshot.exists) throw new ApiError(409, 'Yêu cầu nghỉ này đã được gửi.')
+    const activeLeave = existingLeaves.docs.some((snapshot) => ['Pending', 'AwaitingEmployeeConsent'].includes(String(snapshot.get('status'))))
+    if (activeLeave) throw new ApiError(409, 'Bạn đang có một yêu cầu nghỉ được xử lý. Hãy bấm "Điều chỉnh" trên yêu cầu đó để cập nhật, không gửi yêu cầu mới.')
     const now = FieldValue.serverTimestamp()
     const scheduleRefs = workScheduleIds.map((scheduleId) => adminDb.collection('workSchedules').doc(scheduleId))
     const scheduleSnapshots = await Promise.all(scheduleRefs.map((ref) => transaction.get(ref)))
@@ -1208,6 +1214,36 @@ export async function submitLeave(actor: RequestActor, raw: unknown) {
   })
 
   return { id: leaveRef.id, penalty: 0, penaltyIfApproved, penaltyIfRejected }
+}
+
+/**
+ * Closes duplicate legacy Pending leave requests, retaining only the newest
+ * one. This is idempotent so the employee page can call it safely when it
+ * opens after the old multi-submit behavior.
+ */
+export async function normalizeLeaveRequests(actor: RequestActor, raw: unknown) {
+  requireStaff(actor)
+  objectBody(raw)
+  const leavesQuery = adminDb.collection('leaveRequests').where('employeeId', '==', actor.uid)
+  const snapshot = await leavesQuery.get()
+  const createdMillis = (value: unknown) => value instanceof Timestamp ? value.toMillis() : 0
+  const pending = snapshot.docs
+    .filter((item) => item.get('status') === 'Pending')
+    .sort((left, right) => createdMillis(right.get('createdAt')) - createdMillis(left.get('createdAt')))
+  if (pending.length <= 1) return { cancelledIds: [] as string[] }
+
+  const cancelledIds = pending.slice(1).map((item) => item.id)
+  const now = FieldValue.serverTimestamp()
+  const batch = adminDb.batch()
+  cancelledIds.forEach((id) => batch.set(adminDb.collection('leaveRequests').doc(id), {
+    status: 'Cancelled',
+    cancelledBy: 'system-legacy-cleanup',
+    cancelledAt: now,
+    cancellationReason: 'Yêu cầu cũ được đóng khi hệ thống chuyển sang chế độ một yêu cầu đang xử lý.',
+    updatedAt: now,
+  }, { merge: true }))
+  await batch.commit()
+  return { cancelledIds }
 }
 
 function shiftStart(date: Date, shift: Shift): Date {

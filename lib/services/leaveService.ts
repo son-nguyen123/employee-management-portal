@@ -5,6 +5,10 @@ import { callWorkflowApi, newWorkflowRequestId } from '@/lib/services/workflowAp
 
 const LEAVES_COLLECTION = 'leaveRequests'
 
+export function normalizeLeaveRequests(): Promise<{ cancelledIds: string[] }> {
+  return callWorkflowApi('normalizeLeaveRequests', {})
+}
+
 /**
  * Create a new leave request
  */
