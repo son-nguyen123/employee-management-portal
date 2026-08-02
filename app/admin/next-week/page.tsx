@@ -312,31 +312,33 @@ export default function NextWeekStaffPage() {
         <button
           type="button"
           onClick={() => setDutyRosterOpen((open) => !open)}
-          className="mb-4 flex min-h-14 w-full items-center gap-3 rounded-3xl border border-rose-200 bg-white px-4 text-left shadow-sm transition active:scale-[0.99] dark:border-rose-500/30 dark:bg-slate-900"
+          className="mb-4 flex min-h-14 w-full items-center gap-3 rounded-3xl border border-violet-100 bg-white px-4 text-left shadow-sm transition active:scale-[0.99] dark:border-violet-500/30 dark:bg-slate-900"
           aria-expanded={dutyRosterOpen}
         >
-          <span className="grid h-10 w-10 place-items-center rounded-2xl bg-rose-50 text-rose-600 dark:bg-rose-500/10"><UsersRound className="h-5 w-5" /></span>
-          <span className="min-w-0 flex-1"><span className="block font-extrabold">Xem danh sách trực</span><span className="block text-xs text-muted-foreground">Theo dõi số người từng tổ · tối đa {DUTY_TEAM_CAPACITY} người</span></span>
-          <span className="rounded-full bg-rose-50 px-3 py-1 text-xs font-black text-rose-700 dark:bg-rose-500/10 dark:text-rose-200">{dutyTotal}</span>
+          <span className="grid h-10 w-10 place-items-center rounded-2xl bg-violet-50 text-violet-600 dark:bg-violet-500/10"><UsersRound className="h-5 w-5" /></span>
+          <span className="min-w-0 flex-1"><span className="block font-extrabold">Danh sách trực</span><span className="block truncate whitespace-nowrap text-[11px] text-muted-foreground">Trực mỗi ngày · tối đa {DUTY_TEAM_CAPACITY} người</span></span>
+          <span className="rounded-full bg-violet-50 px-3 py-1 text-xs font-black text-violet-700 dark:bg-violet-500/10 dark:text-violet-200">{dutyTotal}</span>
           <ChevronDown className={`h-5 w-5 shrink-0 text-slate-400 transition-transform ${dutyRosterOpen ? 'rotate-180' : ''}`} />
         </button>
 
         {dutyRosterOpen && (
-          <section className="mb-4 space-y-2 rounded-3xl border border-rose-100 bg-rose-50/40 p-3 dark:border-rose-500/20 dark:bg-rose-500/5">
+          <section className="mb-4 space-y-2 rounded-3xl border border-violet-100 bg-violet-50/40 p-2.5 dark:border-violet-500/20 dark:bg-violet-500/5">
             {dutySummaries.map((day) => {
               const overloaded = day.people.length > DUTY_TEAM_CAPACITY
+              const fill = Math.min(100, (day.people.length / DUTY_TEAM_CAPACITY) * 100)
               return (
-                <article key={day.key} className={`rounded-2xl bg-white p-3 shadow-sm dark:bg-slate-900 ${overloaded ? 'ring-2 ring-rose-400' : ''}`}>
-                  <div className="flex items-center gap-2">
-                    <strong className="min-w-0 flex-1 text-sm">{day.label}</strong>
+                <article key={day.key} className={`rounded-2xl border border-slate-100 bg-white p-3.5 shadow-sm dark:border-white/10 dark:bg-slate-900 ${overloaded ? 'ring-2 ring-rose-400' : ''}`}>
+                  <div className="flex items-start gap-3">
+                    <div className="min-w-0 flex-1"><strong className="block text-base">{day.label}</strong><p className="mt-0.5 text-xs font-medium text-muted-foreground">{day.people.length ? `${day.people.length} người đăng ký trực` : 'Chưa có người đăng ký'}</p></div>
                     {overloaded && <span className="flex items-center gap-1 text-xs font-black text-rose-600"><AlertTriangle className="h-4 w-4" /> Quá tải</span>}
-                    <span className={`rounded-full px-2.5 py-1 text-xs font-black ${overloaded ? 'bg-rose-600 text-white' : 'bg-rose-50 text-rose-700 dark:bg-rose-500/10 dark:text-rose-200'}`}>{day.people.length}/{DUTY_TEAM_CAPACITY}</span>
+                    <span className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-black ${overloaded ? 'bg-rose-600 text-white' : day.people.length ? 'bg-violet-50 text-violet-700 dark:bg-violet-500/10 dark:text-violet-200' : 'bg-slate-100 text-slate-500 dark:bg-slate-800'}`}>{day.people.length} / {DUTY_TEAM_CAPACITY}</span>
                   </div>
+                  <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800"><div className={`h-full rounded-full ${overloaded ? 'bg-rose-500' : 'bg-violet-500'}`} style={{ width: `${fill}%` }} /></div>
                   {day.people.length ? (
-                    <div className="mt-3 flex flex-wrap gap-2">
-                      {day.people.map((person) => <span key={person.employeeId} className="rounded-xl bg-slate-100 px-2.5 py-1.5 text-xs font-bold text-slate-700 dark:bg-slate-800 dark:text-slate-200">{person.name}</span>)}
+                    <div className="mt-3 flex flex-wrap gap-1.5">
+                      {day.people.map((person) => <span key={person.employeeId} className="rounded-lg bg-slate-100 px-2.5 py-1.5 text-xs font-bold text-slate-700 dark:bg-slate-800 dark:text-slate-200">{person.name}</span>)}
                     </div>
-                  ) : <p className="mt-2 text-xs text-muted-foreground">Chưa có người đăng ký trực.</p>}
+                  ) : null}
                 </article>
               )
             })}
