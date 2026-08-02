@@ -15,6 +15,21 @@ import { Badge } from '@/components/ui/badge'
 type ShiftName = 'Morning' | 'Afternoon' | 'Evening'
 type ShiftItem = { id: string; date: Date; shift: ShiftName; status: string; note?: string }
 
+function scheduleDate(value: any): Date {
+  return value instanceof Date ? value : typeof value === 'string' ? new Date(value) : value.toDate()
+}
+
+function vietnamDateKey(date: Date): string {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Ho_Chi_Minh',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(date)
+  const value = (type: Intl.DateTimeFormatPartTypes) => parts.find((part) => part.type === type)?.value || ''
+  return `${value('year')}-${value('month')}-${value('day')}`
+}
+
 const shiftMeta: Record<ShiftName, { label: string; time: string; startMinutes: number; color: string }> = {
   Morning: { label: 'Ca sáng', time: '07:30 – 11:30', startMinutes: 7 * 60 + 30, color: 'bg-amber-500' },
   Afternoon: { label: 'Ca chiều', time: '13:00 – 17:00', startMinutes: 13 * 60, color: 'bg-sky-600' },
@@ -36,14 +51,17 @@ export default function LateArrivalPage() {
   useEffect(() => {
     if (!authUser) return
     const updateShifts = (scheduleData: any[]) => {
+      const today = vietnamDateKey(new Date())
       setShifts(scheduleData
         .filter((item) => {
-          const date = item.date instanceof Date ? item.date : typeof item.date === 'string' ? new Date(item.date) : item.date.toDate()
-          return item.status === 'Approved' && date.toLocaleDateString('en-CA') === new Date().toLocaleDateString('en-CA')
+          const date = scheduleDate(item.date)
+          return item.status === 'Approved'
+            && !item.note?.includes('[DUTY_ONLY]')
+            && vietnamDateKey(date) === today
         })
         .map((item) => ({
           id: item.id!,
-          date: item.date instanceof Date ? item.date : typeof item.date === 'string' ? new Date(item.date) : item.date.toDate(),
+          date: scheduleDate(item.date),
           shift: item.shift,
           status: item.status,
           note: item.note,

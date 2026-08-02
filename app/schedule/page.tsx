@@ -1,12 +1,13 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import {
   CalendarDays,
   CalendarPlus,
   Check,
   ChevronDown,
+  AlertTriangle,
   Clock3,
   Loader2,
   PartyPopper,
@@ -26,6 +27,7 @@ import {
   replaceWorkSchedules,
   setWorkScheduleBatchEditing,
   getEmployeeSchedules,
+  getDutyAvailability,
   subscribeToSchedulesByDateRange,
   submitWorkSchedules,
 } from '@/lib/services/scheduleService'
@@ -47,6 +49,9 @@ type EditBaseline = {
   dutyDay: string | null
   weekNote: string
 }
+
+const DUTY_TEAM_CAPACITY = 7
+const DUTY_WHEEL_ROW_HEIGHT = 64
 
 const shiftOptions: { value: Shift; label: string; shortLabel: string; time: string }[] = [
   { value: 'Morning', label: 'Ca sáng', shortLabel: 'sáng', time: '07:30–11:30' },
@@ -89,6 +94,10 @@ export default function SchedulePage() {
   const [customData, setCustomData] = useState<Record<string, CustomShift>>({})
   const [dutyDay, setDutyDay] = useState<string | null>(null)
   const [dutyPickerOpen, setDutyPickerOpen] = useState(false)
+  const [dutyCandidate, setDutyCandidate] = useState<string | null>(null)
+  const [dutyCounts, setDutyCounts] = useState<Record<string, number>>({})
+  const [dutyAvailabilityLoading, setDutyAvailabilityLoading] = useState(false)
+  const [dutyOverloadCandidate, setDutyOverloadCandidate] = useState<string | null>(null)
   const [submittedIds, setSubmittedIds] = useState<string[]>([])
   const [submittedStatus, setSubmittedStatus] = useState<string | null>(null)
   const [editing, setEditing] = useState(false)
@@ -109,6 +118,7 @@ export default function SchedulePage() {
   const [hasExistingSchedules, setHasExistingSchedules] = useState<boolean | null>(null)
   const [referenceNow] = useState(() => Date.now())
   const [portalReady, setPortalReady] = useState(false)
+  const dutyWheelRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => setPortalReady(true), [])
 
@@ -176,6 +186,69 @@ export default function SchedulePage() {
       return { key: localDateKey(date), name, shortName: shortNames[index], date }
     })
   }, [currentWeekMode, isNewEmployee])
+
+  const loadDutyAvailability = useCallback(async () => {
+    if (!authUser || !days.length) return
+    setDutyAvailabilityLoading(true)
+    try {
+      if (isPreviewMode) {
+        const members = new Map<string, Set<string>>()
+        getPreviewSchedules().forEach((schedule) => {
+          if (['Draft', 'Rejected', 'Cancelled'].includes(schedule.status) || !schedule.note?.includes('[DUTY')) return
+          const key = localDateKey(new Date(schedule.date))
+          const team = members.get(key) || new Set<string>()
+          team.add(schedule.employeeId)
+          members.set(key, team)
+        })
+        setDutyCounts(Object.fromEntries([...members.entries()].map(([key, team]) => [key, team.size])))
+      } else {
+        const availability = await getDutyAvailability(days[0].key, days[days.length - 1].key)
+        setDutyCounts(availability.counts)
+      }
+    } catch {
+      // The picker remains usable when the live headcount is temporarily unavailable.
+      setDutyCounts({})
+    } finally {
+      setDutyAvailabilityLoading(false)
+    }
+  }, [authUser, days, isPreviewMode])
+
+  useEffect(() => {
+    void loadDutyAvailability()
+  }, [loadDutyAvailability])
+
+  const dutyWheelEntries = useMemo(() => [...days, ...days, ...days], [days])
+  const dutyTeamCount = useCallback((dayKey: string) => {
+    const storedCount = dutyCounts[dayKey] || 0
+    const currentSelectionIsSaved = dayKey === dutyDay && submittedIds.length > 0
+    return storedCount + (currentSelectionIsSaved ? 0 : 1)
+  }, [dutyCounts, dutyDay, submittedIds.length])
+
+  const openDutyPicker = () => {
+    setDutyCandidate(dutyDay || days[0]?.key || null)
+    setDutyPickerOpen(true)
+    void loadDutyAvailability()
+  }
+
+  useEffect(() => {
+    if (!dutyPickerOpen || !dutyCandidate || !days.length) return
+    const index = Math.max(0, days.findIndex((day) => day.key === dutyCandidate))
+    const timer = window.setTimeout(() => {
+      if (dutyWheelRef.current) dutyWheelRef.current.scrollTop = (days.length + index) * DUTY_WHEEL_ROW_HEIGHT
+    }, 0)
+    return () => window.clearTimeout(timer)
+  }, [days, dutyCandidate, dutyPickerOpen])
+
+  const selectDutyCandidate = () => {
+    if (!dutyCandidate) return
+    if (dutyTeamCount(dutyCandidate) > DUTY_TEAM_CAPACITY) {
+      setDutyPickerOpen(false)
+      setDutyOverloadCandidate(dutyCandidate)
+      return
+    }
+    setDutyDay(dutyCandidate)
+    setDutyPickerOpen(false)
+  }
 
   useEffect(() => {
     if (!authUser || hasExistingSchedules === null) return
@@ -735,14 +808,16 @@ export default function SchedulePage() {
             {!overtimeMode && !changeMode && (
               <button
                 type="button"
-                onClick={() => setDutyPickerOpen(true)}
+                onClick={openDutyPicker}
                 className="mb-4 flex w-full items-center gap-3 rounded-3xl border-2 border-rose-400 bg-gradient-to-r from-rose-50 to-fuchsia-50 p-4 text-left shadow-sm dark:from-rose-500/10 dark:to-fuchsia-500/10"
               >
                 <div className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-rose-600 text-white"><Clock3 className="h-5 w-5" /></div>
                 <div className="min-w-0 flex-1">
                   <p className="font-extrabold text-rose-700 dark:text-rose-300">Thêm lịch trực</p>
                   <p className="text-xs text-rose-600/80 dark:text-rose-200/70">
-                    {dutyDay ? `${days.find((day) => day.key === dutyDay)?.name} · 17:00–17:30` : 'Chọn một ngày từ Thứ Hai đến Chủ Nhật'}
+                    {dutyDay
+                      ? `${days.find((day) => day.key === dutyDay)?.name} · 17:00–17:30${dutyAvailabilityLoading ? '' : ` · ${dutyTeamCount(dutyDay)}/${DUTY_TEAM_CAPACITY} người`}`
+                      : 'Chọn một ngày từ Thứ Hai đến Chủ Nhật'}
                   </p>
                 </div>
                 <ChevronDown className="h-5 w-5 text-rose-500" />
@@ -883,22 +958,71 @@ export default function SchedulePage() {
 
       {dutyPickerOpen && (
         <div className="fixed inset-0 z-50 flex items-end bg-slate-950/45 backdrop-blur-sm" onClick={() => setDutyPickerOpen(false)}>
-          <section className="w-full rounded-t-[2rem] bg-white p-4 pb-[max(1rem,env(safe-area-inset-bottom))] shadow-2xl dark:bg-slate-900" onClick={(event) => event.stopPropagation()}>
+          <section className="w-full rounded-t-[2rem] bg-white p-4 pb-[max(1rem,env(safe-area-inset-bottom))] shadow-2xl dark:bg-slate-900 sm:mx-auto sm:mb-4 sm:max-w-lg sm:rounded-[2rem]" onClick={(event) => event.stopPropagation()}>
             <div className="mx-auto max-w-lg">
               <div className="mx-auto mb-4 h-1.5 w-12 rounded-full bg-slate-300 dark:bg-slate-700" />
               <div className="mb-3 flex items-center justify-between">
                 <div><p className="text-xs font-bold uppercase tracking-wider text-rose-600">Lịch trực</p><h2 className="text-xl font-extrabold">Chọn ngày trực</h2></div>
                 <button onClick={() => setDutyPickerOpen(false)} className="grid h-11 w-11 place-items-center rounded-2xl bg-slate-100 dark:bg-slate-800"><X className="h-5 w-5" /></button>
               </div>
-              <p className="mb-3 text-sm text-muted-foreground">Khung giờ cố định 17:00–17:30</p>
-              <div className="duty-wheel relative max-h-64 snap-y snap-mandatory overflow-y-auto rounded-3xl bg-slate-100 p-2 dark:bg-slate-800">
-                {days.map((day) => (
-                  <button key={day.key} type="button" onClick={() => { setDutyDay(day.key); setDutyPickerOpen(false) }} className={`flex min-h-14 w-full snap-center items-center justify-between rounded-2xl px-4 font-bold transition ${dutyDay === day.key ? 'bg-rose-600 text-white shadow-lg' : 'text-slate-600 dark:text-slate-300'}`}>
-                    <span>{day.name}</span><span className="text-sm opacity-75">{day.date.toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit' })}</span>
-                  </button>
-                ))}
+              <p className="mb-4 text-sm text-muted-foreground">Vuốt để chọn ngày. Khung giờ cố định 17:00–17:30.</p>
+              <div className="relative overflow-hidden rounded-3xl border border-slate-200 bg-slate-50 dark:border-slate-700 dark:bg-slate-800/70">
+                <div className="pointer-events-none absolute inset-x-3 top-16 z-20 h-16 rounded-2xl border border-rose-300 bg-white/75 shadow-sm dark:border-rose-400/40 dark:bg-slate-900/70" />
+                <div className="pointer-events-none absolute inset-x-0 top-0 z-10 h-16 bg-gradient-to-b from-slate-50 via-slate-50/90 to-transparent dark:from-slate-800/70 dark:via-slate-800/40" />
+                <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10 h-16 bg-gradient-to-t from-slate-50 via-slate-50/90 to-transparent dark:from-slate-800/70 dark:via-slate-800/40" />
+                <div
+                  ref={dutyWheelRef}
+                  className="h-48 snap-y snap-mandatory overflow-y-auto overscroll-contain py-16 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+                  onScroll={(event) => {
+                    const index = Math.max(0, Math.min(dutyWheelEntries.length - 1, Math.round(event.currentTarget.scrollTop / DUTY_WHEEL_ROW_HEIGHT)))
+                    const item = dutyWheelEntries[index]
+                    if (item) setDutyCandidate(item.key)
+                  }}
+                >
+                  {dutyWheelEntries.map((day, index) => {
+                    const active = dutyCandidate === day.key
+                    return (
+                      <button
+                        key={`${day.key}-${index}`}
+                        type="button"
+                        onClick={() => {
+                          setDutyCandidate(day.key)
+                          dutyWheelRef.current?.scrollTo({ top: index * DUTY_WHEEL_ROW_HEIGHT, behavior: 'smooth' })
+                        }}
+                        className={`relative z-0 flex h-16 w-full snap-center items-center justify-between px-6 text-left transition duration-200 ${active ? 'scale-[1.02] text-rose-700 dark:text-rose-300' : 'scale-95 text-slate-400 dark:text-slate-500'}`}
+                      >
+                        <span className="font-extrabold">{day.name}</span>
+                        <span className="text-sm font-bold tabular-nums">{day.date.toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit' })}</span>
+                      </button>
+                    )
+                  })}
+                </div>
               </div>
+              <div className="mt-3 flex items-center justify-between rounded-2xl bg-rose-50 px-3 py-2 text-xs font-bold text-rose-800 dark:bg-rose-500/10 dark:text-rose-200">
+                <span>{dutyAvailabilityLoading ? 'Đang kiểm tra tổ trực...' : `Tổ đang chọn: ${dutyCandidate ? dutyTeamCount(dutyCandidate) : 0}/${DUTY_TEAM_CAPACITY} người`}</span>
+                {!dutyAvailabilityLoading && dutyCandidate && dutyTeamCount(dutyCandidate) > DUTY_TEAM_CAPACITY && <span className="text-rose-600 dark:text-rose-300">Quá tải</span>}
+              </div>
+              <button type="button" disabled={!dutyCandidate || dutyAvailabilityLoading} onClick={selectDutyCandidate} className="mobile-primary-button mt-3 w-full disabled:opacity-50">
+                {dutyAvailabilityLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />} Xác nhận ngày trực
+              </button>
               {dutyDay && <button type="button" onClick={() => { setDutyDay(null); setDutyPickerOpen(false) }} className="mt-3 min-h-11 w-full rounded-2xl text-sm font-bold text-rose-600">Bỏ lịch trực</button>}
+            </div>
+          </section>
+        </div>
+      )}
+
+      {dutyOverloadCandidate && (
+        <div className="fixed inset-0 z-[65] flex items-end justify-center bg-slate-950/50 p-3 backdrop-blur-sm sm:items-center" onClick={() => setDutyOverloadCandidate(null)}>
+          <section role="dialog" aria-modal="true" aria-labelledby="duty-overload-title" className="w-full max-w-sm rounded-[2rem] bg-white p-5 shadow-2xl dark:bg-slate-900" onClick={(event) => event.stopPropagation()}>
+            <div className="grid h-12 w-12 place-items-center rounded-2xl bg-rose-50 text-rose-600 dark:bg-rose-500/10"><AlertTriangle className="h-6 w-6" /></div>
+            <p className="mt-4 text-xs font-bold uppercase tracking-wider text-rose-600">Cảnh báo tổ trực</p>
+            <h2 id="duty-overload-title" className="mt-1 text-xl font-black">Tổ này đã quá 7 người</h2>
+            <p className="mt-2 text-sm leading-6 text-muted-foreground">
+              {days.find((day) => day.key === dutyOverloadCandidate)?.name} sẽ có {dutyTeamCount(dutyOverloadCandidate)} người trực. Bạn vẫn có thể chọn, nhưng quản lý sẽ thấy cảnh báo quá tải.
+            </p>
+            <div className="mt-5 grid grid-cols-2 gap-2">
+              <button type="button" onClick={() => { setDutyCandidate(dutyOverloadCandidate); setDutyOverloadCandidate(null); setDutyPickerOpen(true) }} className="min-h-12 rounded-2xl border border-slate-200 text-sm font-bold dark:border-slate-700">Chọn ngày khác</button>
+              <button type="button" onClick={() => { setDutyDay(dutyOverloadCandidate); setDutyOverloadCandidate(null) }} className="flex min-h-12 items-center justify-center gap-2 rounded-2xl bg-rose-600 px-3 text-sm font-bold text-white"><Check className="h-4 w-4" /> Vẫn chọn</button>
             </div>
           </section>
         </div>

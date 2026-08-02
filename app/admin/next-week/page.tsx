@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
-import { CalendarRange, Check, ChevronDown, Loader2, Pencil, Trash2, UsersRound, X } from 'lucide-react'
+import { AlertTriangle, CalendarRange, Check, ChevronDown, Loader2, Pencil, Trash2, UsersRound, X } from 'lucide-react'
 import { Header } from '@/components/layout/header'
 import { PageContainer } from '@/components/layout/page-container'
 import { useAuth, useUserRole } from '@/lib/hooks/useAuth'
@@ -28,6 +28,14 @@ type DaySummary = {
   shifts: Record<Shift, SchedulePerson[]>
   total: number
 }
+
+type DutySummary = {
+  key: string
+  label: string
+  people: SchedulePerson[]
+}
+
+const DUTY_TEAM_CAPACITY = 7
 
 const shiftSections: Array<{ key: Shift; label: string; tone: string }> = [
   { key: 'Morning', label: 'Ca sáng', tone: 'bg-amber-50 text-amber-700 dark:bg-amber-500/10 dark:text-amber-300' },
@@ -80,6 +88,12 @@ function isVisibleSchedule(schedule: WorkSchedule) {
     && !schedule.note?.includes('[DUTY_ONLY]')
 }
 
+function isDutySchedule(schedule: WorkSchedule) {
+  return !['Draft', 'Rejected', 'Cancelled'].includes(schedule.status)
+    && !schedule.note?.includes('[NO_SHIFTS]')
+    && schedule.note?.includes('[DUTY')
+}
+
 export default function NextWeekStaffPage() {
   const { authUser, isPreviewMode } = useAuth()
   const role = useUserRole()
@@ -88,6 +102,7 @@ export default function NextWeekStaffPage() {
   const [employeesReady, setEmployeesReady] = useState(false)
   const [schedulesReady, setSchedulesReady] = useState(false)
   const [openDay, setOpenDay] = useState('')
+  const [dutyRosterOpen, setDutyRosterOpen] = useState(false)
   const [message, setMessage] = useState('')
   const [editor, setEditor] = useState<{ employeeId: string; name: string; dayKey: string; scheduleIds: string[] } | null>(null)
   const [editScope, setEditScope] = useState<'shift' | 'day' | 'custom' | 'week'>('shift')
@@ -198,6 +213,28 @@ export default function NextWeekStaffPage() {
       .map((schedule) => schedule.employeeId)
   ).size, [days, schedules])
 
+  const dutySummaries = useMemo<DutySummary[]>(() => days.map((day) => {
+    const people = new Map<string, SchedulePerson>()
+    schedules
+      .filter((schedule) => dateKey(toDate(schedule.date)) === day.key && isDutySchedule(schedule))
+      .forEach((schedule) => {
+        const existing = people.get(schedule.employeeId)
+        const name = schedule.employeeName || employeeNames.get(schedule.employeeId) || 'Nhân viên chưa có tên'
+        people.set(schedule.employeeId, {
+          employeeId: schedule.employeeId,
+          name,
+          scheduleIds: Array.from(new Set([...(existing?.scheduleIds || []), schedule.id || ''])).filter(Boolean),
+        })
+      })
+    return {
+      key: day.key,
+      label: day.label,
+      people: [...people.values()].sort((left, right) => left.name.localeCompare(right.name, 'vi')),
+    }
+  }), [days, employeeNames, schedules])
+
+  const dutyTotal = useMemo(() => dutySummaries.reduce((total, day) => total + day.people.length, 0), [dutySummaries])
+
   const openEditor = (person: SchedulePerson, dayKey: string) => {
     setEditor({ ...person, dayKey })
     setEditScope('shift')
@@ -271,6 +308,40 @@ export default function NextWeekStaffPage() {
           </div>
           <UsersRound className="h-6 w-6 text-indigo-100" />
         </section>
+
+        <button
+          type="button"
+          onClick={() => setDutyRosterOpen((open) => !open)}
+          className="mb-4 flex min-h-14 w-full items-center gap-3 rounded-3xl border border-rose-200 bg-white px-4 text-left shadow-sm transition active:scale-[0.99] dark:border-rose-500/30 dark:bg-slate-900"
+          aria-expanded={dutyRosterOpen}
+        >
+          <span className="grid h-10 w-10 place-items-center rounded-2xl bg-rose-50 text-rose-600 dark:bg-rose-500/10"><UsersRound className="h-5 w-5" /></span>
+          <span className="min-w-0 flex-1"><span className="block font-extrabold">Xem danh sách trực</span><span className="block text-xs text-muted-foreground">Theo dõi số người từng tổ · tối đa {DUTY_TEAM_CAPACITY} người</span></span>
+          <span className="rounded-full bg-rose-50 px-3 py-1 text-xs font-black text-rose-700 dark:bg-rose-500/10 dark:text-rose-200">{dutyTotal}</span>
+          <ChevronDown className={`h-5 w-5 shrink-0 text-slate-400 transition-transform ${dutyRosterOpen ? 'rotate-180' : ''}`} />
+        </button>
+
+        {dutyRosterOpen && (
+          <section className="mb-4 space-y-2 rounded-3xl border border-rose-100 bg-rose-50/40 p-3 dark:border-rose-500/20 dark:bg-rose-500/5">
+            {dutySummaries.map((day) => {
+              const overloaded = day.people.length > DUTY_TEAM_CAPACITY
+              return (
+                <article key={day.key} className={`rounded-2xl bg-white p-3 shadow-sm dark:bg-slate-900 ${overloaded ? 'ring-2 ring-rose-400' : ''}`}>
+                  <div className="flex items-center gap-2">
+                    <strong className="min-w-0 flex-1 text-sm">{day.label}</strong>
+                    {overloaded && <span className="flex items-center gap-1 text-xs font-black text-rose-600"><AlertTriangle className="h-4 w-4" /> Quá tải</span>}
+                    <span className={`rounded-full px-2.5 py-1 text-xs font-black ${overloaded ? 'bg-rose-600 text-white' : 'bg-rose-50 text-rose-700 dark:bg-rose-500/10 dark:text-rose-200'}`}>{day.people.length}/{DUTY_TEAM_CAPACITY}</span>
+                  </div>
+                  {day.people.length ? (
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      {day.people.map((person) => <span key={person.employeeId} className="rounded-xl bg-slate-100 px-2.5 py-1.5 text-xs font-bold text-slate-700 dark:bg-slate-800 dark:text-slate-200">{person.name}</span>)}
+                    </div>
+                  ) : <p className="mt-2 text-xs text-muted-foreground">Chưa có người đăng ký trực.</p>}
+                </article>
+              )
+            })}
+          </section>
+        )}
 
         {message && (
           <p className="mb-4 rounded-2xl bg-rose-50 p-3 text-sm font-semibold text-rose-700 dark:bg-rose-500/10 dark:text-rose-200">

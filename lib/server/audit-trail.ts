@@ -8,6 +8,7 @@ import { auditEmailConfigured } from '@/lib/server/audit-email'
 
 const READ_ONLY_ACTIONS = new Set([
   'getWeeklyScheduleTarget',
+  'getDutyAvailability',
   'getManagementContact',
   'getAuditReceiptSettings',
 ])

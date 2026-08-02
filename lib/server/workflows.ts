@@ -62,6 +62,14 @@ function weekKey(value: unknown): string {
   return result
 }
 
+function calendarDateKey(value: unknown, field: string): string {
+  const result = text(value, field, 10)
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(result) || Number.isNaN(new Date(`${result}T12:00:00+07:00`).getTime())) {
+    throw new ApiError(400, `${field} khÃ´ng há»£p lá»‡.`)
+  }
+  return result
+}
+
 export async function getWeeklyScheduleTarget(actor: RequestActor, raw: unknown) {
   requireManager(actor)
   const body = objectBody(raw)
@@ -70,6 +78,46 @@ export async function getWeeklyScheduleTarget(actor: RequestActor, raw: unknown)
   return {
     weekStart,
     expectedEmployees: snapshot.exists ? Number(snapshot.get('expectedEmployees') || 0) : 0,
+  }
+}
+
+/**
+ * Staff only receive per-day totals so the duty picker can warn about an
+ * overloaded team without exposing co-workers' schedules or identities.
+ */
+export async function getDutyAvailability(actor: RequestActor, raw: unknown) {
+  requireStaff(actor)
+  const body = objectBody(raw)
+  const startDate = calendarDateKey(body.startDate, 'NgÃ y báº¯t Ä‘áº§u')
+  const endDate = calendarDateKey(body.endDate, 'NgÃ y káº¿t thÃºc')
+  const start = new Date(`${startDate}T00:00:00+07:00`)
+  const end = new Date(`${endDate}T23:59:59.999+07:00`)
+  if (end < start || end.getTime() - start.getTime() > 14 * 24 * 60 * 60 * 1000) {
+    throw new ApiError(400, 'Khoáº£ng xem tá»• trá»±c khÃ´ng há»£p lá»‡.')
+  }
+
+  const snapshot = await adminDb.collection('workSchedules')
+    .where('date', '>=', Timestamp.fromDate(start))
+    .where('date', '<=', Timestamp.fromDate(end))
+    .get()
+  const membersByDay = new Map<string, Set<string>>()
+
+  snapshot.docs.forEach((document) => {
+    const schedule = document.data()
+    if (['Draft', 'Rejected', 'Cancelled'].includes(String(schedule.status))) return
+    if (String(schedule.note || '').includes('[NO_SHIFTS]') || !String(schedule.note || '').includes('[DUTY')) return
+    const date = schedule.date instanceof Timestamp ? schedule.date.toDate() : null
+    const employeeId = typeof schedule.employeeId === 'string' ? schedule.employeeId : ''
+    if (!date || !employeeId) return
+    const key = vietnamDateKey(date)
+    const members = membersByDay.get(key) || new Set<string>()
+    members.add(employeeId)
+    membersByDay.set(key, members)
+  })
+
+  return {
+    capacity: 7,
+    counts: Object.fromEntries([...membersByDay.entries()].map(([key, members]) => [key, members.size])),
   }
 }
 

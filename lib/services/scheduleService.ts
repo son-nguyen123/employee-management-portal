@@ -5,6 +5,19 @@ import { callWorkflowApi, newWorkflowRequestId } from '@/lib/services/workflowAp
 
 const SCHEDULES_COLLECTION = 'workSchedules'
 
+export interface DutyAvailability {
+  capacity: number
+  counts: Record<string, number>
+}
+
+/**
+ * Returns only the number of people registered for each duty team. Employee
+ * names stay on the server; managers see the detailed roster in their view.
+ */
+export function getDutyAvailability(startDate: string, endDate: string): Promise<DutyAvailability> {
+  return callWorkflowApi('getDutyAvailability', { startDate, endDate })
+}
+
 /**
  * Create a new work schedule
  */
