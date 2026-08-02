@@ -286,8 +286,8 @@ export default function LateArrivalPage() {
       </PageContainer>
 
       {selectedShift && (
-        <div className="fixed inset-0 z-50 flex items-end bg-slate-950/45 backdrop-blur-sm" onClick={() => { setSelectedShift(null); setSelectedShiftIds([]); setEditingId(null); setSubmitConfirmationOpen(false) }}>
-          <form onSubmit={requestSubmitConfirmation} onClick={(event) => event.stopPropagation()} className="w-full rounded-t-[2rem] bg-white p-4 pb-[max(1rem,env(safe-area-inset-bottom))] shadow-2xl dark:bg-slate-900">
+        <div className="fixed inset-0 z-[70] flex items-end bg-slate-950/45 backdrop-blur-sm" onClick={() => { setSelectedShift(null); setSelectedShiftIds([]); setEditingId(null); setSubmitConfirmationOpen(false) }}>
+          <form onSubmit={requestSubmitConfirmation} onClick={(event) => event.stopPropagation()} className="max-h-[calc(100dvh-0.75rem)] w-full overflow-y-auto overscroll-contain rounded-t-[2rem] bg-white p-4 pb-[max(1rem,env(safe-area-inset-bottom))] shadow-2xl dark:bg-slate-900">
             <div className="mx-auto max-w-lg">
               <div className="mb-5 flex items-start justify-between">
                 <div>
@@ -325,7 +325,7 @@ export default function LateArrivalPage() {
             </div>
           </form>
           {submitConfirmationOpen && (
-            <div className="fixed inset-0 z-[60] flex items-end justify-center bg-slate-950/55 p-3 backdrop-blur-sm sm:items-center" onClick={() => setSubmitConfirmationOpen(false)}>
+            <div className="fixed inset-0 z-[80] flex items-end justify-center bg-slate-950/55 p-3 backdrop-blur-sm sm:items-center" onClick={() => setSubmitConfirmationOpen(false)}>
               <section role="dialog" aria-modal="true" aria-labelledby="late-confirmation-title" className="w-full max-w-md rounded-[2rem] bg-white p-5 shadow-2xl dark:bg-slate-900" onClick={(event) => event.stopPropagation()}>
                 <div className="flex items-start gap-3">
                   <div className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-amber-50 text-amber-600 dark:bg-amber-500/10 dark:text-amber-200"><Clock3 className="h-5 w-5" /></div>

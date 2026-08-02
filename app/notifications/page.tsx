@@ -141,24 +141,27 @@ function IdentityAvatar({
   )
 }
 
-type ShiftChangeKind = 'cancelled' | 'registered' | 'overtime'
+type ShiftChangeKind = 'cancelled' | 'registered' | 'restored' | 'overtime'
 
-const shiftChangeTone: Record<ShiftChangeKind, { label: string; className: string }> = {
-  cancelled: { label: 'Đã hủy', className: 'bg-rose-100 text-rose-800 dark:bg-rose-500/15 dark:text-rose-200' },
-  registered: { label: 'Đăng ký', className: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-500/15 dark:text-emerald-200' },
-  overtime: { label: 'Xin làm thêm', className: 'bg-sky-100 text-sky-800 dark:bg-sky-500/15 dark:text-sky-200' },
+const shiftChangeTone: Record<ShiftChangeKind, { label: string; className: string; dotClassName: string }> = {
+  cancelled: { label: 'Hủy', className: 'border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-500/20 dark:bg-rose-500/10 dark:text-rose-200', dotClassName: 'bg-rose-500' },
+  registered: { label: 'Đăng ký', className: 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-500/20 dark:bg-emerald-500/10 dark:text-emerald-200', dotClassName: 'bg-emerald-500' },
+  restored: { label: 'Đi làm lại', className: 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-500/20 dark:bg-emerald-500/10 dark:text-emerald-200', dotClassName: 'bg-emerald-500' },
+  overtime: { label: 'Làm thêm', className: 'border-sky-200 bg-sky-50 text-sky-700 dark:border-sky-500/20 dark:bg-sky-500/10 dark:text-sky-200', dotClassName: 'bg-sky-500' },
 }
 
 function UnifiedShiftList({
   shifts,
   removedShifts,
+  restoredShifts,
   registrationKind,
 }: {
   shifts?: ManagementShift[]
   removedShifts?: ManagementShift[]
+  restoredShifts?: ManagementShift[]
   registrationKind: 'registered' | 'overtime'
 }) {
-  if (!shifts?.length && !removedShifts?.length) return null
+  if (!shifts?.length && !removedShifts?.length && !restoredShifts?.length) return null
   const grouped = new Map<string, { date: Date; changes: Array<{ shift: ManagementShift['shift']; kind: ShiftChangeKind }> }>()
   const addChanges = (items: ManagementShift[] | undefined, kind: ShiftChangeKind) => items?.forEach((item) => {
     const key = item.date.toISOString().slice(0, 10)
@@ -167,16 +170,21 @@ function UnifiedShiftList({
     grouped.set(key, current)
   })
   addChanges(removedShifts, 'cancelled')
+  addChanges(restoredShifts, 'restored')
   addChanges(shifts, registrationKind)
+  const totalChanges = [...grouped.values()].reduce((total, row) => total + row.changes.length, 0)
 
   return (
-    <section className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm dark:border-slate-700 dark:bg-slate-900">
-      <div className="flex items-center gap-2 border-b border-slate-100 px-4 py-3 dark:border-white/10"><CalendarDays className="h-4 w-4 text-slate-500" /><p className="text-[11px] font-black uppercase tracking-[0.14em] text-slate-600 dark:text-slate-300">Các ca trong yêu cầu</p></div>
-      <div className="space-y-2 p-2.5">
+    <section className="overflow-hidden rounded-[1.75rem] border border-slate-200/90 bg-white shadow-[0_14px_35px_rgba(15,23,42,0.08)] dark:border-slate-700 dark:bg-slate-900">
+      <div className="flex items-center justify-between gap-3 bg-slate-950 px-4 py-3 text-white dark:bg-slate-800">
+        <div className="flex min-w-0 items-center gap-2.5"><span className="grid h-8 w-8 shrink-0 place-items-center rounded-xl bg-white/10"><CalendarDays className="h-4 w-4" /></span><div><p className="text-[11px] font-black uppercase tracking-[0.14em] text-white/70">Lịch thay đổi</p><h3 className="text-sm font-black">Các ca trong yêu cầu</h3></div></div>
+        <span className="shrink-0 rounded-full bg-white/10 px-2.5 py-1 text-[11px] font-black">{totalChanges} ca</span>
+      </div>
+      <div className="space-y-2 bg-slate-50/80 p-2.5 dark:bg-slate-950/30">
         {[...grouped.values()].sort((a, b) => a.date.getTime() - b.date.getTime()).map((row) => (
-          <div key={row.date.toISOString()} className="flex items-start gap-3 rounded-2xl bg-slate-50 px-3 py-2.5 dark:bg-slate-800/70">
-            <div className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-slate-200/80 text-center leading-none text-slate-700 dark:bg-slate-700 dark:text-slate-100"><span className="text-[9px] font-black">{row.date.getDay() === 0 ? 'CN' : `T${row.date.getDay() + 1}`}</span><span className="-mt-2 text-sm font-black">{String(row.date.getDate()).padStart(2, '0')}</span></div>
-            <div className="min-w-0 flex-1"><p className="text-sm font-black capitalize">{row.date.toLocaleDateString('vi-VN', { weekday: 'long', day: '2-digit', month: '2-digit' })}</p><div className="mt-1.5 flex flex-wrap gap-1.5">{row.changes.map(({ shift, kind }) => <span key={`${shift}-${kind}`} className={`rounded-lg px-2.5 py-1 text-xs font-black ${shiftChangeTone[kind].className}`}>{shiftChangeTone[kind].label} · {shiftNames[shift].replace('Ca ', '')}</span>)}</div></div>
+          <div key={row.date.toISOString()} className="flex items-start gap-3 rounded-2xl border border-slate-100 bg-white p-3 shadow-[0_3px_12px_rgba(15,23,42,0.035)] dark:border-white/5 dark:bg-slate-900">
+            <div className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-slate-100 text-center leading-none text-slate-600 dark:bg-slate-800 dark:text-slate-200"><span className="text-[9px] font-black uppercase tracking-wide">{row.date.getDay() === 0 ? 'CN' : `T${row.date.getDay() + 1}`}</span><span className="-mt-2 text-base font-black tabular-nums">{String(row.date.getDate()).padStart(2, '0')}</span></div>
+            <div className="min-w-0 flex-1"><p className="text-[15px] font-black capitalize leading-5">{row.date.toLocaleDateString('vi-VN', { weekday: 'long', day: '2-digit', month: '2-digit' })}</p><div className="mt-2 flex flex-wrap gap-1.5">{row.changes.map(({ shift, kind }) => <span key={`${shift}-${kind}`} className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-extrabold leading-4 ${shiftChangeTone[kind].className}`}><span className={`h-1.5 w-1.5 rounded-full ${shiftChangeTone[kind].dotClassName}`} />{shiftChangeTone[kind].label} · {shiftNames[shift].replace('Ca ', '')}</span>)}</div></div>
           </div>
         ))}
       </div>
@@ -672,7 +680,7 @@ export default function NotificationsPage() {
               const quick = quickReview(item)
               const quickTone = reviewTone[quick.level]
               const targetDates = item.type === 'schedule' || item.staffRequestType === 'scheduleChange' || item.staffRequestType === 'overtime'
-                ? [...(item.shifts || []), ...(item.removedShifts || [])].map((shift) => shift.date)
+                ? [...(item.shifts || []), ...(item.removedShifts || []), ...(item.restoredShifts || [])].map((shift) => shift.date)
                 : []
               return (
                 <article key={item.id} className={`mobile-card overflow-hidden ${item.type === 'account' ? 'border-dashed bg-transparent' : ''}`}>
@@ -827,14 +835,14 @@ export default function NotificationsPage() {
                 {rejectIntentId !== selectedPending.id && selectedPending.reason && (
                   <p className="rounded-2xl bg-slate-50 p-3 text-sm leading-6 text-slate-700 dark:bg-slate-800 dark:text-slate-200"><span className="font-black">Ghi chú:</span> {selectedPending.reason}</p>
                 )}
+                {rejectIntentId !== selectedPending.id && <UnifiedShiftList shifts={selectedPending.shifts} removedShifts={selectedPending.removedShifts} restoredShifts={selectedPending.restoredShifts} registrationKind={selectedPending.staffRequestType === 'overtime' ? 'overtime' : 'registered'} />}
                 {rejectIntentId !== selectedPending.id && <details className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm dark:border-slate-700 dark:bg-slate-900">
-                  <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3.5 text-sm font-black"><span>Lịch & liên hệ</span><ChevronDown className="h-4 w-4 text-slate-400" /></summary>
+                  <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3.5 text-sm font-black"><span>Liên hệ nhân viên</span><ChevronDown className="h-4 w-4 text-slate-400" /></summary>
                   <div className="space-y-4 border-t border-slate-100 bg-slate-50/70 p-3 dark:border-slate-700 dark:bg-slate-800/40">
                     <div className="grid grid-cols-2 gap-2">
                       {selectedPending.employeePhone ? <a href={`tel:${selectedPending.employeePhone.replace(/\s/g, '')}`} className="flex min-h-11 items-center justify-center gap-2 rounded-2xl bg-white text-sm font-extrabold shadow-sm dark:bg-slate-900"><Phone className="h-4 w-4" /> Gọi điện</a> : <span className="flex min-h-11 items-center justify-center rounded-2xl bg-white text-xs font-bold text-slate-400 shadow-sm dark:bg-slate-900">Chưa có SĐT</span>}
                       {selectedPending.employeeFacebookURL ? <a href={selectedPending.employeeFacebookURL} target="_blank" rel="noreferrer" className="flex min-h-11 items-center justify-center gap-2 rounded-2xl bg-blue-600 text-sm font-extrabold text-white"><ExternalLink className="h-4 w-4" /> Facebook</a> : <span className="flex min-h-11 items-center justify-center rounded-2xl bg-slate-100 text-xs font-bold text-slate-400 dark:bg-slate-800">Chưa có Facebook</span>}
                     </div>
-                    <UnifiedShiftList shifts={selectedPending.shifts} removedShifts={selectedPending.removedShifts} registrationKind={selectedPending.staffRequestType === 'overtime' ? 'overtime' : 'registered'} />
                   </div>
                 </details>}
 
