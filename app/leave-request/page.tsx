@@ -52,7 +52,7 @@ export default function LeaveRequestPage() {
     }
 
     if (isPreviewMode) {
-      setRequests(mockLeaveRequests.slice(0, 5))
+      setRequests(mockLeaveRequests)
       updateApprovedShifts(getPreviewSchedules().filter((item) => item.employeeId === authUser.uid))
       return
     }
@@ -62,7 +62,7 @@ export default function LeaveRequestPage() {
     const handleError = () => setRequests([])
     const unsubscribeLeaves = subscribeToEmployeeLeaves(
       authUser.uid,
-      (data) => setRequests(data.slice(0, 5)),
+      setRequests,
       handleError
     )
     const unsubscribeSchedules = subscribeToEmployeeSchedules(
@@ -90,12 +90,34 @@ export default function LeaveRequestPage() {
     selectedShortShifts.map((item) => item.date.toLocaleDateString('vi-VN'))
   ).size
 
+  const requestedScheduleIds = useMemo(() => {
+    const ids = new Set<string>()
+    requests
+      .filter((request) => request.id !== editingId && ['Pending', 'AwaitingEmployeeConsent', 'Approved'].includes(request.status))
+      .forEach((request) => {
+        const storedIds = request.workScheduleIds || (request.workScheduleId ? [request.workScheduleId] : [])
+        storedIds.forEach((id: string) => ids.add(id))
+        if (request.duration !== 'long') return
+        const start = request.leaveDate?.toDate?.() || request.leaveDate
+        const end = request.endDate?.toDate?.() || request.endDate || start
+        if (!start || !end) return
+        const startKey = new Date(start).toISOString().slice(0, 10)
+        const endKey = new Date(end).toISOString().slice(0, 10)
+        approvedShifts.forEach((shift) => {
+          const key = shift.date.toISOString().slice(0, 10)
+          if (key >= startKey && key <= endKey) ids.add(shift.id)
+        })
+      })
+    return ids
+  }, [approvedShifts, editingId, requests])
+
   const openSchedulePicker = () => {
     setDraftScheduleIds(selectedScheduleIds)
     setSchedulePickerOpen(true)
   }
 
   const toggleDraftShift = (shift: ApprovedShift) => {
+    if (requestedScheduleIds.has(shift.id)) return
     setDraftScheduleIds((current) => {
       if (current.includes(shift.id)) return current.filter((id) => id !== shift.id)
       return [...current, shift.id]
@@ -294,7 +316,7 @@ export default function LeaveRequestPage() {
         <section className="mt-6">
           <h2 className="mb-3 text-lg font-extrabold">Yêu cầu gần đây</h2>
           <div className="space-y-3">
-            {requests.map((request, index) => {
+            {requests.slice(0, 5).map((request, index) => {
               const start = request.leaveDate?.toDate?.() || request.leaveDate || request.startDate
               const end = request.endDate?.toDate?.() || request.endDate
               return (
@@ -347,10 +369,12 @@ export default function LeaveRequestPage() {
                     <div className="mt-2 grid gap-2">
                       {shifts.map((shift) => {
                         const active = draftScheduleIds.includes(shift.id)
+                        const alreadyRequested = requestedScheduleIds.has(shift.id)
                         return (
-                          <button key={shift.id} type="button" onClick={() => toggleDraftShift(shift)} className={`flex min-h-12 items-center gap-3 rounded-xl px-3 text-left ${active ? 'bg-emerald-600 text-white' : 'bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-200'}`}>
-                            <span className={`grid h-6 w-6 place-items-center rounded-lg ${active ? 'bg-white/20' : 'bg-white dark:bg-slate-900'}`}>{active && <Check className="h-4 w-4" />}</span>
-                            <span className="font-bold">{shiftLabels[shift.shift]}</span>
+                          <button key={shift.id} type="button" disabled={alreadyRequested} onClick={() => toggleDraftShift(shift)} className={`flex min-h-12 items-center gap-3 rounded-xl border px-3 text-left ${alreadyRequested ? 'border-rose-300 bg-rose-50 text-rose-700 dark:border-rose-500/40 dark:bg-rose-500/10 dark:text-rose-200' : active ? 'border-emerald-600 bg-emerald-600 text-white' : 'border-transparent bg-slate-100 text-slate-700 dark:bg-slate-800 dark:text-slate-200'}`}>
+                            <span className={`grid h-6 w-6 shrink-0 place-items-center rounded-lg ${alreadyRequested ? 'bg-rose-100 text-rose-600 dark:bg-rose-500/20 dark:text-rose-200' : active ? 'bg-white/20' : 'bg-white dark:bg-slate-900'}`}>{(active || alreadyRequested) && <Check className="h-4 w-4" />}</span>
+                            <span className="min-w-0 flex-1 font-bold">{shiftLabels[shift.shift]}</span>
+                            {alreadyRequested && <span className="shrink-0 rounded-full bg-rose-100 px-2.5 py-1 text-[11px] font-black text-rose-700 dark:bg-rose-500/20 dark:text-rose-100">Đã xin nghỉ</span>}
                           </button>
                         )
                       })}
