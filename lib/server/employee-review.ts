@@ -151,16 +151,17 @@ function assessment(weeks: EmployeeReviewWeek[], minimum: number): {
 } {
   const historicalWeeks = weeks.slice(0, -1)
   const observed = historicalWeeks.filter((week) => week.source !== 'none')
+  const weeksWithSchedule = weeks.filter((week) => week.scheduledShifts > 0).length
   const eligible = observed.filter((week) =>
     !week.hasLongLeave && (week.scheduledShifts > 0 || week.approvedLeaveRequests > 0)
   )
   const underMinimum = eligible.filter((week) => week.scheduledShifts < minimum)
-  const leaveRequests = historicalWeeks.reduce((total, week) => total + week.approvedLeaveRequests, 0)
-  const lateRequests = historicalWeeks.reduce((total, week) => total + week.lateRequests, 0)
-  const shortNoticeEvents = historicalWeeks.reduce((total, week) => total + week.shortNoticeEvents, 0)
-  const longLeaveWeeks = historicalWeeks.filter((week) => week.hasLongLeave).length
+  const leaveRequests = weeks.reduce((total, week) => total + week.approvedLeaveRequests, 0)
+  const lateRequests = weeks.reduce((total, week) => total + week.lateRequests, 0)
+  const shortNoticeEvents = weeks.reduce((total, week) => total + week.shortNoticeEvents, 0)
+  const longLeaveWeeks = weeks.filter((week) => week.hasLongLeave).length
   const facts = [
-    `${eligible.length}/4 tuần có lịch · ${underMinimum.length} tuần dưới ${minimum} ca.`,
+    `${weeksWithSchedule}/4 tuần có lịch · ${underMinimum.length} tuần trước dưới ${minimum} ca.`,
     `${leaveRequests} nghỉ · ${lateRequests} báo trễ · ${shortNoticeEvents} báo sát hạn${longLeaveWeeks ? ` · ${longLeaveWeeks} tuần nghỉ dài hạn` : ''}.`,
   ]
 

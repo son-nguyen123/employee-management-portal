@@ -355,7 +355,7 @@ export function subscribeToManagementPendingItems(
         referenceDate: asDate(data.leaveDate, asDate(data.updatedAt || data.createdAt)),
         targetIds: [id],
         warning: data.underMinimumWarning === true
-          ? `Sau yêu cầu nghỉ, tuần này nhân viên còn ${Number(data.weeklyShiftCountAfterLeave || 0)}/6 ca.`
+          ? `Nếu duyệt nghỉ: tuần này còn ${Number(data.weeklyShiftCountAfterLeave || 0)}/6 ca.`
           : data.noticeClass === 'late' ? 'Yêu cầu được gửi sau 16:00 của ngày hôm trước.' : undefined,
         underMinimumWarning: data.underMinimumWarning === true,
         penaltyIfApproved: Number(data.penaltyIfApproved || 0),
