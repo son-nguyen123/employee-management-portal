@@ -11,6 +11,7 @@ export async function submitStaffRequest(input: {
   weekStart?: Date
   shifts?: Array<{ date: Date; shift: StaffRequestShift['shift'] }>
   removedShifts?: Array<{ scheduleId: string; date: Date; shift: StaffRequestShift['shift'] }>
+  restoredShifts?: Array<{ scheduleId: string; date: Date; shift: StaffRequestShift['shift'] }>
 }): Promise<{ id: string }> {
   return callWorkflowApi('submitStaffRequest', {
     requestId: newWorkflowRequestId(),
@@ -19,6 +20,11 @@ export async function submitStaffRequest(input: {
     weekStart: input.weekStart?.toISOString(),
     shifts: input.shifts?.map((item) => ({ date: item.date.toISOString(), shift: item.shift })),
     removedShifts: input.removedShifts?.map((item) => ({
+      scheduleId: item.scheduleId,
+      date: item.date.toISOString(),
+      shift: item.shift,
+    })),
+    restoredShifts: input.restoredShifts?.map((item) => ({
       scheduleId: item.scheduleId,
       date: item.date.toISOString(),
       shift: item.shift,

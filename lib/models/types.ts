@@ -40,6 +40,10 @@ export interface WorkSchedule {
   reviewNote?: string
   reviewedBy?: string
   reviewedAt?: Timestamp | Date
+  cancellationReason?: string
+  cancelledByLeaveRequestId?: string
+  cancelledBy?: string
+  cancelledAt?: Timestamp | Date
   lockedAt?: Timestamp | Date | null
   batchKey?: string
   editPreviousStatus?: ScheduleStatus
@@ -68,6 +72,7 @@ export interface StaffRequest {
   weekStart?: Timestamp | Date
   shifts?: StaffRequestShift[]
   removedShifts?: Array<StaffRequestShift & { scheduleId: string }>
+  restoredShifts?: Array<StaffRequestShift & { scheduleId: string; leaveRequestId?: string }>
   status: StaffRequestStatus
   reviewNote?: string
   reviewedBy?: string

@@ -18,6 +18,7 @@ export interface DecisionHistoryItem {
   reason?: string
   shifts?: Array<{ date: Date; shift: 'Morning' | 'Afternoon' | 'Evening' }>
   removedShifts?: Array<{ date: Date; shift: 'Morning' | 'Afternoon' | 'Evening'; scheduleId?: string }>
+  restoredShifts?: Array<{ date: Date; shift: 'Morning' | 'Afternoon' | 'Evening'; scheduleId?: string }>
 }
 
 type SnapshotRow = Record<string, unknown> & { id: string }
@@ -120,6 +121,7 @@ function buildRows(data: Record<DecisionResource, SnapshotRow[]>): DecisionHisto
     reason: String(item.content || ''),
     shifts: decisionShifts(item.shifts),
     removedShifts: decisionShifts(item.removedShifts, true),
+    restoredShifts: decisionShifts(item.restoredShifts, true),
   }))
 
   const scheduleGroups = new Map<string, SnapshotRow[]>()

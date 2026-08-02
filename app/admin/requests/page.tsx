@@ -28,6 +28,7 @@ type RequestRow = {
   status: string
   shifts?: StaffRequest['shifts']
   removedShifts?: StaffRequest['removedShifts']
+  restoredShifts?: StaffRequest['restoredShifts']
   workScheduleIds?: string[]
   penaltyIfApproved?: number
   penaltyIfRejected?: number
@@ -83,13 +84,14 @@ function buildRequestRows(
       employeeName: employeeNames.get(item.employeeId) || fallbackName,
       title: item.type === 'scheduleChange' ? 'Yêu cầu đổi / thêm ca' : item.type === 'overtime' ? 'Yêu cầu làm thêm' : 'Ghi chú từ nhân viên',
       detail: item.type === 'scheduleChange'
-        ? `${item.removedShifts?.length || 0} ca xin hủy · ${item.shifts?.length || 0} ca mới / ca thêm${item.content ? ` · ${item.content}` : ''}`
+        ? `${item.removedShifts?.length || 0} ca xin hủy · ${item.restoredShifts?.length || 0} ca đi làm lại · ${item.shifts?.length || 0} ca mới / ca thêm${item.content ? ` · ${item.content}` : ''}`
         : item.type === 'overtime'
         ? `${item.shifts?.length || 0} ca muốn làm thêm${item.content ? ` · ${item.content}` : ''}`
         : item.content,
       status: item.status,
       shifts: item.shifts,
       removedShifts: item.removedShifts,
+      restoredShifts: item.restoredShifts,
     })),
   ].filter((item) => item.status === 'Pending')
 }
@@ -534,6 +536,16 @@ export default function AdminRequestsPage() {
                         <div className="mt-2.5 space-y-1.5 rounded-2xl border border-rose-100 bg-rose-50/80 p-3 text-xs text-rose-950 dark:border-rose-500/20 dark:bg-rose-500/10 dark:text-rose-100">
                           <p className="font-extrabold">Ca xin hủy</p>
                           {row.removedShifts.map((item, index) => {
+                            const date = item.date instanceof Date ? item.date : item.date.toDate()
+                            const shiftLabel = item.shift === 'Morning' ? 'Ca sáng' : item.shift === 'Afternoon' ? 'Ca chiều' : 'Ca tối'
+                            return <p key={`${item.scheduleId}-${index}`}><strong>{date.toLocaleDateString('vi-VN', { weekday: 'long', day: '2-digit', month: '2-digit' })}</strong> · {shiftLabel}</p>
+                          })}
+                        </div>
+                      )}
+                      {!!row.restoredShifts?.length && (
+                        <div className="mt-2.5 space-y-1.5 rounded-2xl border border-emerald-100 bg-emerald-50/80 p-3 text-xs text-emerald-950 dark:border-emerald-500/20 dark:bg-emerald-500/10 dark:text-emerald-100">
+                          <p className="font-extrabold">Ca xin đi làm lại</p>
+                          {row.restoredShifts.map((item, index) => {
                             const date = item.date instanceof Date ? item.date : item.date.toDate()
                             const shiftLabel = item.shift === 'Morning' ? 'Ca sáng' : item.shift === 'Afternoon' ? 'Ca chiều' : 'Ca tối'
                             return <p key={`${item.scheduleId}-${index}`}><strong>{date.toLocaleDateString('vi-VN', { weekday: 'long', day: '2-digit', month: '2-digit' })}</strong> · {shiftLabel}</p>

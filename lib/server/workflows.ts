@@ -321,7 +321,7 @@ export async function respondPenaltyConsent(actor: RequestActor, raw: unknown) {
         affectedSchedules.docs.forEach((snapshot) => {
           const date = (snapshot.get('date') as Timestamp).toDate()
           if (snapshot.get('status') === 'Approved' && vietnamDateKey(date) >= vietnamDateKey(start) && vietnamDateKey(date) <= vietnamDateKey(end)) {
-            transaction.set(snapshot.ref, { status: 'Cancelled', cancellationReason: `Tự động hủy do nghỉ dài hạn được duyệt (${id}).`, cancelledBy: actor.uid, cancelledAt: now, lockedAt: null, updatedAt: now }, { merge: true })
+            transaction.set(snapshot.ref, { status: 'Cancelled', cancellationReason: `Tự động hủy do nghỉ dài hạn được duyệt (${id}).`, cancelledByLeaveRequestId: id, cancelledBy: actor.uid, cancelledAt: now, lockedAt: null, updatedAt: now }, { merge: true })
           }
         })
       }
@@ -704,6 +704,7 @@ export async function submitStaffRequest(actor: RequestActor, raw: unknown) {
   let weekStart: Date | null = null
   let requestedShifts: Array<{ date: Date; shift: Shift }> = []
   let removedShifts: Array<{ scheduleId: string; date: Date; shift: Shift }> = []
+  let restoredShifts: Array<{ scheduleId: string; date: Date; shift: Shift }> = []
   let shouldPenalizeSameDayChange = false
 
   if (type === 'overtime' || type === 'scheduleChange') {
@@ -732,13 +733,24 @@ export async function submitStaffRequest(actor: RequestActor, raw: unknown) {
         if (!shifts.includes(shift as Shift)) throw new ApiError(400, `Ca hủy ${index + 1} không hợp lệ.`)
         return { scheduleId, date, shift: shift as Shift }
       })
-      if (!requestedShifts.length && !removedShifts.length) {
+      if (!Array.isArray(body.restoredShifts) || body.restoredShifts.length > 21) {
+        throw new ApiError(400, 'Danh sách ca xin đi làm lại không hợp lệ.')
+      }
+      restoredShifts = body.restoredShifts.map((item, index) => {
+        const row = objectBody(item)
+        const scheduleId = text(row.scheduleId, `Mã ca đi làm lại ${index + 1}`, 128)
+        const date = dateValue(row.date, `Ngày ca đi làm lại ${index + 1}`)
+        const shift = row.shift
+        if (!shifts.includes(shift as Shift)) throw new ApiError(400, `Ca đi làm lại ${index + 1} không hợp lệ.`)
+        return { scheduleId, date, shift: shift as Shift }
+      })
+      if (!requestedShifts.length && !removedShifts.length && !restoredShifts.length) {
         throw new ApiError(400, 'Vui lòng chọn ít nhất một ca cần đổi, hủy hoặc đăng ký thêm.')
       }
-      if (removedShifts.length && !requestedShifts.length) {
+      if (removedShifts.length && !requestedShifts.length && !restoredShifts.length) {
         throw new ApiError(400, 'Khi xin hủy ca cũ, bạn phải chọn ít nhất một ca mới để thay thế.')
       }
-      if ([...requestedShifts, ...removedShifts].some((item) =>
+      if ([...requestedShifts, ...removedShifts, ...restoredShifts].some((item) =>
         vietnamDateKey(item.date) < vietnamDateKey(new Date())
       )) {
         throw new ApiError(400, 'Không thể đổi hoặc đăng ký thêm cho ngày đã qua.')
@@ -747,9 +759,9 @@ export async function submitStaffRequest(actor: RequestActor, raw: unknown) {
         vietnamDateKey(item.date) === vietnamDateKey(new Date())
       )
     }
-    const firstRequestDate = (requestedShifts[0]?.date || removedShifts[0]?.date)!
+    const firstRequestDate = (requestedShifts[0]?.date || removedShifts[0]?.date || restoredShifts[0]?.date)!
     weekStart = mondayFor(firstRequestDate)
-    if ([...requestedShifts, ...removedShifts].some((item) => mondayFor(item.date).getTime() !== weekStart!.getTime())) {
+    if ([...requestedShifts, ...removedShifts, ...restoredShifts].some((item) => mondayFor(item.date).getTime() !== weekStart!.getTime())) {
       throw new ApiError(400, 'Các ca làm thêm phải thuộc cùng một tuần.')
     }
     const [existing, existingStaffRequests] = await Promise.all([
@@ -765,6 +777,17 @@ export async function submitStaffRequest(actor: RequestActor, raw: unknown) {
         schedule.shift === removed.shift
     }))) {
       throw new ApiError(409, 'Một ca xin hủy không còn đúng với lịch đã duyệt. Vui lòng tải lại lịch.')
+    }
+    if (restoredShifts.some((restored) => !existing.docs.some((snapshot) => {
+      const schedule = snapshot.data()
+      const reason = String(schedule.cancellationReason || '')
+      return snapshot.id === restored.scheduleId &&
+        schedule.status === 'Cancelled' &&
+        (Boolean(schedule.cancelledByLeaveRequestId) || /ngh[ỉi]|leave/i.test(reason)) &&
+        (schedule.date as Timestamp).toDate().toISOString().slice(0, 10) === restored.date.toISOString().slice(0, 10) &&
+        schedule.shift === restored.shift
+    }))) {
+      throw new ApiError(409, 'Một ca xin đi làm lại không còn là ca nghỉ hợp lệ. Vui lòng tải lại lịch.')
     }
     const duplicated = requestedShifts.some((requested) => existing.docs.some((snapshot) => {
       const schedule = snapshot.data()
@@ -794,6 +817,13 @@ export async function submitStaffRequest(actor: RequestActor, raw: unknown) {
       } : {}),
       ...(removedShifts.length ? {
         removedShifts: removedShifts.map((item) => ({
+          scheduleId: item.scheduleId,
+          date: Timestamp.fromDate(item.date),
+          shift: item.shift,
+        })),
+      } : {}),
+      ...(restoredShifts.length ? {
+        restoredShifts: restoredShifts.map((item) => ({
           scheduleId: item.scheduleId,
           date: Timestamp.fromDate(item.date),
           shift: item.shift,
@@ -837,7 +867,7 @@ export async function submitStaffRequest(actor: RequestActor, raw: unknown) {
         managerNotification(
           managerId,
           type === 'scheduleChange' ? 'Yêu cầu đổi / thêm ca chờ xử lý' : type === 'overtime' ? 'Yêu cầu làm thêm chờ xử lý' : 'Ghi chú mới từ nhân viên',
-          type === 'scheduleChange' ? 'Một nhân viên vừa gửi các ca xin hủy và ca mới / ca thêm.' : type === 'overtime' ? 'Một nhân viên vừa gửi các ca muốn làm thêm.' : 'Một nhân viên vừa gửi ghi chú cho quản lý.'
+          type === 'scheduleChange' ? 'Một nhân viên vừa gửi ca xin hủy, ca xin đi làm lại và ca mới / ca thêm.' : type === 'overtime' ? 'Một nhân viên vừa gửi các ca muốn làm thêm.' : 'Một nhân viên vừa gửi ghi chú cho quản lý.'
         )
       )
     })
@@ -853,7 +883,7 @@ export async function submitStaffRequest(actor: RequestActor, raw: unknown) {
     managerIds,
     sourceKey: `staff-${requestRef.id}`,
     title: type === 'scheduleChange' ? 'Yêu cầu đổi / thêm ca chờ xử lý' : type === 'overtime' ? 'Yêu cầu làm thêm chờ xử lý' : 'Ghi chú mới từ nhân viên',
-    body: type === 'scheduleChange' ? 'Một nhân viên vừa gửi các ca xin hủy và ca mới / ca thêm.' : type === 'overtime' ? 'Một nhân viên vừa gửi các ca muốn làm thêm.' : 'Một nhân viên vừa gửi ghi chú cho quản lý.',
+    body: type === 'scheduleChange' ? 'Một nhân viên vừa gửi ca xin hủy, ca xin đi làm lại và ca mới / ca thêm.' : type === 'overtime' ? 'Một nhân viên vừa gửi các ca muốn làm thêm.' : 'Một nhân viên vừa gửi ghi chú cho quản lý.',
     link: '/notifications',
     source: 'staffRequests',
     sourceId: requestRef.id,
@@ -2073,6 +2103,7 @@ export async function reviewRequest(actor: RequestActor, raw: unknown) {
           transaction.set(snapshot.ref, {
             status: 'Cancelled',
             cancellationReason: `Tự động hủy do nghỉ dài hạn được duyệt (${id}).`,
+            cancelledByLeaveRequestId: id,
             cancelledBy: actor.uid,
             cancelledAt: now,
             lockedAt: null,
@@ -2085,6 +2116,9 @@ export async function reviewRequest(actor: RequestActor, raw: unknown) {
       const removedItems = data.type === 'scheduleChange' && Array.isArray(data.removedShifts)
         ? data.removedShifts as Array<{ scheduleId: string; date: Timestamp; shift: Shift }>
         : []
+      const restoredItems = data.type === 'scheduleChange' && Array.isArray(data.restoredShifts)
+        ? data.restoredShifts as Array<{ scheduleId: string; date: Timestamp; shift: Shift }>
+        : []
       const removedRefs = removedItems
         .filter((item) => typeof item?.scheduleId === 'string')
         .map((item) => adminDb.collection('workSchedules').doc(item.scheduleId))
@@ -2092,6 +2126,22 @@ export async function reviewRequest(actor: RequestActor, raw: unknown) {
       removedSnapshots.forEach((snapshot, index) => {
         if (!snapshot.exists || snapshot.get('employeeId') !== employeeId || snapshot.get('status') !== 'Approved') {
           throw new ApiError(409, 'Một ca xin hủy đã thay đổi. Vui lòng từ chối yêu cầu và bảo nhân viên tải lại lịch.')
+        }
+      })
+      const restoredRefs = restoredItems
+        .filter((item) => typeof item?.scheduleId === 'string')
+        .map((item) => adminDb.collection('workSchedules').doc(item.scheduleId))
+      const restoredSnapshots = await Promise.all(restoredRefs.map((ref) => transaction.get(ref)))
+      restoredSnapshots.forEach((snapshot, index) => {
+        const item = restoredItems[index]
+        const reason = String(snapshot.get('cancellationReason') || '')
+        const scheduleDate = snapshot.exists && snapshot.get('date') instanceof Timestamp
+          ? (snapshot.get('date') as Timestamp).toDate().toISOString().slice(0, 10)
+          : ''
+        if (!snapshot.exists || snapshot.get('employeeId') !== employeeId || snapshot.get('status') !== 'Cancelled' ||
+          (!snapshot.get('cancelledByLeaveRequestId') && !/ngh[ỉi]|leave/i.test(reason)) ||
+          !(item?.date instanceof Timestamp) || scheduleDate !== item.date.toDate().toISOString().slice(0, 10) || snapshot.get('shift') !== item.shift) {
+          throw new ApiError(409, 'Một ca xin đi làm lại không còn là ca nghỉ hợp lệ. Vui lòng tải lại lịch.')
         }
       })
       const currentSchedules = await transaction.get(
@@ -2104,12 +2154,30 @@ export async function reviewRequest(actor: RequestActor, raw: unknown) {
         reviewedAt: now,
         updatedAt: now,
       }, { merge: true }))
+      restoredRefs.forEach((ref) => transaction.set(ref, {
+        status: 'Approved',
+        cancellationReason: FieldValue.delete(),
+        cancelledByLeaveRequestId: FieldValue.delete(),
+        cancelledBy: FieldValue.delete(),
+        cancelledAt: FieldValue.delete(),
+        lockedAt: now,
+        restoredFromLeave: true,
+        reviewedBy: actor.uid,
+        reviewedAt: now,
+        updatedAt: now,
+      }, { merge: true }))
       const existingKeys = new Set(currentSchedules.docs
         .filter((snapshot) => snapshot.get('status') !== 'Cancelled' && !removedRefs.some((ref) => ref.id === snapshot.id))
         .map((snapshot) => {
           const schedule = snapshot.data()
           return `${(schedule.date as Timestamp).toDate().toISOString().slice(0, 10)}-${schedule.shift}`
         }))
+      restoredSnapshots.forEach((snapshot) => {
+        if (!snapshot.exists) return
+        const schedule = snapshot.data()
+        if (!schedule?.date) return
+        existingKeys.add(`${(schedule.date as Timestamp).toDate().toISOString().slice(0, 10)}-${schedule.shift}`)
+      })
       const overtimeShifts = (Array.isArray(data.shifts) ? data.shifts : [] as Array<{ date: Timestamp; shift: Shift }>).filter((item: { date: Timestamp; shift: Shift }) =>
         item?.date instanceof Timestamp && shifts.includes(item.shift)
       )

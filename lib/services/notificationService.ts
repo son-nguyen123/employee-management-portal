@@ -47,6 +47,7 @@ export interface ManagementPendingItem {
   staffRequestType?: StaffRequestType
   shifts?: ManagementShift[]
   removedShifts?: ManagementShift[]
+  restoredShifts?: ManagementShift[]
   warning?: string
   underMinimumWarning?: boolean
   penaltyIfApproved?: number
@@ -425,13 +426,14 @@ export function subscribeToManagementPendingItems(
         : 'note'
       const shifts = asShiftList(data.shifts)
       const removedShifts = asShiftList(data.removedShifts, true)
+      const restoredShifts = asShiftList(data.restoredShifts, true)
       const title = requestType === 'overtime'
         ? 'Yêu cầu làm thêm'
         : requestType === 'scheduleChange'
           ? 'Yêu cầu đổi / thêm ca'
           : 'Ghi chú từ nhân viên'
       const detail = requestType === 'scheduleChange'
-        ? `${removedShifts.length} ca muốn hủy · ${shifts.length} ca muốn thêm`
+        ? `${removedShifts.length} ca muốn hủy · ${restoredShifts.length} ca xin đi làm lại · ${shifts.length} ca muốn thêm`
         : requestType === 'overtime'
           ? `${shifts.length} ca muốn làm thêm`
           : 'Nội dung cần quản lý xem xét'
@@ -448,11 +450,12 @@ export function subscribeToManagementPendingItems(
         detail,
         reason: typeof data.content === 'string' && data.content.trim() ? data.content : undefined,
         createdAt: asDate(data.updatedAt || data.createdAt),
-        referenceDate: shifts[0]?.date || removedShifts[0]?.date || asDate(data.weekStart || data.updatedAt || data.createdAt),
+        referenceDate: shifts[0]?.date || restoredShifts[0]?.date || removedShifts[0]?.date || asDate(data.weekStart || data.updatedAt || data.createdAt),
         targetIds: [id],
         staffRequestType: requestType,
         shifts,
         removedShifts,
+        restoredShifts,
       })
     })
 

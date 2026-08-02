@@ -115,7 +115,8 @@ export default function SchedulePage() {
   const [changeMode, setChangeMode] = useState(false)
   const [currentWeekMode, setCurrentWeekMode] = useState(false)
   const [originalScheduleIds, setOriginalScheduleIds] = useState<Record<string, string>>({})
-  const [submittedChangeSummary, setSubmittedChangeSummary] = useState<{ removed: string[]; added: string[] } | null>(null)
+  const [returnableLeaveShifts, setReturnableLeaveShifts] = useState<Record<string, string>>({})
+  const [submittedChangeSummary, setSubmittedChangeSummary] = useState<{ removed: string[]; added: string[]; restored: string[] } | null>(null)
   const [editBaseline, setEditBaseline] = useState<EditBaseline | null>(null)
   const [hasExistingSchedules, setHasExistingSchedules] = useState<boolean | null>(null)
   const [referenceNow] = useState(() => Date.now())
@@ -294,10 +295,17 @@ export default function SchedulePage() {
           ? item.status === 'Approved'
           : ['Pending', 'Registered', 'ChangesRequested', 'Rejected', 'Approved', 'Editing'].includes(item.status)
         )
-        if (current.length) {
+        const returnable = changeMode
+          ? schedules.filter((item) => item.status === 'Cancelled' && (
+            Boolean((item as WorkSchedule & { cancelledByLeaveRequestId?: string }).cancelledByLeaveRequestId) || /ngh[ỉi]|leave/i.test(item.cancellationReason || '')
+          ))
+          : []
+        const available = [...current, ...returnable]
+        if (available.length) {
           const hydrated: Selection = {}
           const custom: Record<string, CustomShift> = {}
           const scheduleIds: Record<string, string> = {}
+          const restorableIds: Record<string, string> = {}
           let loadedDuty: string | null = null
           let loadedWeekNote = ''
           current.forEach((item) => {
@@ -316,10 +324,15 @@ export default function SchedulePage() {
               custom[key] = { start: customMatch[1], end: customMatch[2], note: '', request: '' }
             }
           })
+          returnable.forEach((item) => {
+            const key = localDateKey(scheduleDate(item.date))
+            if (item.id) restorableIds[`${key}-${item.shift}`] = item.id
+          })
           setWeekNote(overtimeMode || changeMode ? '' : loadedWeekNote)
           setSelected(hydrated)
           setOriginal(cloneSelection(hydrated))
           setOriginalScheduleIds(scheduleIds)
+          setReturnableLeaveShifts(restorableIds)
           setCustomData(custom)
           setDutyDay(loadedDuty)
           setEditBaseline({
@@ -328,10 +341,10 @@ export default function SchedulePage() {
             dutyDay: loadedDuty,
             weekNote: loadedWeekNote,
           })
-          setSubmittedIds(current.map((item) => item.id!).filter(Boolean))
-          setSubmittedStatus(current[0].status)
+          setSubmittedIds(available.map((item) => item.id!).filter(Boolean))
+          setSubmittedStatus(current[0]?.status || 'Approved')
           setRequiresReapproval(current.some((item) => item.requiresReapproval))
-          if (current[0].status === 'Editing') {
+          if (current[0]?.status === 'Editing') {
             setEditingOriginStatus(current[0].editPreviousStatus || 'Pending')
             setEditing(true)
           } else {
@@ -343,6 +356,7 @@ export default function SchedulePage() {
           setSelected({})
           setOriginal({})
           setOriginalScheduleIds({})
+          setReturnableLeaveShifts({})
           setCustomData({})
           setDutyDay(null)
           setEditBaseline(null)
@@ -470,9 +484,18 @@ export default function SchedulePage() {
   const submitSchedule = async (confirmed = false) => {
     if (!authUser) return
     if (overtimeMode || changeMode) {
+      const restoredShifts = Object.entries(selected).flatMap(([dayKey, selectedShifts]) =>
+        selectedShifts
+          .filter((shift): shift is Exclude<Shift, 'Custom'> => shift !== 'Custom' && Boolean(returnableLeaveShifts[`${dayKey}-${shift}`]))
+          .map((shift) => ({
+            scheduleId: returnableLeaveShifts[`${dayKey}-${shift}`],
+            date: new Date(`${dayKey}T12:00:00`),
+            shift,
+          }))
+      )
       const requestedShifts = Object.entries(selected).flatMap(([dayKey, selectedShifts]) =>
         selectedShifts
-          .filter((shift): shift is Exclude<Shift, 'Custom'> => shift !== 'Custom' && !original[dayKey]?.includes(shift))
+          .filter((shift): shift is Exclude<Shift, 'Custom'> => shift !== 'Custom' && !original[dayKey]?.includes(shift) && !returnableLeaveShifts[`${dayKey}-${shift}`])
           .map((shift) => ({ date: new Date(`${dayKey}T12:00:00`), shift }))
       )
       const removedShifts = Object.entries(original).flatMap(([dayKey, originalShifts]) =>
@@ -485,11 +508,11 @@ export default function SchedulePage() {
           }))
           .filter((item) => Boolean(item.scheduleId))
       )
-      if (!requestedShifts.length && (!changeMode || !removedShifts.length)) {
+      if (!requestedShifts.length && !restoredShifts.length && (!changeMode || !removedShifts.length)) {
         setMessage(changeMode ? 'Vui lòng chọn ca cần hủy, đổi hoặc đăng ký thêm.' : 'Vui lòng chọn ít nhất một ca muốn làm thêm.')
         return
       }
-      if (changeMode && removedShifts.length && !requestedShifts.length) {
+      if (changeMode && removedShifts.length && !requestedShifts.length && !restoredShifts.length) {
         setMessage('Bạn đã xin hủy ca cũ nên phải chọn ít nhất một ca mới để thay thế.')
         return
       }
@@ -503,6 +526,7 @@ export default function SchedulePage() {
             weekStart: days[0].date,
             shifts: requestedShifts,
             removedShifts: changeMode ? removedShifts : undefined,
+            restoredShifts: changeMode ? restoredShifts : undefined,
           })
         }
         setSelected(cloneSelection(original))
@@ -516,10 +540,11 @@ export default function SchedulePage() {
           setSubmittedChangeSummary({
             removed: removedShifts.map(describe),
             added: requestedShifts.map(describe),
+            restored: restoredShifts.map(describe),
           })
         }
         setMessage(changeMode
-          ? `Đã gửi yêu cầu: ${removedShifts.length} ca xin hủy, ${requestedShifts.length} ca mới / ca thêm.`
+          ? `Đã gửi yêu cầu: ${removedShifts.length} ca xin hủy, ${restoredShifts.length} ca xin đi làm lại, ${requestedShifts.length} ca mới / ca thêm.`
           : `Đã gửi yêu cầu làm thêm gồm ${requestedShifts.length} ca cho quản lý.`)
         window.scrollTo({ top: 0, behavior: 'smooth' })
       } catch (error) {
@@ -680,7 +705,9 @@ export default function SchedulePage() {
   const customDay = days.find((day) => day.key === customFor)
   const selectedCount = Object.values(selected).reduce((total, shifts) => total + shifts.length, 0)
   const overtimeCount = Object.entries(selected).reduce((total, [dayKey, selectedShifts]) =>
-    total + selectedShifts.filter((shift) => !original[dayKey]?.includes(shift)).length, 0)
+    total + selectedShifts.filter((shift) => !original[dayKey]?.includes(shift) && !returnableLeaveShifts[`${dayKey}-${shift}`]).length, 0)
+  const restoredCount = Object.entries(selected).reduce((total, [dayKey, selectedShifts]) =>
+    total + selectedShifts.filter((shift) => Boolean(returnableLeaveShifts[`${dayKey}-${shift}`])).length, 0)
   const removedCount = Object.entries(original).reduce((total, [dayKey, originalShifts]) =>
     total + originalShifts.filter((shift) => !selected[dayKey]?.includes(shift)).length, 0)
   const missingDays = days.filter((day) => !selected[day.key]?.length && dutyDay !== day.key)
@@ -734,6 +761,10 @@ export default function SchedulePage() {
               <p className="font-extrabold">Ca mới / ca thêm</p>
               <p className="mt-1 leading-6">{submittedChangeSummary.added.length ? submittedChangeSummary.added.join(' · ') : 'Không có'}</p>
             </div>
+            <div className="rounded-2xl bg-emerald-50 p-3 text-sm text-emerald-900">
+              <p className="font-extrabold">Ca xin đi làm lại</p>
+              <p className="mt-1 leading-6">{submittedChangeSummary.restored.length ? submittedChangeSummary.restored.join(' · ') : 'Không có'}</p>
+            </div>
             <Badge variant="warning">Đang chờ quản lý xác nhận</Badge>
           </section>
         )}
@@ -745,6 +776,7 @@ export default function SchedulePage() {
             </summary>
             <div className="border-t border-slate-100 p-3 text-xs leading-5 dark:border-white/10">
               <div className="flex items-center gap-2"><span className="h-3 w-3 shrink-0 rounded-full bg-rose-600" /> Màu đỏ là ca đã duyệt{changeMode ? '; chạm lại để xin hủy.' : ', không thể thay đổi.'}</div>
+              {changeMode && <div className="mt-2 flex items-center gap-2"><span className="h-3 w-3 shrink-0 rounded-full bg-emerald-600" /> Ca đỏ nhạt là ca đã nghỉ; chạm để xin đi làm lại.</div>}
               <div className="mt-2 flex items-center gap-2"><span className="h-3 w-3 shrink-0 rounded-full bg-sky-600" /> Màu xanh là ca mới / ca thêm.</div>
               {changeMode && <p className="mt-3 rounded-xl bg-amber-50 p-2 font-semibold text-amber-800">Hủy ca của hôm nay bị phạt 1.000đ. Đổi từ ngày mai hoặc chỉ đăng ký thêm ca thì không bị phạt.</p>}
             </div>
@@ -862,8 +894,9 @@ export default function SchedulePage() {
             )}
 
             {changeMode && (
-              <div className="mb-4 grid grid-cols-2 gap-2 text-xs">
+              <div className="mb-4 grid grid-cols-3 gap-2 text-xs">
                 <div className="rounded-xl bg-rose-50 p-2 font-bold text-rose-700">Ca xin hủy: {removedCount}</div>
+                <div className="rounded-xl bg-emerald-50 p-2 font-bold text-emerald-700">Đi làm lại: {restoredCount}</div>
                 <div className="rounded-xl bg-sky-50 p-2 font-bold text-sky-700">Ca mới / ca thêm: {overtimeCount}</div>
               </div>
             )}
@@ -902,8 +935,11 @@ export default function SchedulePage() {
                       const isPastDay = changeMode && day.date < today
                       const active = selected[day.key]?.includes(shift.value)
                       const requestedLeave = leaveMarks[day.key]?.fullDay || leaveMarks[day.key]?.shifts.includes(shift.value)
+                      const returnable = changeMode && Boolean(returnableLeaveShifts[`${day.key}-${shift.value}`])
                       const wasSaved = (editing || overtimeMode || changeMode) && original[day.key]?.includes(shift.value)
-                      const activeClass = wasSaved
+                      const activeClass = returnable
+                        ? 'border-emerald-600 bg-emerald-600 text-white shadow-lg shadow-emerald-600/20'
+                        : wasSaved
                         ? overtimeMode || changeMode
                           ? 'border-rose-600 bg-rose-600 text-white shadow-lg shadow-rose-600/20'
                           : 'border-pink-500 bg-pink-500 text-white shadow-lg shadow-pink-500/20'
@@ -915,10 +951,10 @@ export default function SchedulePage() {
                           onClick={() => chooseShift(day.key, shift.value)}
                           disabled={(overtimeMode && (wasSaved || !submittedIds.length)) || (changeMode && (!submittedIds.length || isPastDay))}
                           className={`min-h-[58px] rounded-2xl border px-3 text-left transition active:scale-[0.98] ${
-                            active ? activeClass : requestedLeave ? 'border-rose-400 bg-rose-50 text-rose-700 dark:border-rose-500/50 dark:bg-rose-500/10 dark:text-rose-200' : 'border-slate-200 bg-slate-50 dark:border-slate-700 dark:bg-slate-800'
+                            active ? activeClass : returnable ? 'border-rose-400 bg-rose-50 text-rose-700 dark:border-rose-500/50 dark:bg-rose-500/10 dark:text-rose-200' : requestedLeave ? 'border-rose-400 bg-rose-50 text-rose-700 dark:border-rose-500/50 dark:bg-rose-500/10 dark:text-rose-200' : 'border-slate-200 bg-slate-50 dark:border-slate-700 dark:bg-slate-800'
                           } disabled:cursor-not-allowed disabled:active:scale-100`}
                         >
-                          <span className="flex items-center justify-between text-sm font-bold">{shift.label}{active ? <Check className="h-4 w-4" /> : requestedLeave ? <span className="text-[10px]">{leaveMarks[day.key].status === 'Approved' ? 'Đã duyệt nghỉ' : 'Đang chờ duyệt'}</span> : null}</span>
+                          <span className="flex items-center justify-between text-sm font-bold">{shift.label}{active ? <Check className="h-4 w-4" /> : returnable ? <span className="text-[10px]">Đã nghỉ · chạm để đi làm lại</span> : requestedLeave ? <span className="text-[10px]">{leaveMarks[day.key].status === 'Approved' ? 'Đã duyệt nghỉ' : 'Đang chờ duyệt'}</span> : null}</span>
                           <span className={`mt-0.5 block text-[11px] ${active ? 'text-white/80' : 'text-muted-foreground'}`}>
                             {shift.value === 'Custom' && customData[day.key]
                               ? `${customData[day.key].start}–${customData[day.key].end}`
@@ -947,7 +983,7 @@ export default function SchedulePage() {
             <button type="button" onClick={overtimeMode || changeMode ? () => { setSelected(cloneSelection(original)); setWeekNote('') } : editing ? () => void cancelEditing() : saveDraft} disabled={submitting} className="flex min-h-12 items-center justify-center gap-2 rounded-2xl border border-slate-200 font-bold disabled:opacity-60 dark:border-slate-700">
               {overtimeMode || changeMode || editing ? <RotateCcw className="h-4 w-4" /> : <Save className="h-4 w-4" />} {overtimeMode || changeMode ? 'Chọn lại' : editing ? 'Hủy sửa' : 'Lưu nháp'}
             </button>
-            <button type="button" onClick={() => void submitSchedule()} disabled={submitting || ((overtimeMode || changeMode) && ((!overtimeCount && !removedCount) || (changeMode && removedCount > 0 && !overtimeCount) || !submittedIds.length))} className="mobile-primary-button disabled:opacity-50">
+            <button type="button" onClick={() => void submitSchedule()} disabled={submitting || ((overtimeMode || changeMode) && ((!overtimeCount && !removedCount && !restoredCount) || (changeMode && removedCount > 0 && !overtimeCount && !restoredCount) || !submittedIds.length))} className="mobile-primary-button disabled:opacity-50">
               {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : overtimeMode || changeMode ? <CalendarPlus className="h-4 w-4" /> : <Send className="h-4 w-4" />}
               {submitting ? 'Đang gửi...' : changeMode ? 'Gửi yêu cầu' : overtimeMode ? `Gửi ${overtimeCount} ca` : editing ? 'Gửi điều chỉnh' : 'Gửi lịch'}
             </button>
