@@ -244,7 +244,7 @@ export async function sendTestPush(actor: RequestActor, raw: unknown) {
     updatedAt: FieldValue.serverTimestamp(),
   }, { merge: true })
 
-  await new Promise((resolve) => setTimeout(resolve, 6000))
+  await new Promise((resolve) => setTimeout(resolve, 2000))
   return sendEmployeePush({
     employeeId: actor.uid,
     dispatchId,

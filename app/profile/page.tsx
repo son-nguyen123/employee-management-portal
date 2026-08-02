@@ -214,7 +214,7 @@ export default function ProfilePage() {
   const handleSendTestPush = async () => {
     if (!authUser || isPreviewMode || !isRegistered) return
     setIsTesting(true)
-    setMessage('Đã bắt đầu kiểm tra. Hãy khóa màn hình iPhone ngay; Push sẽ được gửi sau 6 giây.')
+    setMessage('Đã bắt đầu kiểm tra. Hãy khóa màn hình iPhone ngay; Push sẽ được gửi sau 2 giây.')
     try {
       const fid = await getCurrentPushDeviceId()
       const result = await callWorkflowApi<PushTestResult>('sendTestPush', {
@@ -404,7 +404,7 @@ export default function ProfilePage() {
                 className="flex min-h-12 w-full items-center justify-center gap-2 rounded-2xl bg-indigo-600 px-4 text-sm font-extrabold text-white transition hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-60"
               >
                 {isTesting ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-                {isTesting ? 'Đang chờ 6 giây và gửi…' : 'Gửi thử rồi khóa màn hình'}
+                {isTesting ? 'Đang chờ 2 giây và gửi…' : 'Gửi thử rồi khóa màn hình'}
               </button>
               <button
                 type="button"
@@ -416,7 +416,7 @@ export default function ProfilePage() {
                 {isRepairing ? 'Đang tạo lại kết nối…' : 'Sửa đăng ký thiết bị'}
               </button>
               <p className="px-2 text-center text-[11px] leading-5 text-muted-foreground">
-                Nút gửi thử chờ 6 giây để bạn khóa màn hình. “FCM đã chấp nhận” xác nhận đường gửi tới thiết bị, nhưng iOS vẫn quyết định cách hiển thị cuối cùng.
+                Nút gửi thử chờ 2 giây để bạn khóa màn hình. “FCM đã chấp nhận” xác nhận đường gửi tới thiết bị, nhưng iOS vẫn quyết định cách hiển thị cuối cùng.
               </p>
             </div>
           ) : (
