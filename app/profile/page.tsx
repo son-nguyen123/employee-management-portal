@@ -21,6 +21,7 @@ import {
   enablePushNotifications,
   getPushPermissionState,
   isPushDeviceRegistered,
+  syncPushDeviceRegistration,
   type PushPermissionState,
 } from '@/lib/services/messagingService'
 
@@ -35,7 +36,7 @@ function permissionLabel(permission: PushPermissionState, isRegistered: boolean)
 }
 
 export default function ProfilePage() {
-  const { authUser, employee, isPreviewMode } = useAuth()
+  const { authUser, employee, isLoading, isPreviewMode } = useAuth()
   const [permission, setPermission] =
     useState<PushPermissionState>('default')
   const [isRegistered, setIsRegistered] = useState(false)
@@ -43,18 +44,25 @@ export default function ProfilePage() {
   const [message, setMessage] = useState('')
 
   useEffect(() => {
+    let active = true
     const loadPushState = async () => {
       const nextPermission = await getPushPermissionState()
+      if (!active) return
       setPermission(nextPermission)
       if (nextPermission === 'granted' && authUser && !isPreviewMode) {
         try {
-          setIsRegistered(await isPushDeviceRegistered(authUser.uid))
+          let registered = await isPushDeviceRegistered(authUser.uid)
+          if (!registered) registered = Boolean(await syncPushDeviceRegistration(authUser.uid))
+          if (active) setIsRegistered(registered)
         } catch {
-          setIsRegistered(false)
+          if (active) setIsRegistered(false)
         }
+      } else if (active) {
+        setIsRegistered(false)
       }
     }
     void loadPushState()
+    return () => { active = false }
   }, [authUser, isPreviewMode])
 
   const rows = [
@@ -110,6 +118,10 @@ export default function ProfilePage() {
   const cannotEnable =
     permission === 'unsupported' ||
     permission === 'unavailable'
+
+  if (isLoading) {
+    return <main className="grid min-h-screen place-items-center bg-slate-50 dark:bg-slate-950"><div className="text-center"><LoaderCircle className="mx-auto h-7 w-7 animate-spin text-indigo-600" /><p className="mt-3 text-sm font-bold text-slate-600 dark:text-slate-300">Đang tải hồ sơ và trạng thái thiết bị…</p></div></main>
+  }
 
   return (
     <main className="min-h-screen">

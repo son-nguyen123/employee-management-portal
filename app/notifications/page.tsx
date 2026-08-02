@@ -202,17 +202,19 @@ function ReviewAssessment({
   requestWarning,
   loading,
   error,
+  onRetry,
 }: {
   context?: EmployeeReviewContext
   requestWarning?: string
   loading: boolean
   error: string
+  onRetry: () => void
 }) {
   if (loading) {
     return <div className="flex min-h-28 items-center justify-center gap-2 rounded-3xl border border-indigo-100 bg-indigo-50 text-sm font-bold text-indigo-700 dark:border-indigo-500/20 dark:bg-indigo-500/10 dark:text-indigo-100"><Loader2 className="h-4 w-4 animate-spin" /> Đang đối chiếu 4 tuần và kho lưu trữ…</div>
   }
   if (!context) {
-    return <div className="rounded-3xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-700 dark:bg-slate-800"><p className="font-black">Chưa có bản đánh giá</p><p className="mt-1 text-sm leading-6 text-muted-foreground">{error || 'Hệ thống chưa đủ dữ liệu để tổng hợp. Quản lý vẫn có thể đọc yêu cầu và quyết định theo hoàn cảnh thực tế.'}</p></div>
+    return <div className="rounded-3xl border border-rose-200 bg-rose-50 p-4 text-rose-950 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-100"><p className="font-black">Chưa tải được bản đánh giá</p><p className="mt-1 text-sm leading-6 opacity-80">{error || 'Hệ thống chưa nhận được kết quả tổng hợp. Đây là lỗi tải dữ liệu, không phải kết luận rằng nhân viên không có dữ liệu.'}</p><button type="button" onClick={onRetry} className="mt-3 inline-flex min-h-10 items-center gap-2 rounded-xl bg-rose-600 px-4 text-sm font-extrabold text-white"><RotateCcw className="h-4 w-4" /> Thử tải lại</button></div>
   }
   const level = requestWarning && context.level === 'stable' ? 'attention' : context.level
   const tone = reviewTone[level]
@@ -229,6 +231,7 @@ function ReviewAssessment({
       <div className="mt-4 space-y-2 border-t border-current/10 pt-3">
         {context.facts.map((fact) => <p key={fact} className="text-sm font-semibold leading-5">• {fact}</p>)}
       </div>
+      {!!context.liveWarnings?.length && <div className="mt-3 rounded-2xl bg-amber-50 p-3 text-xs font-semibold leading-5 text-amber-900 dark:bg-amber-500/10 dark:text-amber-100">{context.liveWarnings.map((warning) => <p key={warning}>• {warning}</p>)}</div>}
       <p className="mt-4 rounded-2xl bg-white/60 p-3 text-xs font-semibold leading-5 opacity-80 dark:bg-slate-950/30">{context.disclaimer}</p>
       <details className="mt-3 rounded-2xl bg-white/70 dark:bg-slate-950/30">
         <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3 text-sm font-black"><span>Kiểm tra thêm dữ liệu từng tuần</span><ChevronDown className="h-4 w-4" /></summary>
@@ -763,7 +766,7 @@ export default function NotificationsPage() {
               </section>
 
               <section className="space-y-5 p-4">
-                {selectedPending.type !== 'account' && <ReviewAssessment context={selectedReview} requestWarning={selectedPending.warning} loading={reviewLoadingId === selectedPending.id} error={reviewError} />}
+                {selectedPending.type !== 'account' && <ReviewAssessment context={selectedReview} requestWarning={selectedPending.warning} loading={reviewLoadingId === selectedPending.id} error={reviewError} onRetry={() => void openPending(selectedPending)} />}
                 {selectedPending.managerMessageStatus && (
                   <p className="rounded-2xl bg-sky-50 p-3 text-sm font-semibold text-sky-900 dark:bg-sky-500/10 dark:text-sky-100">
                     Xác nhận liên hệ: {selectedPending.managerMessageStatus === 'messagedTri' ? 'đã nhắn anh Trí' : selectedPending.managerMessageStatus === 'notMessaged' ? 'chưa nhắn riêng' : 'đã nhắn quản lý khác'}.

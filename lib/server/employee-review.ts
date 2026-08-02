@@ -188,29 +188,54 @@ function assessment(weeks: EmployeeReviewWeek[], minimum: number): {
   }
 }
 
-async function liveRecords(employeeId: string, start: Date, end: Date): Promise<ReviewRecord[]> {
-  const [schedules, leaves, lateRequests] = await Promise.all([
-    adminDb.collection('workSchedules')
+async function liveRecords(employeeId: string, start: Date, end: Date): Promise<{
+  records: ReviewRecord[]
+  warnings: string[]
+}> {
+  const sources = [
+    {
+      label: 'lịch làm',
+      collection: 'workSchedules' as const,
+      query: adminDb.collection('workSchedules')
       .where('employeeId', '==', employeeId)
       .where('date', '>=', Timestamp.fromDate(start))
       .where('date', '<', Timestamp.fromDate(end))
+      .orderBy('date', 'desc')
       .get(),
-    adminDb.collection('leaveRequests')
+    },
+    {
+      label: 'yêu cầu nghỉ',
+      collection: 'leaveRequests' as const,
+      query: adminDb.collection('leaveRequests')
       .where('employeeId', '==', employeeId)
       .where('leaveDate', '>=', Timestamp.fromDate(start))
       .where('leaveDate', '<', Timestamp.fromDate(end))
+      .orderBy('leaveDate', 'desc')
       .get(),
-    adminDb.collection('lateRequests')
+    },
+    {
+      label: 'thông báo đi trễ',
+      collection: 'lateRequests' as const,
+      query: adminDb.collection('lateRequests')
       .where('employeeId', '==', employeeId)
       .where('date', '>=', Timestamp.fromDate(start))
       .where('date', '<', Timestamp.fromDate(end))
+      .orderBy('date', 'desc')
       .get(),
-  ])
-  return [
-    ...schedules.docs.map((snapshot) => firestoreRecord('workSchedules', snapshot)),
-    ...leaves.docs.map((snapshot) => firestoreRecord('leaveRequests', snapshot)),
-    ...lateRequests.docs.map((snapshot) => firestoreRecord('lateRequests', snapshot)),
+    },
   ]
+  const settled = await Promise.allSettled(sources.map((source) => source.query))
+  const warnings: string[] = []
+  const records = settled.flatMap((result, index) => {
+    const source = sources[index]
+    if (result.status === 'rejected') {
+      console.warn(`Employee review could not read ${source.label}:`, result.reason instanceof Error ? result.reason.message : result.reason)
+      warnings.push(`Tạm thời chưa đọc được ${source.label} từ Firebase.`)
+      return []
+    }
+    return result.value.docs.map((snapshot) => firestoreRecord(source.collection, snapshot))
+  })
+  return { records, warnings }
 }
 
 async function archivedRecords(employeeId: string, weekKeys: string[]): Promise<{
@@ -252,9 +277,13 @@ export async function buildEmployeeReviewContext(
     archivedRecords(employeeId, weekKeys),
   ])
 
+  if (live.warnings.length === 3 && !archived.records.length) {
+    throw new Error('Không đọc được dữ liệu lịch, nghỉ và đi trễ từ Firebase hoặc kho lưu trữ.')
+  }
+
   const merged = new Map<string, ReviewRecord>()
   archived.records.forEach((record) => merged.set(record.path, record))
-  live.forEach((record) => merged.set(record.path, record))
+  live.records.forEach((record) => merged.set(record.path, record))
   const records = [...merged.values()]
   const weeks = buildWeeks(records, referenceWeekStart)
   const result = assessment(weeks, workflowPolicy.minimumWeeklyShifts)
@@ -267,6 +296,7 @@ export async function buildEmployeeReviewContext(
     weeks,
     archiveUsed: records.some((record) => record.source === 'drive'),
     archiveAvailable: archived.available,
+    liveWarnings: live.warnings,
     disclaimer: 'Đánh giá chỉ tóm tắt lịch và yêu cầu đã ghi nhận trên app. Màu cảnh báo không kết luận thái độ, năng lực hay nguyên nhân khách quan của nhân viên.',
   }
 }

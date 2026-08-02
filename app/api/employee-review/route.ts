@@ -23,9 +23,15 @@ export async function POST(request: Request) {
   } catch (error) {
     const status = error instanceof ApiError ? error.status : 500
     if (!(error instanceof ApiError)) console.error('Employee review failed:', error)
+    const technicalMessage = error instanceof Error ? error.message : ''
+    const publicMessage = technicalMessage.includes('index')
+      ? 'Dữ liệu đánh giá đang chờ hoàn tất chỉ mục Firebase. Vui lòng thử lại sau ít phút.'
+      : technicalMessage.includes('Không đọc được dữ liệu')
+        ? technicalMessage
+        : 'Chưa thể tổng hợp dữ liệu kiểm tra nhân viên.'
     return NextResponse.json({
       ok: false,
-      error: error instanceof ApiError ? error.message : 'Chưa thể tổng hợp dữ liệu kiểm tra nhân viên.',
+      error: error instanceof ApiError ? error.message : publicMessage,
     }, { status })
   }
 }

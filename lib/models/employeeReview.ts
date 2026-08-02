@@ -24,5 +24,6 @@ export interface EmployeeReviewContext {
   weeks: EmployeeReviewWeek[]
   archiveUsed: boolean
   archiveAvailable: boolean
+  liveWarnings?: string[]
   disclaimer: string
 }
