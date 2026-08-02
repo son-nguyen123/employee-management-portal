@@ -151,13 +151,13 @@ function SimpleShiftList({ title, items }: { title: string; items?: ManagementSh
     grouped.set(key, current)
   })
   return (
-    <section>
-      <p className="mb-1 text-xs font-black uppercase tracking-[0.12em] text-muted-foreground">{title}</p>
-      <div className="divide-y divide-slate-100 dark:divide-white/10">
+    <section className="overflow-hidden rounded-2xl border border-slate-100 bg-white dark:border-white/10 dark:bg-slate-900">
+      <p className="border-b border-slate-100 bg-slate-50 px-3.5 py-2.5 text-[10px] font-black uppercase tracking-[0.12em] text-slate-500 dark:border-white/10 dark:bg-slate-800 dark:text-slate-300">{title}</p>
+      <div className="divide-y divide-slate-100 px-3.5 dark:divide-white/10">
         {[...grouped.values()].sort((a, b) => a.date.getTime() - b.date.getTime()).map((row) => (
-          <div key={row.date.toISOString()} className="grid grid-cols-[minmax(7rem,.85fr)_1.15fr] gap-3 py-4">
-            <p className="font-black capitalize">{row.date.toLocaleDateString('vi-VN', { weekday: 'long', day: '2-digit', month: '2-digit' })}</p>
-            <p className="text-slate-500 dark:text-slate-300">{row.shifts.map((shift) => shiftNames[shift].replace('Ca ', '')).join(' – ')}</p>
+          <div key={row.date.toISOString()} className="flex min-h-12 items-center justify-between gap-3 py-2.5">
+            <p className="min-w-0 truncate text-sm font-black capitalize">{row.date.toLocaleDateString('vi-VN', { weekday: 'long', day: '2-digit', month: '2-digit' })}</p>
+            <p className="shrink-0 rounded-lg bg-slate-100 px-2.5 py-1 text-xs font-bold text-slate-500 dark:bg-slate-800 dark:text-slate-300">{row.shifts.map((shift) => shiftNames[shift].replace('Ca ', '')).join(' · ')}</p>
           </div>
         ))}
       </div>
@@ -778,11 +778,11 @@ export default function NotificationsPage() {
                 {rejectIntentId !== selectedPending.id && selectedPending.reason && (
                   <p className="rounded-2xl bg-slate-50 p-3 text-sm leading-6 text-slate-700 dark:bg-slate-800 dark:text-slate-200"><span className="font-black">Ghi chú:</span> {selectedPending.reason}</p>
                 )}
-                {rejectIntentId !== selectedPending.id && <details className="rounded-2xl border border-slate-200 dark:border-slate-700">
-                  <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3 text-sm font-black"><span>Kiểm tra thêm yêu cầu và liên hệ</span><ChevronDown className="h-4 w-4" /></summary>
-                  <div className="space-y-4 border-t border-slate-100 p-4 dark:border-slate-700">
+                {rejectIntentId !== selectedPending.id && <details className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm dark:border-slate-700 dark:bg-slate-900">
+                  <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3.5 text-sm font-black"><span>Lịch & liên hệ</span><ChevronDown className="h-4 w-4 text-slate-400" /></summary>
+                  <div className="space-y-4 border-t border-slate-100 bg-slate-50/70 p-3 dark:border-slate-700 dark:bg-slate-800/40">
                     <div className="grid grid-cols-2 gap-2">
-                      {selectedPending.employeePhone ? <a href={`tel:${selectedPending.employeePhone.replace(/\s/g, '')}`} className="flex min-h-11 items-center justify-center gap-2 rounded-2xl bg-slate-100 text-sm font-extrabold dark:bg-slate-800"><Phone className="h-4 w-4" /> Gọi điện</a> : <span className="flex min-h-11 items-center justify-center rounded-2xl bg-slate-100 text-xs font-bold text-slate-400 dark:bg-slate-800">Chưa có SĐT</span>}
+                      {selectedPending.employeePhone ? <a href={`tel:${selectedPending.employeePhone.replace(/\s/g, '')}`} className="flex min-h-11 items-center justify-center gap-2 rounded-2xl bg-white text-sm font-extrabold shadow-sm dark:bg-slate-900"><Phone className="h-4 w-4" /> Gọi điện</a> : <span className="flex min-h-11 items-center justify-center rounded-2xl bg-white text-xs font-bold text-slate-400 shadow-sm dark:bg-slate-900">Chưa có SĐT</span>}
                       {selectedPending.employeeFacebookURL ? <a href={selectedPending.employeeFacebookURL} target="_blank" rel="noreferrer" className="flex min-h-11 items-center justify-center gap-2 rounded-2xl bg-blue-600 text-sm font-extrabold text-white"><ExternalLink className="h-4 w-4" /> Facebook</a> : <span className="flex min-h-11 items-center justify-center rounded-2xl bg-slate-100 text-xs font-bold text-slate-400 dark:bg-slate-800">Chưa có Facebook</span>}
                     </div>
                     <SimpleShiftList title={selectedPending.staffRequestType === 'overtime' ? 'Ca muốn làm thêm' : selectedPending.type === 'schedule' ? 'Lịch vừa gửi' : 'Ca muốn thêm / đổi'} items={selectedPending.shifts} />
