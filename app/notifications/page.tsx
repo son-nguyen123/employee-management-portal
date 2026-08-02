@@ -171,6 +171,27 @@ function SimpleShiftList({ title, items }: { title: string; items?: ManagementSh
   )
 }
 
+function DecisionShiftRows({ items }: { items?: ManagementShift[] }) {
+  if (!items?.length) return null
+  const grouped = new Map<string, { date: Date; shifts: ManagementShift['shift'][] }>()
+  items.forEach((item) => {
+    const key = item.date.toISOString().slice(0, 10)
+    const current = grouped.get(key) || { date: item.date, shifts: [] }
+    if (!current.shifts.includes(item.shift)) current.shifts.push(item.shift)
+    grouped.set(key, current)
+  })
+  return (
+    <section className="divide-y divide-slate-100 px-4 dark:divide-white/10">
+      {[...grouped.values()].sort((a, b) => a.date.getTime() - b.date.getTime()).map((row) => (
+        <div key={row.date.toISOString()} className="flex min-h-14 items-center justify-between gap-3 py-3 text-sm">
+          <strong className="capitalize">{row.date.toLocaleDateString('vi-VN', { weekday: 'long', day: '2-digit', month: '2-digit' })}</strong>
+          <span className="shrink-0 text-slate-500 dark:text-slate-300">{row.shifts.map((shift) => shiftNames[shift].replace('Ca ', '')).join(' · ')}</span>
+        </div>
+      ))}
+    </section>
+  )
+}
+
 const reviewTone: Record<EmployeeReviewLevel, { label: string; rating: string; box: string; badge: string }> = {
   stable: {
     label: 'Tốt',
@@ -839,29 +860,24 @@ export default function NotificationsPage() {
             <header className="sticky top-0 z-10 border-b border-slate-200/70 bg-white/95 backdrop-blur-xl dark:border-white/10 dark:bg-slate-950/95">
               <div className="mx-auto flex min-h-20 max-w-lg items-center gap-3 px-4 pt-[env(safe-area-inset-top)]">
                 <button type="button" onClick={() => setSelectedDecision(null)} className="grid h-11 w-11 place-items-center rounded-2xl bg-slate-100 dark:bg-slate-800" aria-label="Quay lại"><ArrowLeft className="h-5 w-5" /></button>
-                <div><h1 className="text-lg font-black">Biểu mẫu đã xử lý</h1><p className="text-sm text-muted-foreground">Chỉ xem hoặc hoàn tác quyết định</p></div>
+                <div><h1 className="text-lg font-black">Nhân viên đã {selectedDecision.status === 'Approved' ? 'duyệt' : 'từ chối'}</h1><p className="text-sm text-muted-foreground">Chỉ xem quyết định hoặc hoàn tác</p></div>
               </div>
             </header>
             <main className="mx-auto max-w-lg p-3 pb-[calc(2rem+env(safe-area-inset-bottom))]">
-              <article className="overflow-hidden rounded-[2rem] border border-indigo-100 bg-white shadow-xl shadow-slate-950/10 dark:border-indigo-500/20 dark:bg-slate-900">
-                <section className={`bg-gradient-to-r ${meta.gradient} p-5 text-white`}>
+              <article className="overflow-hidden rounded-[2rem] border border-violet-100 bg-white shadow-xl shadow-slate-950/10 dark:border-violet-500/20 dark:bg-slate-900">
+                <section className="bg-gradient-to-r from-indigo-600 via-violet-600 to-fuchsia-600 p-5 text-white">
                   <div className="flex items-start gap-3">
-                    <IdentityAvatar name={employee?.fullName || 'Nhân viên'} photoURL={employee?.photoURL} icon={meta.icon} color={meta.color} />
+                    <div className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-white/15 text-sm font-black">{initials(employee?.fullName || 'Nhân viên')}</div>
                     <div className="min-w-0 flex-1">
-                      <h2 className="text-xl font-black">{selectedDecision.title}</h2>
-                      <p className="mt-2 font-extrabold">{employee?.fullName || selectedDecision.employeeId}{employee?.employeeCode ? ` · ${employee.employeeCode}` : ''}</p>
-                      <p className="mt-1 text-sm text-white/85">{selectedDecision.detail}</p>
-                      <span className={`mt-3 inline-flex rounded-full px-3 py-1 text-xs font-black ${selectedDecision.status === 'Approved' ? 'bg-emerald-500 text-white' : 'bg-rose-500 text-white'}`}>{selectedDecision.status === 'Approved' ? 'Đã duyệt' : 'Đã từ chối'}</span>
+                      <h2 className="truncate text-xl font-black">{employee?.fullName || selectedDecision.employeeId}</h2>
+                      <p className="mt-1 text-sm text-white/80">{employee?.employeeCode || 'Nhân viên'} · {selectedDecision.detail}</p>
+                      <span className={`mt-3 inline-flex rounded-full px-3 py-1 text-xs font-black ${selectedDecision.status === 'Approved' ? 'bg-emerald-400/25 text-emerald-50' : 'bg-rose-400/25 text-rose-50'}`}>{selectedDecision.status === 'Approved' ? 'Đã duyệt' : 'Đã từ chối'}</span>
                     </div>
-                  </div>
-                  <div className="mt-5 grid grid-cols-2 gap-2">
-                    <a href={`tel:${employee?.phone || ''}`} className="flex min-h-12 items-center justify-center gap-2 rounded-2xl bg-white/15 text-sm font-extrabold"><Phone className="h-4 w-4" /> Gọi điện</a>
-                    <a href={employee?.facebookUrl || 'https://facebook.com/'} target="_blank" rel="noreferrer" className="flex min-h-12 items-center justify-center gap-2 rounded-2xl bg-blue-600 text-sm font-extrabold"><ExternalLink className="h-4 w-4" /> Facebook</a>
                   </div>
                 </section>
                 <section className="space-y-5 p-4">
-                  <SimpleShiftList title={selectedDecision.resource === 'schedule' ? 'Lịch đã gửi' : 'Ca mới / ca thêm'} items={selectedDecision.shifts} />
-                  <SimpleShiftList title="Ca muốn hủy" items={selectedDecision.removedShifts} />
+                  <DecisionShiftRows items={selectedDecision.shifts} />
+                  <DecisionShiftRows items={selectedDecision.removedShifts} />
                   {selectedDecision.reason && <p className="rounded-2xl border border-slate-100 p-3 text-sm leading-6"><strong>Ghi chú:</strong> {selectedDecision.reason}</p>}
                   {selectedDecision.reviewNote && <p className="rounded-2xl bg-amber-50 p-3 text-sm text-amber-900 dark:bg-amber-500/10 dark:text-amber-100"><strong>Phản hồi cũ:</strong> {selectedDecision.reviewNote}</p>}
                   <div className="border-t border-slate-100 pt-4 dark:border-white/10">
