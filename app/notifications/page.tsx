@@ -165,24 +165,28 @@ function SimpleShiftList({ title, items }: { title: string; items?: ManagementSh
   )
 }
 
-const reviewTone: Record<EmployeeReviewLevel, { label: string; box: string; badge: string }> = {
+const reviewTone: Record<EmployeeReviewLevel, { label: string; rating: string; box: string; badge: string }> = {
   stable: {
-    label: 'Ổn định',
+    label: 'Tốt',
+    rating: 'Tốt',
     box: 'border-emerald-200 bg-emerald-50 text-emerald-950 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-100',
     badge: 'bg-emerald-600 text-white',
   },
   attention: {
-    label: 'Cần xem',
+    label: 'Lưu ý',
+    rating: 'Khá',
     box: 'border-amber-200 bg-amber-50 text-amber-950 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-100',
     badge: 'bg-amber-500 text-white',
   },
   warning: {
     label: 'Cảnh báo',
+    rating: 'Tệ',
     box: 'border-rose-200 bg-rose-50 text-rose-950 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-100',
     badge: 'bg-rose-600 text-white',
   },
   neutral: {
     label: 'Chưa đủ dữ liệu',
+    rating: 'Cần xem xét',
     box: 'border-slate-200 bg-slate-50 text-slate-900 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100',
     badge: 'bg-slate-600 text-white',
   },
@@ -224,27 +228,10 @@ function ReviewAssessment({
         <div className="grid h-10 w-10 shrink-0 place-items-center rounded-2xl bg-white/80 shadow-sm dark:bg-slate-950/40"><ShieldCheck className="h-5 w-5" /></div>
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2"><p className="font-black">Đánh giá hỗ trợ quản lý</p><span className={`rounded-full px-2.5 py-1 text-[10px] font-black uppercase tracking-wide ${tone.badge}`}>{tone.label}</span></div>
-          <h3 className="mt-2 text-lg font-black">{requestWarning || context.headline}</h3>
-          <p className="mt-1 text-sm font-medium leading-6 opacity-85">{context.explanation}</p>
+          <p className="mt-3 text-sm font-bold opacity-75">Quá trình làm việc</p>
+          <h3 className="mt-0.5 text-2xl font-black">{tone.rating}</h3>
         </div>
       </div>
-      <div className="mt-4 space-y-2 border-t border-current/10 pt-3">
-        {context.facts.map((fact) => <p key={fact} className="text-sm font-semibold leading-5">• {fact}</p>)}
-      </div>
-      {!!context.liveWarnings?.length && <div className="mt-3 rounded-2xl bg-amber-50 p-3 text-xs font-semibold leading-5 text-amber-900 dark:bg-amber-500/10 dark:text-amber-100">{context.liveWarnings.map((warning) => <p key={warning}>• {warning}</p>)}</div>}
-      <p className="mt-4 rounded-2xl bg-white/60 p-3 text-xs font-semibold leading-5 opacity-80 dark:bg-slate-950/30">{context.disclaimer}</p>
-      <details className="mt-3 rounded-2xl bg-white/70 dark:bg-slate-950/30">
-        <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3 text-sm font-black"><span>Kiểm tra thêm dữ liệu từng tuần</span><ChevronDown className="h-4 w-4" /></summary>
-        <div className="space-y-2 border-t border-current/10 p-3">
-          {context.weeks.map((week) => (
-            <div key={week.weekStart} className="rounded-2xl bg-white p-3 text-sm text-slate-800 shadow-sm dark:bg-slate-900 dark:text-slate-100">
-              <div className="flex items-center justify-between gap-2"><p className="font-black">{new Date(`${week.weekStart}T12:00:00+07:00`).toLocaleDateString('vi-VN')} – {new Date(`${week.weekEnd}T12:00:00+07:00`).toLocaleDateString('vi-VN')}</p><span className="text-[10px] font-bold uppercase text-slate-400">{week.source === 'drive' ? 'Kho lưu' : week.source === 'mixed' ? 'Firebase + kho' : week.source === 'firestore' ? 'Firebase' : 'Không có dữ liệu'}</span></div>
-              <p className="mt-2 leading-6 text-slate-600 dark:text-slate-300">{week.scheduledShifts} ca ghi nhận · {week.approvedShifts} ca đã duyệt · {week.leaveRequests} yêu cầu nghỉ · {week.lateRequests} báo trễ{week.hasLongLeave ? ' · có nghỉ dài hạn' : ''}</p>
-            </div>
-          ))}
-          {!context.archiveAvailable && <p className="rounded-2xl bg-amber-50 p-3 text-xs font-semibold leading-5 text-amber-800 dark:bg-amber-500/10 dark:text-amber-100">Kho Drive tạm thời không đọc được; đánh giá vẫn dùng dữ liệu Firebase hiện có.</p>}
-        </div>
-      </details>
     </section>
   )
 }
