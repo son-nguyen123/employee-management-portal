@@ -48,6 +48,7 @@ export default function LateArrivalPage() {
   const [submitting, setSubmitting] = useState(false)
   const [message, setMessage] = useState('')
   const [editingId, setEditingId] = useState<string | null>(null)
+  const [submitConfirmationOpen, setSubmitConfirmationOpen] = useState(false)
 
   useEffect(() => {
     if (!authUser) return
@@ -117,9 +118,15 @@ export default function LateArrivalPage() {
     setMessage('')
   }
 
-  const submit = async (event: React.FormEvent) => {
+  const requestSubmitConfirmation = (event: React.FormEvent) => {
     event.preventDefault()
     if (!authUser || !selectedShifts.length || !arrivalTime || !reason.trim()) return
+    setSubmitConfirmationOpen(true)
+  }
+
+  const submit = async () => {
+    if (!authUser || !selectedShifts.length || !arrivalTime || !reason.trim()) return
+    setSubmitConfirmationOpen(false)
     const [hour, minute] = arrivalTime.split(':').map(Number)
     const startMinutes = shiftMeta[selectedShifts[0].shift].startMinutes
     const arrivalMinutes = hour * 60 + minute
@@ -279,8 +286,8 @@ export default function LateArrivalPage() {
       </PageContainer>
 
       {selectedShift && (
-        <div className="fixed inset-0 z-50 flex items-end bg-slate-950/45 backdrop-blur-sm" onClick={() => { setSelectedShift(null); setSelectedShiftIds([]); setEditingId(null) }}>
-          <form onSubmit={submit} onClick={(event) => event.stopPropagation()} className="w-full rounded-t-[2rem] bg-white p-4 pb-[max(1rem,env(safe-area-inset-bottom))] shadow-2xl dark:bg-slate-900">
+        <div className="fixed inset-0 z-50 flex items-end bg-slate-950/45 backdrop-blur-sm" onClick={() => { setSelectedShift(null); setSelectedShiftIds([]); setEditingId(null); setSubmitConfirmationOpen(false) }}>
+          <form onSubmit={requestSubmitConfirmation} onClick={(event) => event.stopPropagation()} className="w-full rounded-t-[2rem] bg-white p-4 pb-[max(1rem,env(safe-area-inset-bottom))] shadow-2xl dark:bg-slate-900">
             <div className="mx-auto max-w-lg">
               <div className="mb-5 flex items-start justify-between">
                 <div>
@@ -288,7 +295,7 @@ export default function LateArrivalPage() {
                   <h2 className="text-xl font-black">{selectedShifts.length > 1 ? `${selectedShifts.length} ca đã chọn` : `${shiftMeta[selectedShift.shift].label} · ${selectedShift.date.toLocaleDateString('vi-VN')}`}</h2>
                   {selectedShifts.length > 1 && <p className="mt-1 text-xs text-muted-foreground">{selectedShifts.map((shift) => `${shiftMeta[shift.shift].label} ${shift.date.toLocaleDateString('vi-VN')}`).join(' · ')}</p>}
                 </div>
-                <button type="button" onClick={() => { setSelectedShift(null); setSelectedShiftIds([]); setEditingId(null) }} className="grid h-11 w-11 place-items-center rounded-2xl bg-slate-100 dark:bg-slate-800" aria-label="Đóng"><X className="h-5 w-5" /></button>
+                <button type="button" onClick={() => { setSelectedShift(null); setSelectedShiftIds([]); setEditingId(null); setSubmitConfirmationOpen(false) }} className="grid h-11 w-11 place-items-center rounded-2xl bg-slate-100 dark:bg-slate-800" aria-label="Đóng"><X className="h-5 w-5" /></button>
               </div>
               <label className="block text-sm font-bold">Giờ dự kiến có mặt
                 <input type="time" value={arrivalTime} onChange={(e) => setArrivalTime(e.target.value)} className="mobile-field mt-2" required />
@@ -317,6 +324,25 @@ export default function LateArrivalPage() {
               </button>
             </div>
           </form>
+          {submitConfirmationOpen && (
+            <div className="fixed inset-0 z-[60] flex items-end justify-center bg-slate-950/55 p-3 backdrop-blur-sm sm:items-center" onClick={() => setSubmitConfirmationOpen(false)}>
+              <section role="dialog" aria-modal="true" aria-labelledby="late-confirmation-title" className="w-full max-w-md rounded-[2rem] bg-white p-5 shadow-2xl dark:bg-slate-900" onClick={(event) => event.stopPropagation()}>
+                <div className="flex items-start gap-3">
+                  <div className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-amber-50 text-amber-600 dark:bg-amber-500/10 dark:text-amber-200"><Clock3 className="h-5 w-5" /></div>
+                  <div className="min-w-0 flex-1"><p className="text-xs font-black uppercase tracking-wider text-amber-600">Báo đi trễ</p><h2 id="late-confirmation-title" className="mt-1 text-xl font-black">Xác nhận gửi thông báo?</h2><p className="mt-1 text-sm leading-5 text-muted-foreground">Quản lý sẽ nhận được thông báo này ngay sau khi bạn xác nhận.</p></div>
+                </div>
+                <div className="mt-4 space-y-3 rounded-2xl bg-slate-50 p-4 text-sm dark:bg-slate-800">
+                  <p><span className="font-bold text-muted-foreground">Ca báo trễ:</span> <span className="font-extrabold">{selectedShifts.map((shift) => `${shiftMeta[shift.shift].label} ${shift.date.toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit' })}`).join(' · ')}</span></p>
+                  <p><span className="font-bold text-muted-foreground">Có mặt dự kiến:</span> <span className="font-extrabold">{arrivalTime}</span></p>
+                  <p><span className="font-bold text-muted-foreground">Lý do:</span> <span className="font-semibold">{reason.trim()}</span></p>
+                </div>
+                <div className="mt-5 grid grid-cols-2 gap-2">
+                  <button type="button" onClick={() => setSubmitConfirmationOpen(false)} disabled={submitting} className="min-h-12 rounded-2xl border border-slate-200 font-bold dark:border-slate-700">Quay lại</button>
+                  <button type="button" onClick={() => void submit()} disabled={submitting} className="mobile-primary-button disabled:opacity-60">{submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}{submitting ? 'Đang gửi...' : 'Xác nhận gửi'}</button>
+                </div>
+              </section>
+            </div>
+          )}
         </div>
       )}
     </main>

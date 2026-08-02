@@ -141,29 +141,42 @@ function IdentityAvatar({
   )
 }
 
-function SimpleShiftList({ title, items }: { title: string; items?: ManagementShift[] }) {
-  if (!items?.length) return null
-  const isRemoval = title.toLocaleLowerCase('vi').includes('hủy')
-  const shiftTone: Record<ManagementShift['shift'], string> = {
-    Morning: 'bg-amber-100 text-amber-800 dark:bg-amber-500/15 dark:text-amber-200',
-    Afternoon: 'bg-sky-100 text-sky-800 dark:bg-sky-500/15 dark:text-sky-200',
-    Evening: 'bg-violet-100 text-violet-800 dark:bg-violet-500/15 dark:text-violet-200',
-  }
-  const grouped = new Map<string, { date: Date; shifts: ManagementShift['shift'][] }>()
-  items.forEach((item) => {
+type ShiftChangeKind = 'cancelled' | 'registered' | 'overtime'
+
+const shiftChangeTone: Record<ShiftChangeKind, { label: string; className: string }> = {
+  cancelled: { label: 'Đã hủy', className: 'bg-rose-100 text-rose-800 dark:bg-rose-500/15 dark:text-rose-200' },
+  registered: { label: 'Đăng ký', className: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-500/15 dark:text-emerald-200' },
+  overtime: { label: 'Xin làm thêm', className: 'bg-sky-100 text-sky-800 dark:bg-sky-500/15 dark:text-sky-200' },
+}
+
+function UnifiedShiftList({
+  shifts,
+  removedShifts,
+  registrationKind,
+}: {
+  shifts?: ManagementShift[]
+  removedShifts?: ManagementShift[]
+  registrationKind: 'registered' | 'overtime'
+}) {
+  if (!shifts?.length && !removedShifts?.length) return null
+  const grouped = new Map<string, { date: Date; changes: Array<{ shift: ManagementShift['shift']; kind: ShiftChangeKind }> }>()
+  const addChanges = (items: ManagementShift[] | undefined, kind: ShiftChangeKind) => items?.forEach((item) => {
     const key = item.date.toISOString().slice(0, 10)
-    const current = grouped.get(key) || { date: item.date, shifts: [] }
-    if (!current.shifts.includes(item.shift)) current.shifts.push(item.shift)
+    const current = grouped.get(key) || { date: item.date, changes: [] }
+    if (!current.changes.some((change) => change.shift === item.shift && change.kind === kind)) current.changes.push({ shift: item.shift, kind })
     grouped.set(key, current)
   })
+  addChanges(removedShifts, 'cancelled')
+  addChanges(shifts, registrationKind)
+
   return (
-    <section className={`overflow-hidden rounded-3xl border shadow-sm ${isRemoval ? 'border-rose-100 bg-rose-50/40 dark:border-rose-500/20 dark:bg-rose-500/5' : 'border-violet-100 bg-violet-50/40 dark:border-violet-500/20 dark:bg-violet-500/5'}`}>
-      <div className={`flex items-center gap-2 px-4 py-3 text-white ${isRemoval ? 'bg-gradient-to-r from-rose-500 to-pink-500' : 'bg-gradient-to-r from-violet-600 to-indigo-600'}`}><CalendarDays className="h-4 w-4" /><p className="text-[11px] font-black uppercase tracking-[0.14em]">{title}</p></div>
+    <section className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm dark:border-slate-700 dark:bg-slate-900">
+      <div className="flex items-center gap-2 border-b border-slate-100 px-4 py-3 dark:border-white/10"><CalendarDays className="h-4 w-4 text-slate-500" /><p className="text-[11px] font-black uppercase tracking-[0.14em] text-slate-600 dark:text-slate-300">Các ca trong yêu cầu</p></div>
       <div className="space-y-2 p-2.5">
         {[...grouped.values()].sort((a, b) => a.date.getTime() - b.date.getTime()).map((row) => (
-          <div key={row.date.toISOString()} className="flex items-start gap-3 rounded-2xl bg-white px-3 py-2.5 shadow-sm dark:bg-slate-900">
-            <div className={`grid h-10 w-10 shrink-0 place-items-center rounded-xl text-center leading-none ${isRemoval ? 'bg-rose-50 text-rose-700 dark:bg-rose-500/15 dark:text-rose-200' : 'bg-violet-50 text-violet-700 dark:bg-violet-500/15 dark:text-violet-200'}`}><span className="text-[9px] font-black">{row.date.getDay() === 0 ? 'CN' : `T${row.date.getDay() + 1}`}</span><span className="-mt-2 text-sm font-black">{String(row.date.getDate()).padStart(2, '0')}</span></div>
-            <div className="min-w-0 flex-1"><p className="text-sm font-black capitalize">{row.date.toLocaleDateString('vi-VN', { weekday: 'long', day: '2-digit', month: '2-digit' })}</p><div className="mt-1.5 flex flex-wrap gap-1">{row.shifts.map((shift) => <span key={shift} className={`rounded-lg px-2.5 py-1 text-xs font-black ${shiftTone[shift]}`}>{shiftNames[shift].replace('Ca ', '')}</span>)}</div></div>
+          <div key={row.date.toISOString()} className="flex items-start gap-3 rounded-2xl bg-slate-50 px-3 py-2.5 dark:bg-slate-800/70">
+            <div className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-slate-200/80 text-center leading-none text-slate-700 dark:bg-slate-700 dark:text-slate-100"><span className="text-[9px] font-black">{row.date.getDay() === 0 ? 'CN' : `T${row.date.getDay() + 1}`}</span><span className="-mt-2 text-sm font-black">{String(row.date.getDate()).padStart(2, '0')}</span></div>
+            <div className="min-w-0 flex-1"><p className="text-sm font-black capitalize">{row.date.toLocaleDateString('vi-VN', { weekday: 'long', day: '2-digit', month: '2-digit' })}</p><div className="mt-1.5 flex flex-wrap gap-1.5">{row.changes.map(({ shift, kind }) => <span key={`${shift}-${kind}`} className={`rounded-lg px-2.5 py-1 text-xs font-black ${shiftChangeTone[kind].className}`}>{shiftChangeTone[kind].label} · {shiftNames[shift].replace('Ca ', '')}</span>)}</div></div>
           </div>
         ))}
       </div>
@@ -307,6 +320,7 @@ export default function NotificationsPage() {
   const [employees, setEmployees] = useState<Employee[]>([])
   const [selectedDecision, setSelectedDecision] = useState<DecisionHistoryItem | null>(null)
   const [undoReason, setUndoReason] = useState('')
+  const [approvalConfirmationItem, setApprovalConfirmationItem] = useState<ManagementPendingItem | null>(null)
 
   const visibleItems = items.filter((item) => {
     const createdAt = item.createdAt instanceof Date ? item.createdAt : item.createdAt.toDate()
@@ -525,6 +539,7 @@ export default function NotificationsPage() {
 
   const openPending = async (item: ManagementPendingItem, intent: 'inspect' | 'reject' = 'inspect') => {
     setAllowSundayResubmissionWithoutPenalty(false)
+    setApprovalConfirmationItem(null)
     setSelectedPending(item)
     setRejectIntentId(intent === 'reject' ? item.id : null)
     setMessage('')
@@ -819,8 +834,7 @@ export default function NotificationsPage() {
                       {selectedPending.employeePhone ? <a href={`tel:${selectedPending.employeePhone.replace(/\s/g, '')}`} className="flex min-h-11 items-center justify-center gap-2 rounded-2xl bg-white text-sm font-extrabold shadow-sm dark:bg-slate-900"><Phone className="h-4 w-4" /> Gọi điện</a> : <span className="flex min-h-11 items-center justify-center rounded-2xl bg-white text-xs font-bold text-slate-400 shadow-sm dark:bg-slate-900">Chưa có SĐT</span>}
                       {selectedPending.employeeFacebookURL ? <a href={selectedPending.employeeFacebookURL} target="_blank" rel="noreferrer" className="flex min-h-11 items-center justify-center gap-2 rounded-2xl bg-blue-600 text-sm font-extrabold text-white"><ExternalLink className="h-4 w-4" /> Facebook</a> : <span className="flex min-h-11 items-center justify-center rounded-2xl bg-slate-100 text-xs font-bold text-slate-400 dark:bg-slate-800">Chưa có Facebook</span>}
                     </div>
-                    <SimpleShiftList title={selectedPending.staffRequestType === 'overtime' ? 'Ca muốn làm thêm' : selectedPending.type === 'schedule' ? 'Lịch vừa gửi' : 'Ca muốn thêm / đổi'} items={selectedPending.shifts} />
-                    <SimpleShiftList title="Ca muốn hủy" items={selectedPending.removedShifts} />
+                    <UnifiedShiftList shifts={selectedPending.shifts} removedShifts={selectedPending.removedShifts} registrationKind={selectedPending.staffRequestType === 'overtime' ? 'overtime' : 'registered'} />
                   </div>
                 </details>}
 
@@ -841,13 +855,29 @@ export default function NotificationsPage() {
                 ) : (
                   <div className="grid grid-cols-2 gap-3">
                     <button type="button" disabled={processingId === selectedPending.id} onClick={() => { setRejectIntentId(selectedPending.id); setMessage('') }} className="flex min-h-13 items-center justify-center gap-2 rounded-2xl border border-rose-200 font-extrabold text-rose-600 disabled:opacity-60"><X className="h-4 w-4" /> Từ chối</button>
-                    <button type="button" disabled={processingId === selectedPending.id} onClick={() => void processPending(selectedPending, 'Approved')} className={`flex min-h-13 items-center justify-center gap-2 rounded-2xl bg-gradient-to-r ${selectedPendingMeta.gradient} font-extrabold text-white shadow-lg disabled:opacity-60`}>{processingId === selectedPending.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />} Duyệt</button>
+                    <button type="button" disabled={processingId === selectedPending.id} onClick={() => setApprovalConfirmationItem(selectedPending)} className="flex min-h-13 items-center justify-center gap-2 rounded-2xl bg-emerald-600 font-extrabold text-white shadow-lg shadow-emerald-600/20 disabled:opacity-60"><Check className="h-4 w-4" /> Duyệt</button>
                   </div>
                 )}
               </section>
             </article>
           </main>
           </div>
+        </div>
+      )}
+
+      {approvalConfirmationItem && (
+        <div className="fixed inset-0 z-[85] flex items-end justify-center bg-slate-950/55 p-3 backdrop-blur-sm sm:items-center" onClick={() => !processingId && setApprovalConfirmationItem(null)}>
+          <section role="dialog" aria-modal="true" aria-labelledby="approval-confirmation-title" className="w-full max-w-md rounded-[2rem] bg-white p-5 shadow-2xl dark:bg-slate-900" onClick={(event) => event.stopPropagation()}>
+            <div className="flex items-start gap-3">
+              <div className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-emerald-50 text-emerald-600 dark:bg-emerald-500/10 dark:text-emerald-200"><Check className="h-5 w-5" /></div>
+              <div className="min-w-0 flex-1"><p className="text-xs font-black uppercase tracking-wider text-emerald-600">Duyệt yêu cầu</p><h2 id="approval-confirmation-title" className="mt-1 text-xl font-black">Xác nhận duyệt?</h2><p className="mt-1 text-sm leading-5 text-muted-foreground">Hệ thống sẽ cập nhật lịch và gửi kết quả cho nhân viên.</p></div>
+            </div>
+            <div className="mt-4 rounded-2xl bg-slate-50 p-4 text-sm dark:bg-slate-800"><p className="font-black">{approvalConfirmationItem.employeeName}</p><p className="mt-1 text-muted-foreground">{approvalConfirmationItem.title}</p><p className="mt-2 font-semibold text-slate-700 dark:text-slate-200">{approvalConfirmationItem.detail}</p></div>
+            <div className="mt-5 grid grid-cols-2 gap-2">
+              <button type="button" disabled={Boolean(processingId)} onClick={() => setApprovalConfirmationItem(null)} className="min-h-12 rounded-2xl border border-slate-200 font-bold dark:border-slate-700">Quay lại</button>
+              <button type="button" disabled={Boolean(processingId)} onClick={() => { const item = approvalConfirmationItem; setApprovalConfirmationItem(null); void processPending(item, 'Approved') }} className="flex min-h-12 items-center justify-center gap-2 rounded-2xl bg-emerald-600 font-extrabold text-white disabled:opacity-60">{processingId ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />} Xác nhận duyệt</button>
+            </div>
+          </section>
         </div>
       )}
 
