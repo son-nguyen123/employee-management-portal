@@ -740,8 +740,8 @@ export default function NotificationsPage() {
       </PageContainer>
 
       {selectedPending && selectedPendingMeta && (
-        <div className="fixed inset-0 z-[75] grid place-items-center overflow-hidden bg-slate-950/45 p-3 backdrop-blur-sm sm:p-6">
-          <div role="dialog" aria-modal="true" aria-labelledby="employee-review-title" className="flex max-h-[min(88dvh,760px)] w-full max-w-lg flex-col overflow-hidden rounded-[2rem] border border-white/70 bg-white shadow-2xl shadow-slate-950/30 dark:border-white/10 dark:bg-slate-900">
+        <div className="fixed inset-0 z-[75] flex items-end justify-center overflow-y-auto bg-slate-950/45 p-0 backdrop-blur-sm sm:items-center sm:p-6">
+          <div role="dialog" aria-modal="true" aria-labelledby="employee-review-title" className="flex max-h-[calc(100dvh-0.75rem)] w-full max-w-lg flex-col overflow-hidden rounded-t-[2rem] border border-white/70 bg-white shadow-2xl shadow-slate-950/30 sm:max-h-[min(88dvh,760px)] sm:rounded-[2rem] dark:border-white/10 dark:bg-slate-900">
           <header className="z-10 shrink-0 border-b border-slate-200/70 bg-white/95 backdrop-blur-xl dark:border-white/10 dark:bg-slate-900/95">
             <div className="flex min-h-18 items-center gap-3 px-4">
               <button type="button" onClick={() => { setSelectedPending(null); setRejectIntentId(null) }} className="grid h-10 w-10 shrink-0 place-items-center rounded-2xl bg-slate-100 transition hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700" aria-label="Đóng kiểm tra">
@@ -769,16 +769,16 @@ export default function NotificationsPage() {
               </section>
 
               <section className="space-y-5 p-4">
-                {selectedPending.type !== 'account' && <ReviewAssessment context={selectedReview} item={selectedPending} requestWarning={selectedPending.warning} loading={reviewLoadingId === selectedPending.id} error={reviewError} onRetry={() => void openPending(selectedPending)} />}
-                {selectedPending.managerMessageStatus && (
+                {rejectIntentId !== selectedPending.id && selectedPending.type !== 'account' && <ReviewAssessment context={selectedReview} item={selectedPending} requestWarning={selectedPending.warning} loading={reviewLoadingId === selectedPending.id} error={reviewError} onRetry={() => void openPending(selectedPending)} />}
+                {rejectIntentId !== selectedPending.id && selectedPending.managerMessageStatus && (
                   <p className="rounded-2xl bg-sky-50 p-3 text-sm font-semibold text-sky-900 dark:bg-sky-500/10 dark:text-sky-100">
                     Xác nhận liên hệ: {selectedPending.managerMessageStatus === 'messagedTri' ? 'đã nhắn anh Trí' : selectedPending.managerMessageStatus === 'notMessaged' ? 'chưa nhắn riêng' : 'đã nhắn quản lý khác'}.
                   </p>
                 )}
-                {selectedPending.reason && (
+                {rejectIntentId !== selectedPending.id && selectedPending.reason && (
                   <p className="rounded-2xl bg-slate-50 p-3 text-sm leading-6 text-slate-700 dark:bg-slate-800 dark:text-slate-200"><span className="font-black">Ghi chú:</span> {selectedPending.reason}</p>
                 )}
-                <details className="rounded-2xl border border-slate-200 dark:border-slate-700">
+                {rejectIntentId !== selectedPending.id && <details className="rounded-2xl border border-slate-200 dark:border-slate-700">
                   <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3 text-sm font-black"><span>Kiểm tra thêm yêu cầu và liên hệ</span><ChevronDown className="h-4 w-4" /></summary>
                   <div className="space-y-4 border-t border-slate-100 p-4 dark:border-slate-700">
                     <div className="grid grid-cols-2 gap-2">
@@ -788,10 +788,15 @@ export default function NotificationsPage() {
                     <SimpleShiftList title={selectedPending.staffRequestType === 'overtime' ? 'Ca muốn làm thêm' : selectedPending.type === 'schedule' ? 'Lịch vừa gửi' : 'Ca muốn thêm / đổi'} items={selectedPending.shifts} />
                     <SimpleShiftList title="Ca muốn hủy" items={selectedPending.removedShifts} />
                   </div>
-                </details>
+                </details>}
 
-                <textarea value={reviewNotes[selectedPending.id] || ''} onChange={(event) => setReviewNotes((current) => ({ ...current, [selectedPending.id]: event.target.value }))} placeholder={rejectIntentId === selectedPending.id ? 'Nhập lý do từ chối…' : 'Ghi chú phản hồi (bắt buộc nếu từ chối)'} rows={3} autoFocus={rejectIntentId === selectedPending.id} className="w-full resize-none rounded-2xl border border-slate-200 bg-white px-4 py-3 text-base leading-6 outline-none focus:border-indigo-400 dark:border-slate-700 dark:bg-slate-900" />
-                {selectedPending.type === 'schedule' && new Date().getDay() === 0 && (
+                {rejectIntentId === selectedPending.id && (
+                  <section className="rounded-3xl border border-rose-200 bg-rose-50 p-4 dark:border-rose-500/30 dark:bg-rose-500/10">
+                    <div className="flex items-center justify-between gap-3"><p className="font-black text-rose-950 dark:text-rose-100">Lý do từ chối</p><button type="button" onClick={() => setRejectIntentId(null)} className="text-sm font-bold text-rose-700 dark:text-rose-200">Quay lại</button></div>
+                    <textarea value={reviewNotes[selectedPending.id] || ''} onChange={(event) => setReviewNotes((current) => ({ ...current, [selectedPending.id]: event.target.value }))} placeholder="Nhập lý do để gửi cho nhân viên…" rows={3} className="mt-3 w-full resize-none rounded-2xl border border-rose-200 bg-white px-4 py-3 text-base leading-6 outline-none focus:border-rose-500 dark:border-rose-500/30 dark:bg-slate-900" />
+                  </section>
+                )}
+                {rejectIntentId !== selectedPending.id && selectedPending.type === 'schedule' && new Date().getDay() === 0 && (
                   <label className="flex cursor-pointer items-start gap-3 rounded-2xl border border-indigo-200 bg-indigo-50 p-3 text-sm leading-5 text-indigo-950 dark:border-indigo-500/30 dark:bg-indigo-500/10 dark:text-indigo-100">
                     <input type="checkbox" checked={allowSundayResubmissionWithoutPenalty} onChange={(event) => setAllowSundayResubmissionWithoutPenalty(event.target.checked)} className="mt-1 h-4 w-4 accent-indigo-600" />
                     <span><strong>Cho phép nhân viên ghi lại lịch vào Chủ nhật mà không trừ tiền.</strong><br />Nếu không cho phép, lịch gửi lại sẽ áp dụng khoản trừ theo luật hiện tại.</span>

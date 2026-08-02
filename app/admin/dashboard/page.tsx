@@ -12,10 +12,6 @@ import type { Employee, WorkSchedule } from '@/lib/models/types'
 import { Header } from '@/components/layout/header'
 import { PageContainer } from '@/components/layout/page-container'
 import { Badge } from '@/components/ui/badge'
-import {
-  getWeeklyScheduleTarget,
-  updateWeeklyScheduleTarget,
-} from '@/lib/services/managementSettingsService'
 import { OtherRequestWorkspace } from '@/components/admin/other-request-workspace'
 import { RequestIdentityAvatar } from '@/components/admin/request-identity-avatar'
 import { profileImageUrl } from '@/lib/utils/profileImage'
@@ -78,8 +74,6 @@ export default function AdminDashboardPage() {
   const [rejectReason, setRejectReason] = useState('')
   const [allowSundayResubmissionWithoutPenalty, setAllowSundayResubmissionWithoutPenalty] = useState(false)
   const [message, setMessage] = useState('')
-  const [expectedEmployees, setExpectedEmployees] = useState(0)
-  const [savingTarget, setSavingTarget] = useState(false)
   const [selectedProcessedBatch, setSelectedProcessedBatch] = useState<ProcessedScheduleBatch | null>(null)
   const [selectedPendingBatch, setSelectedPendingBatch] = useState<ScheduleBatch | null>(null)
   const [newEmployeeApprovalBatch, setNewEmployeeApprovalBatch] = useState<ScheduleBatch | null>(null)
@@ -92,13 +86,6 @@ export default function AdminDashboardPage() {
     }, 0)
     return () => window.clearTimeout(timeout)
   }, [])
-
-  useEffect(() => {
-    if (!authUser || isPreviewMode) return
-    void getWeeklyScheduleTarget(nextMondayKey())
-      .then((result) => setExpectedEmployees(result.expectedEmployees))
-      .catch(() => setMessage('Chưa tải được mục tiêu nhân viên của tuần này.'))
-  }, [authUser, isPreviewMode])
 
   useEffect(() => {
     if (!authUser) return
@@ -276,27 +263,7 @@ export default function AdminDashboardPage() {
     ).map((item) => item.employeeId)).size,
     [schedules]
   )
-  const weeklyTarget = expectedEmployees || activeEmployees.length
-
-  const saveWeeklyTarget = async () => {
-    const target = Math.floor(expectedEmployees)
-    if (target < 1) {
-      setMessage('Số nhân viên cần gửi lịch phải từ 1 trở lên.')
-      return
-    }
-    setSavingTarget(true)
-    try {
-      if (!isPreviewMode) {
-        const result = await updateWeeklyScheduleTarget(nextMondayKey(), target)
-        setExpectedEmployees(result.expectedEmployees)
-      }
-      setMessage(`Đã lưu mục tiêu chung ${target} nhân viên cho tuần kế tiếp.`)
-    } catch (error) {
-      setMessage(error instanceof Error ? error.message : 'Chưa thể lưu mục tiêu tuần.')
-    } finally {
-      setSavingTarget(false)
-    }
-  }
+  const weeklyTarget = activeEmployees.length
 
   const review = async (batch: ScheduleBatch, status: 'Approved' | 'Rejected', reviewNote = '', allowSundayResubmission = false, waiveNewEmployeePenalty = false) => {
     if (status === 'Rejected' && !reviewNote.trim()) return false
@@ -409,7 +376,7 @@ export default function AdminDashboardPage() {
           {[
             { label: 'Đang hoạt động', value: activeEmployees.length, icon: UsersRound, color: 'bg-indigo-600' },
             { label: 'Bảng chờ', value: pendingBatches.length, icon: CalendarCheck, color: 'bg-amber-500' },
-            { label: 'Đã gửi lịch', value: `${submittedEmployees}/${weeklyTarget}`, icon: Check, color: 'bg-emerald-600' },
+            { label: 'Đã tạo lịch', value: `${submittedEmployees}/${weeklyTarget}`, icon: Check, color: 'bg-emerald-600' },
           ].map(({ label, value, icon: Icon, color }) => (
             <article key={label} className="mobile-card p-3">
               <div className={`grid h-9 w-9 place-items-center rounded-xl text-white ${color}`}><Icon className="h-4 w-4" /></div>
@@ -417,12 +384,6 @@ export default function AdminDashboardPage() {
               <p className="truncate text-[11px] font-semibold text-muted-foreground">{label}</p>
             </article>
           ))}
-        </section>
-        <section className="mt-3 flex items-end gap-3 rounded-2xl border border-slate-200 bg-white p-3 dark:border-slate-700 dark:bg-slate-900">
-          <label className="min-w-0 flex-1 text-xs font-bold text-muted-foreground">Số nhân viên cần gửi lịch tuần này
-            <input type="number" min="1" inputMode="numeric" value={expectedEmployees || ''} onChange={(event) => setExpectedEmployees(Math.max(0, Number(event.target.value) || 0))} className="mobile-field mt-2" placeholder={String(activeEmployees.length)} />
-          </label>
-          <button type="button" disabled={savingTarget} onClick={() => void saveWeeklyTarget()} className="min-h-12 rounded-2xl bg-slate-950 px-5 text-sm font-bold text-white disabled:opacity-60 dark:bg-white dark:text-slate-950">{savingTarget ? 'Đang lưu...' : 'Lưu'}</button>
         </section>
         <div className="mt-5 grid grid-cols-2 gap-2 rounded-2xl bg-slate-100 p-1 dark:bg-slate-800">
           <button type="button" onClick={() => setTab('schedules')} className={`min-h-11 rounded-xl text-sm font-bold ${tab === 'schedules' ? 'bg-white text-indigo-600 shadow-sm dark:bg-slate-950' : 'text-muted-foreground'}`}>Lịch chờ duyệt</button>
