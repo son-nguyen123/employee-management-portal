@@ -14,6 +14,8 @@ import {
   normalizeLeaveRequests,
   updateWeeklyScheduleTarget,
   getManagementContact,
+  getPushDiagnostics,
+  sendTestPush,
   getAuditReceiptSettings,
   updateAuditReceiptSettings,
   manageEmployeeStatus,
@@ -33,6 +35,7 @@ import { recordCompletedWorkflowAudit } from '@/lib/server/audit-trail'
 import { dispatchQueuedAuditEmails } from '@/lib/server/audit-email'
 
 export const runtime = 'nodejs'
+export const maxDuration = 30
 
 const handlers = {
   submitSchedules,
@@ -56,6 +59,8 @@ const handlers = {
   normalizeLeaveRequests,
   updateWeeklyScheduleTarget,
   getManagementContact,
+  getPushDiagnostics,
+  sendTestPush,
   getAuditReceiptSettings,
   updateAuditReceiptSettings,
   manageEmployeeStatus,
@@ -63,6 +68,8 @@ const handlers = {
   updateAccountRegistrationWindow,
   respondPenaltyConsent,
 } as const
+
+const diagnosticActions = new Set(['getPushDiagnostics', 'sendTestPush'])
 
 function safeServerError(error: unknown): { status: number; message: string } {
   if (error instanceof ApiError) {
@@ -139,13 +146,15 @@ export async function POST(request: Request) {
       throw new ApiError(400, 'Nghiệp vụ không hợp lệ.')
     }
     const result = await handlers[action as keyof typeof handlers](actor, payload)
-    try {
-      await recordCompletedWorkflowAudit({ actor, action, payload, result })
-      await dispatchQueuedAuditEmails()
-    } catch (auditError) {
-      // Audit/email is isolated so an integration outage never rolls back a
-      // successfully completed employee request.
-      console.error('Workflow audit/email error:', auditError)
+    if (!diagnosticActions.has(action)) {
+      try {
+        await recordCompletedWorkflowAudit({ actor, action, payload, result })
+        await dispatchQueuedAuditEmails()
+      } catch (auditError) {
+        // Audit/email is isolated so an integration outage never rolls back a
+        // successfully completed employee request.
+        console.error('Workflow audit/email error:', auditError)
+      }
     }
     return NextResponse.json({ ok: true, result })
   } catch (error) {

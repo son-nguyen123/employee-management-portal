@@ -162,6 +162,102 @@ export async function getManagementContact(actor: RequestActor) {
   }
 }
 
+function timestampIso(value: unknown): string | null {
+  return value instanceof Timestamp ? value.toDate().toISOString() : null
+}
+
+/**
+ * Returns only notification registrations owned by the authenticated user.
+ * The full FID is never returned by this endpoint.
+ */
+export async function getPushDiagnostics(actor: RequestActor, raw: unknown) {
+  requireStaff(actor)
+  const body = objectBody(raw)
+  const currentFid = text(body.fid, 'Thiết bị', 256)
+  const [devices, dispatches] = await Promise.all([
+    adminDb.collection('employees').doc(actor.uid).collection('notificationDevices').limit(50).get(),
+    adminDb.collection('pushDispatches').where('employeeId', '==', actor.uid).limit(100).get(),
+  ])
+  const currentDevice = devices.docs.find((item) => item.id === currentFid)
+  const recentDispatches = dispatches.docs
+    .map((item) => ({
+      id: item.id,
+      state: String(item.get('state') || 'unknown'),
+      successCount: Number(item.get('successCount') || 0),
+      failureCount: Number(item.get('failureCount') || 0),
+      error: typeof item.get('error') === 'string' ? String(item.get('error')).slice(0, 300) : '',
+      updatedAt: timestampIso(item.get('updatedAt')),
+      isTest: item.get('source') === 'notificationTest',
+    }))
+    .sort((left, right) => String(right.updatedAt || '').localeCompare(String(left.updatedAt || '')))
+    .slice(0, 10)
+
+  return {
+    currentDeviceRegistered: !!currentDevice,
+    registeredDeviceCount: devices.size,
+    currentDevice: currentDevice ? {
+      permission: String(currentDevice.get('permission') || ''),
+      platform: String(currentDevice.get('platform') || '').slice(0, 300),
+      createdAt: timestampIso(currentDevice.get('createdAt')),
+      updatedAt: timestampIso(currentDevice.get('updatedAt')),
+      lastSeenAt: timestampIso(currentDevice.get('lastSeenAt')),
+    } : null,
+    recentDispatches,
+  }
+}
+
+/**
+ * Sends an isolated push to the current app installation. It intentionally
+ * waits briefly so the user can lock the iPhone and verify background delivery.
+ */
+export async function sendTestPush(actor: RequestActor, raw: unknown) {
+  requireStaff(actor)
+  const body = objectBody(raw)
+  const fid = text(body.fid, 'Thiết bị', 256)
+  const operationId = requestId(body)
+  const deviceRef = adminDb.collection('employees').doc(actor.uid)
+    .collection('notificationDevices').doc(fid)
+  const device = await deviceRef.get()
+  if (!device.exists || device.get('employeeId') !== actor.uid || device.get('permission') !== 'granted') {
+    throw new ApiError(409, 'iPhone này chưa có đăng ký Push hợp lệ. Hãy bấm “Sửa đăng ký” trước.')
+  }
+
+  const dispatchId = `push-test-${actor.uid}-${operationId}`
+  const dispatchRef = adminDb.collection('pushDispatches').doc(dispatchId)
+  const existing = await dispatchRef.get()
+  if (existing.exists && ['sent', 'partial', 'failed', 'no-devices'].includes(String(existing.get('state')))) {
+    return {
+      state: String(existing.get('state')),
+      successCount: Number(existing.get('successCount') || 0),
+      failureCount: Number(existing.get('failureCount') || 0),
+      reused: true,
+    }
+  }
+
+  await dispatchRef.set({
+    source: 'notificationTest',
+    sourceId: operationId,
+    employeeId: actor.uid,
+    status: 'test',
+    state: 'queued',
+    createdAt: FieldValue.serverTimestamp(),
+    updatedAt: FieldValue.serverTimestamp(),
+  }, { merge: true })
+
+  await new Promise((resolve) => setTimeout(resolve, 6000))
+  return sendEmployeePush({
+    employeeId: actor.uid,
+    dispatchId,
+    title: 'Kiểm tra thông báo Trí Candy',
+    body: 'Nếu bạn thấy tin này trên màn hình khóa, kết nối iPhone và FCM đang hoạt động tốt.',
+    link: '/profile',
+    source: 'notificationTest',
+    sourceId: operationId,
+    status: 'test',
+    targetFids: [fid],
+  })
+}
+
 export async function getAuditReceiptSettings(actor: RequestActor) {
   requireManager(actor)
   const snapshot = await adminDb.collection('managementSettings').doc('auditReceipts').get()
@@ -2458,6 +2554,7 @@ async function sendEmployeePush(params: {
   source: string
   sourceId: string
   status: string
+  targetFids?: string[]
 }) {
   const dispatchRef = adminDb.collection('pushDispatches').doc(params.dispatchId)
   const devices = await adminDb.collection('employees').doc(params.employeeId)
@@ -2482,7 +2579,8 @@ async function sendEmployeePush(params: {
     await staleBatch.commit()
   }
 
-  const fids = [...deviceByFid.keys()]
+  const requestedFids = params.targetFids ? new Set(params.targetFids) : null
+  const fids = [...deviceByFid.keys()].filter((fid) => !requestedFids || requestedFids.has(fid))
   if (!fids.length) {
     await dispatchRef.set({
       state: 'no-devices',

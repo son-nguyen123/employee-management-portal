@@ -22,6 +22,8 @@ type WorkflowAction =
   | 'normalizeLeaveRequests'
   | 'updateWeeklyScheduleTarget'
   | 'getManagementContact'
+  | 'getPushDiagnostics'
+  | 'sendTestPush'
   | 'getAuditReceiptSettings'
   | 'updateAuditReceiptSettings'
   | 'manageEmployeeStatus'

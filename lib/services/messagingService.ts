@@ -178,6 +178,11 @@ export async function isPushDeviceRegistered(employeeId: string): Promise<boolea
   return snapshot.exists()
 }
 
+export async function getCurrentPushDeviceId(): Promise<string> {
+  assertBrowser()
+  return getId(getInstallations(app))
+}
+
 export async function enablePushNotifications(
   employeeId: string
 ): Promise<PushRegistrationResult> {
@@ -218,6 +223,18 @@ export async function disablePushNotifications(employeeId: string): Promise<void
   unregistrationObserver?.()
   registrationObserver = null
   unregistrationObserver = null
+}
+
+export async function repairPushDeviceRegistration(
+  employeeId: string
+): Promise<PushRegistrationResult> {
+  const permission = await getPushPermissionState()
+  if (permission !== 'granted') {
+    throw new Error('Hãy bật quyền thông báo trong Cài đặt iPhone trước khi sửa đăng ký.')
+  }
+
+  await disablePushNotifications(employeeId)
+  return registerPushDevice(employeeId, permission)
 }
 
 export async function subscribeToForegroundMessages(
