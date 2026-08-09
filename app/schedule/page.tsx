@@ -864,6 +864,13 @@ export default function SchedulePage() {
       const statusWidth = Math.max(150, context.measureText(statusText).width + 42)
       roundedRect(width - statusWidth - 50, 67, statusWidth, 52, 26, '#d1fae5')
       text(statusText, width - statusWidth / 2 - 50, 93, '700 20px -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif', '#047857', 'center')
+      if (schedulePenaltyActive) {
+        const penaltyText = `Trừ ${effectivePenaltyAmount.toLocaleString('vi-VN')}đ`
+        context.font = '800 17px -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif'
+        const penaltyWidth = Math.max(138, context.measureText(penaltyText).width + 34)
+        roundedRect(width - penaltyWidth - 50, 126, penaltyWidth, 32, 16, '#ffe4e6')
+        text(penaltyText, width - penaltyWidth / 2 - 50, 142, '800 17px -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif', '#be123c', 'center')
+      }
 
       const summaryY = headerHeight + 18
       roundedRect(42, summaryY, width - 84, 92, 20, '#f8fafc')
