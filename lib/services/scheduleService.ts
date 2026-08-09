@@ -1,6 +1,6 @@
 import { collection, getDocs, onSnapshot, query, where, orderBy } from 'firebase/firestore'
 import { db } from '@/lib/firebase'
-import { WorkSchedule } from '@/lib/models/types'
+import { Penalty, WorkSchedule } from '@/lib/models/types'
 import { callWorkflowApi, newWorkflowRequestId } from '@/lib/services/workflowApi'
 
 const SCHEDULES_COLLECTION = 'workSchedules'
@@ -194,16 +194,86 @@ function scheduleFromSnapshot(item: { id: string; data: () => Record<string, unk
   return { id: item.id, ...item.data() } as WorkSchedule
 }
 
+function valueAsDate(value: unknown): Date {
+  if (value instanceof Date) return value
+  if (value && typeof value === 'object' && 'toDate' in value && typeof value.toDate === 'function') return value.toDate()
+  return new Date(0)
+}
+
+function weekBounds(value: unknown) {
+  const start = valueAsDate(value)
+  const day = start.getDay() || 7
+  start.setDate(start.getDate() - day + 1)
+  start.setHours(0, 0, 0, 0)
+  const end = new Date(start)
+  end.setDate(end.getDate() + 7)
+  return { start, end }
+}
+
+/**
+ * Older schedule rows may not contain the penalty link because the penalty
+ * was recorded in a separate transaction. Merge the matching active weekly
+ * schedule-submission penalty so every admin schedule view shows the same
+ * source of truth.
+ */
+function attachSchedulePenalties(schedules: WorkSchedule[], penalties: Penalty[]): WorkSchedule[] {
+  return schedules.map((schedule) => {
+    if (Number(schedule.penaltyAmount || 0) > 0) return schedule
+    const { start, end } = weekBounds(schedule.date)
+    const match = penalties.find((penalty) => {
+      if (penalty.status === 'Cancelled' || penalty.sourceType !== 'scheduleSubmission') return false
+      if (String(penalty.employeeId) !== String(schedule.employeeId)) return false
+      if (schedule.penaltyId && penalty.id === schedule.penaltyId) return Number(penalty.amount || 0) > 0
+      const penaltyDate = valueAsDate(penalty.penaltyDate)
+      return penaltyDate >= start && penaltyDate < end && Number(penalty.amount || 0) > 0
+    })
+    return match
+      ? { ...schedule, penaltyId: match.id || null, penaltyAmount: Number(match.amount || 0) }
+      : schedule
+  })
+}
+
 export function subscribeToAllSchedules(
   callback: (schedules: WorkSchedule[]) => void,
   onError?: (error: Error) => void
 ): () => void {
   const schedulesQuery = query(collection(db, SCHEDULES_COLLECTION), orderBy('date', 'desc'))
-  return onSnapshot(
+  const penaltiesQuery = query(collection(db, 'penalties'), orderBy('penaltyDate', 'desc'))
+  let scheduleRows: WorkSchedule[] = []
+  let penaltyRows: Penalty[] = []
+  let schedulesReady = false
+  let penaltiesReady = false
+  const publish = () => {
+    if (schedulesReady) callback(attachSchedulePenalties(scheduleRows, penaltiesReady ? penaltyRows : []))
+  }
+  const unsubscribeSchedules = onSnapshot(
     schedulesQuery,
-    (snapshot) => callback(snapshot.docs.map(scheduleFromSnapshot)),
+    (snapshot) => {
+      scheduleRows = snapshot.docs.map(scheduleFromSnapshot)
+      schedulesReady = true
+      publish()
+    },
     (error) => onError?.(error)
   )
+  const unsubscribePenalties = onSnapshot(
+    penaltiesQuery,
+    (snapshot) => {
+      penaltyRows = snapshot.docs.map((item) => ({ id: item.id, ...item.data() } as Penalty))
+      penaltiesReady = true
+      publish()
+    },
+    (error) => {
+      // Schedule data remains usable if a legacy project has not granted the
+      // optional penalty read yet; the schedule listener still publishes rows.
+      penaltiesReady = true
+      publish()
+      onError?.(error)
+    }
+  )
+  return () => {
+    unsubscribeSchedules()
+    unsubscribePenalties()
+  }
 }
 
 export function subscribeToEmployeeSchedules(

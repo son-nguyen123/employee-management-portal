@@ -350,6 +350,8 @@ export default function NotificationsPage() {
   const visibleManagementHistory = [...decisions]
     .filter((item) => item.reviewedAt >= recentWindow.start && item.reviewedAt < recentWindow.end)
     .sort((left, right) => right.reviewedAt.getTime() - left.reviewedAt.getTime())
+  const visibleScheduleHistory = visibleManagementHistory.filter((item) => item.resource === 'schedule')
+  const visibleOtherHistory = visibleManagementHistory.filter((item) => item.resource !== 'schedule')
   const unreadItems = visibleItems.filter((item) => !item.isRead)
   const readItems = visibleItems.filter((item) => item.isRead)
   const employeeMap = useMemo(() => new Map(employees.map((employee) => [employee.uid, employee])), [employees])
@@ -675,6 +677,34 @@ export default function NotificationsPage() {
   const selectedReview = selectedPending ? reviewContexts[selectedPending.id] : undefined
   const selectedNotificationMeta = selectedNotification ? notificationMetaFor(selectedNotification) : null
 
+  const renderHistoryCard = (item: DecisionHistoryItem) => {
+    const employee = employeeMap.get(item.employeeId)
+    const meta = managementMeta[item.resource]
+    const hasPenalty = item.resource === 'schedule' && Number(item.penaltyAmount || 0) > 0
+    const tone = hasPenalty ? 'border-l-rose-500' : item.resource === 'schedule' && item.underMinimumWarning ? 'border-l-amber-400' : item.status === 'Approved' ? 'border-l-emerald-500' : 'border-l-rose-500'
+    const statusLabel = item.resource === 'schedule' && item.autoApproved
+      ? hasPenalty
+        ? `Tự động duyệt · Trừ ${item.penaltyAmount?.toLocaleString('vi-VN')}đ`
+        : item.underMinimumWarning
+          ? `Tự động duyệt · Cần lưu ý ${item.weeklyShiftCount || 0}/6 ca`
+          : `Tự động duyệt · Tốt ${item.weeklyShiftCount || 0} ca`
+      : `${item.status === 'Approved' ? 'Đã duyệt' : 'Đã từ chối'} · có thể mở lại và hoàn tác`
+    return (
+      <article key={item.key} className={`mobile-card overflow-hidden border-l-4 ${tone}`}>
+        <button type="button" onClick={() => { setSelectedDecision(item); setUndoReason(''); setMessage('') }} className="flex w-full gap-3 p-4 text-left">
+          <IdentityAvatar name={employee?.fullName || 'Nhân viên'} photoURL={employee?.photoURL} icon={meta.icon} color={meta.color} />
+          <div className="min-w-0 flex-1">
+            <h2 className="font-extrabold">{item.title}</h2>
+            <p className="mt-1 font-bold">{employee?.fullName || item.employeeId}{employee?.employeeCode ? ` · ${employee.employeeCode}` : ''}</p>
+            <p className="mt-1 line-clamp-2 text-sm text-muted-foreground">{item.detail}</p>
+            <p className={`mt-2 text-xs font-bold ${hasPenalty ? 'text-rose-600' : item.resource === 'schedule' && item.underMinimumWarning ? 'text-amber-600' : item.status === 'Approved' ? 'text-emerald-600' : 'text-rose-600'}`}>{statusLabel}</p>
+          </div>
+          <ChevronRight className="mt-3 h-5 w-5 shrink-0 text-slate-400" />
+        </button>
+      </article>
+    )
+  }
+
   return (
     <main className="min-h-screen">
       <Header
@@ -685,7 +715,7 @@ export default function NotificationsPage() {
         {isManagement ? (
           <div className="mb-4 grid grid-cols-2 gap-2 rounded-2xl bg-slate-100 p-1 dark:bg-slate-800">
             <button type="button" onClick={() => setManagementView('schedule')} className={`min-h-11 rounded-xl text-sm font-bold ${managementView === 'schedule' ? 'bg-white text-indigo-600 shadow-sm dark:bg-slate-950' : 'text-muted-foreground'}`}>Lịch</button>
-            <button type="button" onClick={() => setManagementView('pending')} className={`min-h-11 rounded-xl text-sm font-bold ${managementView === 'pending' ? 'bg-white text-indigo-600 shadow-sm dark:bg-slate-950' : 'text-muted-foreground'}`}>Cần duyệt{visiblePendingItems.length > 0 && <span className="ml-1.5 rounded-full bg-rose-500 px-1.5 py-0.5 text-[10px] text-white">{visiblePendingItems.length}</span>}</button>
+            <button type="button" onClick={() => setManagementView('pending')} className={`min-h-11 rounded-xl text-sm font-bold ${managementView === 'pending' ? 'bg-white text-indigo-600 shadow-sm dark:bg-slate-950' : 'text-muted-foreground'}`}>Yêu cầu khác{visiblePendingItems.length > 0 && <span className="ml-1.5 rounded-full bg-rose-500 px-1.5 py-0.5 text-[10px] text-white">{visiblePendingItems.length}</span>}</button>
           </div>
         ) : (
           <p className="mb-4 rounded-2xl bg-slate-100 px-4 py-3 text-center text-sm font-bold text-slate-600 dark:bg-slate-800 dark:text-slate-300">Thông báo trong tháng này</p>
@@ -747,37 +777,14 @@ export default function NotificationsPage() {
                 </article>
               )
             })}
-            {visiblePendingItems.length > 0 && visibleManagementHistory.length > 0 && <div className="flex items-center gap-3 py-2 text-[10px] font-black uppercase tracking-[0.16em] text-slate-400"><span className="h-px flex-1 bg-slate-200 dark:bg-slate-700" /><span>Đã xử lý</span><span className="h-px flex-1 bg-slate-200 dark:bg-slate-700" /></div>}
-            {!visiblePendingItems.length && <div className="mobile-card p-8 text-center"><CheckCheck className="mx-auto h-8 w-8 text-emerald-600" /><h2 className="mt-3 font-extrabold">Không có mục cần duyệt</h2><p className="mt-1 text-sm text-muted-foreground">Các yêu cầu mới trong 6 ngày gần nhất sẽ xuất hiện ở đây.</p></div>}
+            {visiblePendingItems.length > 0 && visibleOtherHistory.length > 0 && <div className="flex items-center gap-3 py-2 text-[10px] font-black uppercase tracking-[0.16em] text-slate-400"><span className="h-px flex-1 bg-slate-200 dark:bg-slate-700" /><span>Đã xử lý</span><span className="h-px flex-1 bg-slate-200 dark:bg-slate-700" /></div>}
+            {visibleOtherHistory.map(renderHistoryCard)}
+            {!visiblePendingItems.length && !visibleOtherHistory.length && <div className="mobile-card p-8 text-center"><CheckCheck className="mx-auto h-8 w-8 text-emerald-600" /><h2 className="mt-3 font-extrabold">Không có yêu cầu khác</h2><p className="mt-1 text-sm text-muted-foreground">Các yêu cầu mới hoặc đã xử lý trong 6 ngày gần nhất sẽ xuất hiện ở đây.</p></div>}
             </>}
             {managementView === 'schedule' && <>
-            {visibleManagementHistory.map((item) => {
-              const employee = employeeMap.get(item.employeeId)
-              const meta = managementMeta[item.resource]
-              return (
-                <article key={item.key} className={`mobile-card overflow-hidden border-l-4 ${item.resource === 'schedule' && item.penaltyAmount ? 'border-l-rose-500' : item.resource === 'schedule' && item.underMinimumWarning ? 'border-l-amber-400' : item.status === 'Approved' ? 'border-l-emerald-500' : 'border-l-rose-500'}`}>
-                  <button
-                    type="button"
-                    onClick={() => { setSelectedDecision(item); setUndoReason(''); setMessage('') }}
-                    className="flex w-full gap-3 p-4 text-left"
-                  >
-                    <IdentityAvatar name={employee?.fullName || 'Nhân viên'} photoURL={employee?.photoURL} icon={meta.icon} color={meta.color} />
-                    <div className="min-w-0 flex-1">
-                      <h2 className="font-extrabold">{item.title}</h2>
-                      <p className="mt-1 font-bold">{employee?.fullName || item.employeeId}{employee?.employeeCode ? ` · ${employee.employeeCode}` : ''}</p>
-                      <p className="mt-1 line-clamp-2 text-sm text-muted-foreground">{item.detail}</p>
-                      <p className={`mt-2 text-xs font-bold ${item.resource === 'schedule' && item.penaltyAmount ? 'text-rose-600' : item.resource === 'schedule' && item.underMinimumWarning ? 'text-amber-600' : item.status === 'Approved' ? 'text-emerald-600' : 'text-rose-600'}`}>
-                        {item.resource === 'schedule' && item.autoApproved
-                          ? item.penaltyAmount ? `Tự động duyệt · Trừ ${item.penaltyAmount.toLocaleString('vi-VN')}đ` : item.underMinimumWarning ? `Tự động duyệt · Cần lưu ý ${item.weeklyShiftCount || 0}/6 ca` : `Tự động duyệt · Tốt ${item.weeklyShiftCount || 0} ca`
-                          : `${item.status === 'Approved' ? 'Đã duyệt' : 'Đã từ chối'} · có thể mở lại và hoàn tác`}
-                      </p>
-                    </div>
-                    <ChevronRight className="mt-3 h-5 w-5 shrink-0 text-slate-400" />
-                  </button>
-                </article>
-              )
-            })}
-            {!visibleManagementHistory.length && <div className="mobile-card p-8 text-center"><CheckCheck className="mx-auto h-8 w-8 text-emerald-600" /><h2 className="mt-3 font-extrabold">Chưa có cập nhật lịch</h2><p className="mt-1 text-sm text-muted-foreground">Kết quả trong 6 ngày gần nhất sẽ xuất hiện ở đây.</p></div>}
+            {visibleScheduleHistory.map(renderHistoryCard)}
+            {/* Schedule history cards are rendered above. */}
+            {!visibleScheduleHistory.length && <div className="mobile-card p-8 text-center"><CheckCheck className="mx-auto h-8 w-8 text-emerald-600" /><h2 className="mt-3 font-extrabold">Chưa có cập nhật lịch</h2><p className="mt-1 text-sm text-muted-foreground">Kết quả trong 6 ngày gần nhất sẽ xuất hiện ở đây.</p></div>}
             </>}
           </div>
         ) : (

@@ -49,6 +49,16 @@ function mondayKey(value: unknown): string {
   return date.toISOString().slice(0, 10)
 }
 
+function weekRange(value: unknown): { start: Date; end: Date } {
+  const start = asDate(value)
+  const day = start.getDay() || 7
+  start.setDate(start.getDate() - day + 1)
+  start.setHours(0, 0, 0, 0)
+  const end = new Date(start)
+  end.setDate(end.getDate() + 7)
+  return { start, end }
+}
+
 function processed(row: SnapshotRow): row is SnapshotRow & { status: DecisionStatus } {
   return row.status === 'Approved' || row.status === 'Rejected'
 }
@@ -146,11 +156,21 @@ function buildRows(data: Record<DecisionResource, SnapshotRow[]>, penaltyRows: S
       return current > latest ? current : latest
     }, new Date(0))
     const actualShiftCount = sorted.filter((item) => !String(item.note || '').includes('[DUTY_ONLY]') && !String(item.note || '').includes('[NO_SHIFTS]')).length
-    const penaltyId = String(sorted.find((item) => item.penaltyId)?.penaltyId || '') || null
+    const directPenaltyId = String(sorted.find((item) => item.penaltyId)?.penaltyId || '') || null
+    const { start: weekStart, end: weekEnd } = weekRange(first.date)
+    const fallbackPenalty = penaltyRows.find((penalty) => {
+      if (penalty.status === 'Cancelled' || penalty.sourceType !== 'scheduleSubmission') return false
+      if (String(penalty.employeeId || '') !== String(first.employeeId || '')) return false
+      const penaltyDate = asDate(penalty.penaltyDate)
+      return penaltyDate >= weekStart && penaltyDate < weekEnd && Number(penalty.amount || 0) > 0
+    })
+    const directPenalty = directPenaltyId ? penaltyById.get(directPenaltyId) : undefined
+    const penaltyRecord = (directPenalty && directPenalty.status !== 'Cancelled' ? directPenalty : undefined) || fallbackPenalty
+    const penaltyId = directPenaltyId || (penaltyRecord ? penaltyRecord.id : null)
     const penaltyAmount = Math.max(
       0,
       ...sorted.map((item) => Number(item.penaltyAmount || 0)),
-      ...(penaltyId ? [Number(penaltyById.get(penaltyId)?.amount || 0)] : [])
+      ...(penaltyRecord ? [Number(penaltyRecord.amount || 0)] : [])
     )
     rows.push({
       key: `schedule-${batchKey}`,
