@@ -23,6 +23,8 @@ export interface PreviewSchedule {
   weeklyShiftCount?: number
   underMinimumWarning?: boolean
   autoApproved?: boolean
+  penaltyId?: string | null
+  penaltyAmount?: number
   reviewedAt?: string
   fixedSchedule?: boolean
 }

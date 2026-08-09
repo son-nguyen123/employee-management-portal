@@ -72,7 +72,15 @@ function actualShiftCount(batch: ScheduleBatch) {
 }
 
 function batchNeedsAttention(batch: ScheduleBatch) {
-  return batch.schedules.some((item) => item.underMinimumWarning) || actualShiftCount(batch) < 6
+  return batch.schedules.some((item) => item.underMinimumWarning || Number(item.penaltyAmount || 0) > 0 || Boolean(item.penaltyId)) || actualShiftCount(batch) < 6
+}
+
+function batchPenaltyAmount(batch: ScheduleBatch) {
+  return Math.max(0, ...batch.schedules.map((item) => Number(item.penaltyAmount || 0)))
+}
+
+function batchHasPenalty(batch: ScheduleBatch) {
+  return batch.schedules.some((item) => Boolean(item.penaltyId) || Number(item.penaltyAmount || 0) > 0)
 }
 
 export default function AdminDashboardPage() {
@@ -135,6 +143,8 @@ export default function AdminDashboardPage() {
             weeklyShiftCount: item.weeklyShiftCount,
             underMinimumWarning: item.underMinimumWarning,
             autoApproved: item.autoApproved,
+            penaltyId: item.penaltyId,
+            penaltyAmount: item.penaltyAmount,
             reviewedAt: item.reviewedAt ? new Date(item.reviewedAt) : new Date(),
             createdAt: new Date(),
             updatedAt: new Date(),
@@ -462,7 +472,7 @@ export default function AdminDashboardPage() {
             {missingEmployees.map((employee) => <Link key={employee.uid} href={`/admin/employees/${employee.uid}`} className="mobile-card flex min-h-20 items-center gap-3 border-l-4 border-l-orange-400 p-3"><RequestIdentityAvatar name={employee.fullName} photoURL={employee.photoURL} icon={CalendarCheck} iconColor="bg-indigo-600" /><div className="min-w-0 flex-1"><h3 className="truncate font-extrabold">{employee.fullName}</h3><p className="text-sm font-semibold text-muted-foreground">{employee.employeeCode}</p></div><span className="text-xs font-black text-orange-600">Chưa gửi</span><ChevronRight className="h-4 w-4 text-slate-400" /></Link>)}
             {pendingBatches.map((batch) => { const employee = employees.find((item) => item.uid === batch.employeeId); return <article key={batch.key} className="mobile-card flex min-h-20 w-full items-center gap-3 border-l-4 border-l-amber-400 p-3"><RequestIdentityAvatar name={batch.employeeName || batch.employeeId} photoURL={employee?.photoURL} icon={CalendarCheck} iconColor="bg-indigo-600" /><div className="min-w-0 flex-1"><h3 className="truncate font-extrabold">{batch.employeeName || batch.employeeId}</h3><p className="text-sm font-semibold text-muted-foreground">{batch.employeeCode || 'Nhân viên'} · {actualShiftCount(batch)} ca</p></div><span className="text-right text-xs font-black text-amber-600">Đang<br />đồng bộ</span></article> })}
             {processedBatches.length > 0 && <div className="flex items-center gap-3 py-2 text-[10px] font-black uppercase tracking-[0.16em] text-slate-400"><span className="h-px flex-1 bg-slate-200 dark:bg-slate-700" /><span>Mới cập nhật</span><span className="h-px flex-1 bg-slate-200 dark:bg-slate-700" /></div>}
-            {[...attentionBatches, ...regularApprovedBatches].map((batch) => { const employee = employees.find((item) => item.uid === batch.employeeId); const attention = batchNeedsAttention(batch); const count = actualShiftCount(batch); return <button key={batch.key} type="button" onClick={() => { setSelectedProcessedBatch(batch); setProcessedReason('') }} className={`mobile-card flex min-h-20 w-full items-center gap-3 border-l-4 p-3 text-left ${batch.status === 'Rejected' ? 'border-l-rose-500' : attention ? 'border-l-amber-400' : 'border-l-emerald-500'}`}><RequestIdentityAvatar name={batch.employeeName || batch.employeeId} photoURL={employee?.photoURL} icon={CalendarCheck} iconColor="bg-indigo-600" /><div className="min-w-0 flex-1"><h3 className="truncate font-extrabold">{batch.employeeName || batch.employeeId}</h3><p className="text-sm font-semibold text-muted-foreground">{batch.employeeCode || 'Nhân viên'} · {count} ca</p></div><span className={`text-right text-xs font-black ${batch.status === 'Rejected' ? 'text-rose-600' : attention ? 'text-amber-600' : 'text-emerald-600'}`}>{batch.status === 'Rejected' ? 'Từ chối' : <>{'Đã duyệt'}<br />{attention ? 'Cần lưu ý' : 'Tốt'}</>}</span><ChevronRight className="h-4 w-4 text-slate-400" /></button> })}
+            {[...attentionBatches, ...regularApprovedBatches].map((batch) => { const employee = employees.find((item) => item.uid === batch.employeeId); const attention = batchNeedsAttention(batch); const penalty = batchHasPenalty(batch); const penaltyAmount = batchPenaltyAmount(batch); const count = actualShiftCount(batch); return <button key={batch.key} type="button" onClick={() => { setSelectedProcessedBatch(batch); setProcessedReason('') }} className={`mobile-card flex min-h-20 w-full items-center gap-3 border-l-4 p-3 text-left ${batch.status === 'Rejected' || penalty ? 'border-l-rose-500' : attention ? 'border-l-amber-400' : 'border-l-emerald-500'}`}><RequestIdentityAvatar name={batch.employeeName || batch.employeeId} photoURL={employee?.photoURL} icon={CalendarCheck} iconColor="bg-indigo-600" /><div className="min-w-0 flex-1"><h3 className="truncate font-extrabold">{batch.employeeName || batch.employeeId}</h3><p className="text-sm font-semibold text-muted-foreground">{batch.employeeCode || 'Nhân viên'} · {count} ca</p></div><span className={`text-right text-xs font-black ${batch.status === 'Rejected' || penalty ? 'text-rose-600' : attention ? 'text-amber-600' : 'text-emerald-600'}`}>{batch.status === 'Rejected' ? 'Từ chối' : penalty ? <>{'Đã duyệt'}<br />{penaltyAmount ? `Trừ ${penaltyAmount.toLocaleString('vi-VN')}đ` : 'Bị phạt'}</> : <>{'Đã duyệt'}<br />{attention ? 'Cần lưu ý' : 'Tốt'}</>}</span><ChevronRight className="h-4 w-4 text-slate-400" /></button> })}
             {!pendingBatches.length && !processedBatches.length && !missingEmployees.length && <div className="mobile-card p-8 text-center"><Check className="mx-auto h-8 w-8 text-emerald-600" /><p className="mt-3 font-bold">Chưa có nhân viên trong danh sách.</p></div>}
           </section>
         ) : (
@@ -537,8 +547,8 @@ export default function AdminDashboardPage() {
                   <div className="min-w-0 flex-1">
                     <h2 className="truncate text-xl font-black">{selectedProcessedBatch.employeeName || selectedProcessedBatch.employeeId}</h2>
                     <p className="mt-1 text-sm text-white/80">{selectedProcessedBatch.employeeCode || 'Nhân viên'} · {actualShiftCount(selectedProcessedBatch)} ca</p>
-                    <span className={`mt-3 inline-flex rounded-full px-3 py-1 text-xs font-black ${selectedProcessedBatch.status === 'Rejected' ? 'bg-rose-400/25 text-rose-50' : batchNeedsAttention(selectedProcessedBatch) ? 'bg-amber-300/30 text-amber-50' : 'bg-emerald-400/25 text-emerald-50'}`}>
-                      {selectedProcessedBatch.status === 'Rejected' ? 'Đã từ chối' : batchNeedsAttention(selectedProcessedBatch) ? 'Tự duyệt · Cần lưu ý' : 'Tự duyệt · Tốt'}
+                    <span className={`mt-3 inline-flex rounded-full px-3 py-1 text-xs font-black ${selectedProcessedBatch.status === 'Rejected' || batchHasPenalty(selectedProcessedBatch) ? 'bg-rose-400/25 text-rose-50' : batchNeedsAttention(selectedProcessedBatch) ? 'bg-amber-300/30 text-amber-50' : 'bg-emerald-400/25 text-emerald-50'}`}>
+                      {selectedProcessedBatch.status === 'Rejected' ? 'Đã từ chối' : batchHasPenalty(selectedProcessedBatch) ? `Tự duyệt · ${batchPenaltyAmount(selectedProcessedBatch) ? `Trừ ${batchPenaltyAmount(selectedProcessedBatch).toLocaleString('vi-VN')}đ` : 'Bị phạt đăng ký trễ'}` : batchNeedsAttention(selectedProcessedBatch) ? 'Tự duyệt · Cần lưu ý' : 'Tự duyệt · Tốt'}
                     </span>
                   </div>
                 </div>
@@ -578,7 +588,7 @@ export default function AdminDashboardPage() {
                   {processingId === selectedProcessedBatch.key ? <Loader2 className="h-4 w-4 animate-spin" /> : <RotateCcw className="h-4 w-4" />}
                   {selectedProcessedBatch.status === 'Approved' ? 'Hoàn tác và yêu cầu gửi lại' : 'Duyệt lại bảng lịch'}
                 </button>}
-                {selectedProcessedBatch.schedules.every((item) => item.autoApproved) && <p className={`rounded-2xl border p-4 text-sm font-semibold leading-6 ${batchNeedsAttention(selectedProcessedBatch) ? 'border-amber-200 bg-amber-50 text-amber-900' : 'border-emerald-200 bg-emerald-50 text-emerald-900'}`}>{batchNeedsAttention(selectedProcessedBatch) ? `Lịch vẫn được xác nhận, nhưng mới có ${actualShiftCount(selectedProcessedBatch)}/6 ca nên quản lý cần lưu ý.` : `Lịch có ${actualShiftCount(selectedProcessedBatch)} ca, đạt mức tối thiểu và không cần quản lý thao tác.`}</p>}
+                {selectedProcessedBatch.schedules.every((item) => item.autoApproved) && <p className={`rounded-2xl border p-4 text-sm font-semibold leading-6 ${batchHasPenalty(selectedProcessedBatch) ? 'border-rose-200 bg-rose-50 text-rose-900' : batchNeedsAttention(selectedProcessedBatch) ? 'border-amber-200 bg-amber-50 text-amber-900' : 'border-emerald-200 bg-emerald-50 text-emerald-900'}`}>{batchHasPenalty(selectedProcessedBatch) ? `Lịch vẫn được tự động xác nhận, nhưng ${batchPenaltyAmount(selectedProcessedBatch) ? `nhân viên bị trừ ${batchPenaltyAmount(selectedProcessedBatch).toLocaleString('vi-VN')}đ` : 'bản ghi có khoản phạt đăng ký trễ'} .` : batchNeedsAttention(selectedProcessedBatch) ? `Lịch vẫn được xác nhận, nhưng mới có ${actualShiftCount(selectedProcessedBatch)}/6 ca nên quản lý cần lưu ý.` : `Lịch có ${actualShiftCount(selectedProcessedBatch)} ca, đạt mức tối thiểu và không cần quản lý thao tác.`}</p>}
                 <p className="mt-3 text-center text-xs text-muted-foreground">Admin chỉ theo dõi; nhân viên tự cập nhật lịch của mình.</p>
               </section>
             </article>

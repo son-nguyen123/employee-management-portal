@@ -732,7 +732,7 @@ export default function NotificationsPage() {
               const employee = employeeMap.get(item.employeeId)
               const meta = managementMeta[item.resource]
               return (
-                <article key={item.key} className={`mobile-card overflow-hidden border-l-4 ${item.resource === 'schedule' && item.underMinimumWarning ? 'border-l-amber-400' : item.status === 'Approved' ? 'border-l-emerald-500' : 'border-l-rose-500'}`}>
+                <article key={item.key} className={`mobile-card overflow-hidden border-l-4 ${item.resource === 'schedule' && item.penaltyAmount ? 'border-l-rose-500' : item.resource === 'schedule' && item.underMinimumWarning ? 'border-l-amber-400' : item.status === 'Approved' ? 'border-l-emerald-500' : 'border-l-rose-500'}`}>
                   <button
                     type="button"
                     onClick={() => { setSelectedDecision(item); setUndoReason(''); setMessage('') }}
@@ -743,9 +743,9 @@ export default function NotificationsPage() {
                       <h2 className="font-extrabold">{item.title}</h2>
                       <p className="mt-1 font-bold">{employee?.fullName || item.employeeId}{employee?.employeeCode ? ` · ${employee.employeeCode}` : ''}</p>
                       <p className="mt-1 line-clamp-2 text-sm text-muted-foreground">{item.detail}</p>
-                      <p className={`mt-2 text-xs font-bold ${item.resource === 'schedule' && item.underMinimumWarning ? 'text-amber-600' : item.status === 'Approved' ? 'text-emerald-600' : 'text-rose-600'}`}>
+                      <p className={`mt-2 text-xs font-bold ${item.resource === 'schedule' && item.penaltyAmount ? 'text-rose-600' : item.resource === 'schedule' && item.underMinimumWarning ? 'text-amber-600' : item.status === 'Approved' ? 'text-emerald-600' : 'text-rose-600'}`}>
                         {item.resource === 'schedule' && item.autoApproved
-                          ? item.underMinimumWarning ? `Tự động duyệt · Cần lưu ý ${item.weeklyShiftCount || 0}/6 ca` : `Tự động duyệt · Tốt ${item.weeklyShiftCount || 0} ca`
+                          ? item.penaltyAmount ? `Tự động duyệt · Trừ ${item.penaltyAmount.toLocaleString('vi-VN')}đ` : item.underMinimumWarning ? `Tự động duyệt · Cần lưu ý ${item.weeklyShiftCount || 0}/6 ca` : `Tự động duyệt · Tốt ${item.weeklyShiftCount || 0} ca`
                           : `${item.status === 'Approved' ? 'Đã duyệt' : 'Đã từ chối'} · có thể mở lại và hoàn tác`}
                       </p>
                     </div>
@@ -928,7 +928,7 @@ export default function NotificationsPage() {
                     <div className="min-w-0 flex-1">
                       <h2 className="truncate text-xl font-black">{employee?.fullName || selectedDecision.employeeId}</h2>
                       <p className="mt-1 text-sm text-white/80">{employee?.employeeCode || 'Nhân viên'} · {selectedDecision.detail}</p>
-                      <span className={`mt-3 inline-flex rounded-full px-3 py-1 text-xs font-black ${selectedDecision.underMinimumWarning ? 'bg-amber-300/30 text-amber-50' : selectedDecision.status === 'Approved' ? 'bg-emerald-400/25 text-emerald-50' : 'bg-rose-400/25 text-rose-50'}`}>{selectedDecision.resource === 'schedule' && selectedDecision.autoApproved ? selectedDecision.underMinimumWarning ? 'Tự duyệt · Cần lưu ý' : 'Tự duyệt · Tốt' : selectedDecision.status === 'Approved' ? 'Đã duyệt' : 'Đã từ chối'}</span>
+                      <span className={`mt-3 inline-flex rounded-full px-3 py-1 text-xs font-black ${selectedDecision.penaltyAmount ? 'bg-rose-400/25 text-rose-50' : selectedDecision.underMinimumWarning ? 'bg-amber-300/30 text-amber-50' : selectedDecision.status === 'Approved' ? 'bg-emerald-400/25 text-emerald-50' : 'bg-rose-400/25 text-rose-50'}`}>{selectedDecision.resource === 'schedule' && selectedDecision.autoApproved ? selectedDecision.penaltyAmount ? `Tự duyệt · Trừ ${selectedDecision.penaltyAmount.toLocaleString('vi-VN')}đ` : selectedDecision.underMinimumWarning ? 'Tự duyệt · Cần lưu ý' : 'Tự duyệt · Tốt' : selectedDecision.status === 'Approved' ? 'Đã duyệt' : 'Đã từ chối'}</span>
                     </div>
                   </div>
                 </section>
@@ -938,8 +938,8 @@ export default function NotificationsPage() {
                   {selectedDecision.reason && <p className="rounded-2xl border border-slate-100 p-3 text-sm leading-6"><strong>Ghi chú:</strong> {selectedDecision.reason}</p>}
                   {selectedDecision.reviewNote && <p className="rounded-2xl bg-amber-50 p-3 text-sm text-amber-900 dark:bg-amber-500/10 dark:text-amber-100"><strong>Phản hồi cũ:</strong> {selectedDecision.reviewNote}</p>}
                   {selectedDecision.resource === 'schedule' && selectedDecision.autoApproved ? (
-                    <div className={`rounded-2xl border p-4 text-sm font-semibold leading-6 ${selectedDecision.underMinimumWarning ? 'border-amber-200 bg-amber-50 text-amber-900 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-100' : 'border-emerald-200 bg-emerald-50 text-emerald-900 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-100'}`}>
-                      Lịch này đã được hệ thống xác nhận tự động. {selectedDecision.underMinimumWarning ? `Nhân viên đăng ký ${selectedDecision.weeklyShiftCount || 0}/6 ca nên được đánh dấu để quản lý lưu ý.` : `Nhân viên đăng ký ${selectedDecision.weeklyShiftCount || 0} ca, đạt mức tối thiểu.`}
+                    <div className={`rounded-2xl border p-4 text-sm font-semibold leading-6 ${selectedDecision.penaltyAmount ? 'border-rose-200 bg-rose-50 text-rose-900 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-100' : selectedDecision.underMinimumWarning ? 'border-amber-200 bg-amber-50 text-amber-900 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-100' : 'border-emerald-200 bg-emerald-50 text-emerald-900 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-100'}`}>
+                      Lịch này đã được hệ thống xác nhận tự động. {selectedDecision.penaltyAmount ? `Nhân viên bị trừ ${selectedDecision.penaltyAmount.toLocaleString('vi-VN')}đ do đăng ký trễ.` : selectedDecision.underMinimumWarning ? `Nhân viên đăng ký ${selectedDecision.weeklyShiftCount || 0}/6 ca nên được đánh dấu để quản lý lưu ý.` : `Nhân viên đăng ký ${selectedDecision.weeklyShiftCount || 0} ca, đạt mức tối thiểu.`}
                     </div>
                   ) : <div className="border-t border-slate-100 pt-4 dark:border-white/10">
                     <div className="flex items-center gap-2"><RotateCcw className="h-4 w-4 text-indigo-600" /><h3 className="font-black">Hoàn tác quyết định</h3></div>

@@ -39,7 +39,8 @@ import { getManagementContact } from '@/lib/services/managementSettingsService'
 import { toMessengerUrl } from '@/lib/utils/messenger'
 import { submitStaffRequest } from '@/lib/services/staffRequestService'
 import { subscribeToEmployeeLeaves } from '@/lib/services/leaveService'
-import type { LeaveRequest } from '@/lib/models/types'
+import { subscribeToEmployeePenalties } from '@/lib/services/penaltyService'
+import type { LeaveRequest, Penalty } from '@/lib/models/types'
 
 type Shift = 'Morning' | 'Afternoon' | 'Evening' | 'Custom'
 type DayItem = { key: string; name: string; shortName: string; date: Date }
@@ -121,6 +122,9 @@ export default function SchedulePage() {
   const [dutyOverloadCandidate, setDutyOverloadCandidate] = useState<string | null>(null)
   const [submittedIds, setSubmittedIds] = useState<string[]>([])
   const [submittedStatus, setSubmittedStatus] = useState<string | null>(null)
+  const [submittedPenaltyAmount, setSubmittedPenaltyAmount] = useState(0)
+  const [submittedPenaltyId, setSubmittedPenaltyId] = useState<string | null>(null)
+  const [employeePenalties, setEmployeePenalties] = useState<Penalty[]>([])
   const [submittedEditDeadline, setSubmittedEditDeadline] = useState<Date | null>(null)
   const [editing, setEditing] = useState(false)
   const [editingOriginStatus, setEditingOriginStatus] = useState<string | null>(null)
@@ -131,6 +135,7 @@ export default function SchedulePage() {
   const [message, setMessage] = useState<string | null>(null)
   const [weekNote, setWeekNote] = useState('')
   const [confirmationOpen, setConfirmationOpen] = useState(false)
+  const [latePenaltyConfirmationOpen, setLatePenaltyConfirmationOpen] = useState(false)
   const [overtimeMode, setOvertimeMode] = useState(false)
   const [changeMode, setChangeMode] = useState(false)
   const [currentWeekMode, setCurrentWeekMode] = useState(false)
@@ -178,6 +183,20 @@ export default function SchedulePage() {
     }, () => setLeaveMarks({}))
   }, [authUser, isPreviewMode, originalScheduleIds])
 
+  useEffect(() => {
+    if (!authUser || isPreviewMode) {
+      setEmployeePenalties([])
+      return
+    }
+    return subscribeToEmployeePenalties(authUser.uid, setEmployeePenalties, () => setEmployeePenalties([]))
+  }, [authUser, isPreviewMode])
+
+  useEffect(() => {
+    if (!submittedPenaltyId || submittedPenaltyAmount > 0) return
+    const penalty = employeePenalties.find((item) => item.id === submittedPenaltyId && item.status !== 'Cancelled')
+    if (penalty) setSubmittedPenaltyAmount(Number(penalty.amount || 0))
+  }, [employeePenalties, submittedPenaltyAmount, submittedPenaltyId])
+
   useEffect(() => setPortalReady(true), [])
 
   useEffect(() => {
@@ -191,7 +210,7 @@ export default function SchedulePage() {
     return () => window.clearTimeout(timeout)
   }, [referenceNow, submittedEditDeadline])
 
-  const modalLayerOpen = Boolean(confirmationOpen || dutyPickerOpen || dutyOverloadCandidate || customFor)
+  const modalLayerOpen = Boolean(latePenaltyConfirmationOpen || confirmationOpen || dutyPickerOpen || dutyOverloadCandidate || customFor)
   useEffect(() => {
     if (!modalLayerOpen) return
     const body = document.body
@@ -394,6 +413,9 @@ export default function SchedulePage() {
           })
           setSubmittedIds(available.map((item) => item.id!).filter(Boolean))
           setSubmittedStatus(current[0]?.status || 'Approved')
+          const loadedPenalty = current.find((item) => item.penaltyId || Number(item.penaltyAmount || 0) > 0)
+          setSubmittedPenaltyId(loadedPenalty?.penaltyId || null)
+          setSubmittedPenaltyAmount(Math.max(0, ...current.map((item) => Number(item.penaltyAmount || 0))))
           setSubmittedEditDeadline(valueDate(current[0]?.editDeadlineAt))
           if (current[0]?.status === 'Editing') {
             setEditingOriginStatus(current[0].editPreviousStatus || 'Pending')
@@ -413,6 +435,8 @@ export default function SchedulePage() {
           setEditBaseline(null)
           setSubmittedIds([])
           setSubmittedStatus(null)
+          setSubmittedPenaltyId(null)
+          setSubmittedPenaltyAmount(0)
           setSubmittedEditDeadline(null)
           setEditingOriginStatus(null)
           setEditing(false)
@@ -530,7 +554,7 @@ export default function SchedulePage() {
     return rows
   }
 
-  const submitSchedule = async (confirmed = false) => {
+  const submitSchedule = async (confirmed = false, lateConfirmed = false) => {
     if (!authUser) return
     if (overtimeMode || changeMode) {
       const restoredShifts = Object.entries(selected).flatMap(([dayKey, selectedShifts]) =>
@@ -613,10 +637,15 @@ export default function SchedulePage() {
       window.scrollTo({ top: 0, behavior: 'smooth' })
       return
     }
+    if (!confirmed && lateScheduleWarning && !lateConfirmed) {
+      setLatePenaltyConfirmationOpen(true)
+      return
+    }
     if (!confirmed && missingDays.length) {
       setConfirmationOpen(true)
       return
     }
+    setLatePenaltyConfirmationOpen(false)
     setConfirmationOpen(false)
     setSubmitting(true)
     setMessage(null)
@@ -656,11 +685,13 @@ export default function SchedulePage() {
           : await submitWorkSchedules(rows, confirmed)
         ids = result.ids
         editDeadlineAt = new Date(result.editDeadlineAt)
-        penaltyAmount = result.penalty
+        penaltyAmount = result.penalty || (submittedIds.length ? submittedPenaltyAmount : 0)
       }
       window.sessionStorage.removeItem('schedule-draft')
       setSubmittedIds(ids)
       setSubmittedStatus('Approved')
+      setSubmittedPenaltyAmount(penaltyAmount)
+      setSubmittedPenaltyId(submittedIds.length ? submittedPenaltyId : null)
       setSubmittedEditDeadline(editDeadlineAt)
       setOriginal(cloneSelection(selected))
       setEditBaseline({
@@ -756,6 +787,8 @@ export default function SchedulePage() {
   const editWindowOpen = !submittedEditDeadline || clockNow < submittedEditDeadline.getTime()
   const canEdit = canEditStatus && editWindowOpen
   const lateScheduleWarning = !overtimeMode && !changeMode && !editing && !submittedIds.length && targetIsCurrentWeek && !isNewEmployee && employee?.scheduleMode !== 'fixed'
+  const schedulePenaltyActive = submittedPenaltyAmount > 0
+  const latePenaltyDisplayAmount = Number(process.env.NEXT_PUBLIC_PENALTY_LATE_SCHEDULE_AMOUNT || 1000)
 
   const downloadSchedule = async () => {
     if (downloading) return
@@ -955,7 +988,7 @@ export default function SchedulePage() {
         {lateScheduleWarning && (
           <div className="mb-4 flex items-start gap-3 rounded-3xl border border-rose-200 bg-rose-50 p-4 text-rose-900 shadow-sm dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-100">
             <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-rose-600 dark:text-rose-300" />
-            <div className="text-sm leading-6"><p className="font-extrabold">Đăng ký lịch tuần này đã trễ hạn</p><p className="mt-1">Nếu bạn xác nhận, hệ thống sẽ ghi nhận khoản phạt đăng ký trễ theo quy định (mặc định 500đ). Nếu đang nghỉ bệnh, bạn có thể chờ đến Thứ Bảy để nhập lịch tuần sau.</p></div>
+            <div className="text-sm leading-6"><p className="font-extrabold">Đăng ký lịch tuần này đã trễ hạn</p><p className="mt-1">Nếu bạn xác nhận, hệ thống sẽ ghi nhận khoản phạt đăng ký trễ <strong>{latePenaltyDisplayAmount.toLocaleString('vi-VN')}đ</strong>. Nếu đang nghỉ bệnh, bạn có thể liên hệ quản lý và chờ đến Thứ Bảy để nhập lịch tuần sau.</p></div>
           </div>
         )}
         {changeMode && submittedChangeSummary && (
@@ -991,14 +1024,14 @@ export default function SchedulePage() {
         )}
 
         {compactMode ? (
-          <section className="schedule-summary overflow-hidden rounded-[1.75rem] border border-indigo-100 bg-white shadow-lg shadow-indigo-950/5 dark:border-indigo-500/20 dark:bg-slate-900">
+          <section className={`schedule-summary overflow-hidden rounded-[1.75rem] border-2 bg-white shadow-lg shadow-indigo-950/5 dark:bg-slate-900 ${schedulePenaltyActive ? 'border-rose-500 ring-2 ring-rose-200 dark:border-rose-400 dark:ring-rose-500/20' : 'border-indigo-100 dark:border-indigo-500/20'}`}>
             <div className="bg-gradient-to-r from-indigo-600 to-violet-600 p-4 text-white">
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-xs font-bold uppercase tracking-widest text-indigo-100">Bảng đăng ký tuần</p>
                   <h2 className="mt-1 text-lg font-extrabold">Lịch làm của bạn</h2>
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="flex flex-col items-end gap-2">
                   <button type="button" onClick={() => void downloadSchedule()} disabled={downloading} aria-label="Tải ảnh lịch về máy" title="Tải ảnh lịch về máy" className="grid h-10 w-10 place-items-center rounded-xl bg-white/15 text-white transition hover:bg-white/25 active:scale-95 disabled:cursor-wait disabled:opacity-70">
                     {downloading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
                   </button>
@@ -1011,6 +1044,7 @@ export default function SchedulePage() {
                           ? 'Đã hủy'
                           : 'Đang đồng bộ'}
                   </Badge>
+                  {schedulePenaltyActive && <span className="rounded-full bg-rose-100 px-2.5 py-1 text-[10px] font-black text-rose-700">Bị trừ {submittedPenaltyAmount.toLocaleString('vi-VN')}đ</span>}
                 </div>
               </div>
             </div>
@@ -1203,6 +1237,25 @@ export default function SchedulePage() {
         document.body
       )}
 
+      {latePenaltyConfirmationOpen && (
+        <div className="fixed inset-0 z-[80] flex items-end justify-center bg-slate-950/60 p-3 backdrop-blur-sm sm:items-center" onClick={() => setLatePenaltyConfirmationOpen(false)}>
+          <section role="dialog" aria-modal="true" className="w-full max-w-lg rounded-[2rem] bg-white p-5 shadow-2xl dark:bg-slate-900" onClick={(event) => event.stopPropagation()}>
+            <div className="flex items-start gap-3">
+              <div className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-rose-100 text-rose-600 dark:bg-rose-500/10 dark:text-rose-300"><AlertTriangle className="h-6 w-6" /></div>
+              <div className="min-w-0 flex-1"><p className="text-xs font-black uppercase tracking-wider text-rose-600">Đăng ký trễ hạn</p><h2 className="mt-1 text-xl font-black">Xác nhận lịch và khoản trừ?</h2><p className="mt-1 text-sm leading-6 text-muted-foreground">Bạn đang tạo lịch cho tuần hiện tại sau thời hạn quy định.</p></div>
+            </div>
+            <div className="mt-4 rounded-2xl border border-rose-200 bg-rose-50 p-4 text-sm leading-6 text-rose-900 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-100">
+              <p className="font-black">Bạn sẽ bị trừ {latePenaltyDisplayAmount.toLocaleString('vi-VN')}đ.</p>
+              <p className="mt-1">Nếu tuần này bạn nghỉ bệnh hoặc có lý do chính đáng, hãy liên hệ quản lý và chờ đến Thứ Bảy để nhập lịch tuần sau. Nếu vẫn xác nhận, khoản trừ sẽ tiếp tục được ghi nhận.</p>
+            </div>
+            <div className="mt-5 grid grid-cols-2 gap-2">
+              <button type="button" onClick={() => setLatePenaltyConfirmationOpen(false)} className="min-h-12 rounded-2xl border border-slate-200 font-bold dark:border-slate-700">Hủy xác nhận</button>
+              <button type="button" onClick={() => void submitSchedule(false, true)} className="flex min-h-12 items-center justify-center gap-2 rounded-2xl bg-rose-600 font-extrabold text-white shadow-lg shadow-rose-600/20"><Check className="h-4 w-4" /> Xác nhận và trừ tiền</button>
+            </div>
+          </section>
+        </div>
+      )}
+
       {confirmationOpen && (
         <div className="fixed inset-0 z-[75] flex items-end justify-center bg-slate-950/55 backdrop-blur-sm sm:items-center sm:p-4" onClick={() => setConfirmationOpen(false)}>
           <section className="w-full max-w-lg rounded-t-[2rem] bg-white p-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] shadow-2xl dark:bg-slate-900 sm:rounded-[2rem]" onClick={(event) => event.stopPropagation()}>
@@ -1222,7 +1275,7 @@ export default function SchedulePage() {
             )}
             {lateScheduleWarning && (
               <p className="mt-3 rounded-2xl border border-rose-200 bg-rose-50 p-3 text-sm font-bold leading-6 text-rose-900 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-100">
-                Lịch tuần này đã trễ hạn. Khi xác nhận, khoản phạt đăng ký trễ theo quy định (mặc định 500đ) sẽ được ghi nhận.
+                Lịch tuần này đã trễ hạn. Khoản phạt đăng ký trễ {latePenaltyDisplayAmount.toLocaleString('vi-VN')}đ sẽ được ghi nhận khi bạn xác nhận.
               </p>
             )}
             {weekNote.trim() && <p className="mt-3 rounded-2xl bg-indigo-50 p-3 text-sm text-indigo-900 dark:bg-indigo-500/10 dark:text-indigo-100"><strong>Ghi chú:</strong> {weekNote.trim()}</p>}

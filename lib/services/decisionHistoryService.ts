@@ -18,6 +18,8 @@ export interface DecisionHistoryItem {
   weeklyShiftCount?: number
   underMinimumWarning?: boolean
   autoApproved?: boolean
+  penaltyId?: string | null
+  penaltyAmount?: number
   reason?: string
   shifts?: Array<{ date: Date; shift: 'Morning' | 'Afternoon' | 'Evening' }>
   removedShifts?: Array<{ date: Date; shift: 'Morning' | 'Afternoon' | 'Evening'; scheduleId?: string }>
@@ -63,8 +65,9 @@ function decisionShifts(value: unknown, includeScheduleId = false): Array<{ date
   })
 }
 
-function buildRows(data: Record<DecisionResource, SnapshotRow[]>): DecisionHistoryItem[] {
+function buildRows(data: Record<DecisionResource, SnapshotRow[]>, penaltyRows: SnapshotRow[] = []): DecisionHistoryItem[] {
   const rows: DecisionHistoryItem[] = []
+  const penaltyById = new Map(penaltyRows.map((item) => [item.id, item]))
 
   data.leave.filter(processed).forEach((item) => rows.push({
     key: `leave-${item.id}`,
@@ -143,6 +146,12 @@ function buildRows(data: Record<DecisionResource, SnapshotRow[]>): DecisionHisto
       return current > latest ? current : latest
     }, new Date(0))
     const actualShiftCount = sorted.filter((item) => !String(item.note || '').includes('[DUTY_ONLY]') && !String(item.note || '').includes('[NO_SHIFTS]')).length
+    const penaltyId = String(sorted.find((item) => item.penaltyId)?.penaltyId || '') || null
+    const penaltyAmount = Math.max(
+      0,
+      ...sorted.map((item) => Number(item.penaltyAmount || 0)),
+      ...(penaltyId ? [Number(penaltyById.get(penaltyId)?.amount || 0)] : [])
+    )
     rows.push({
       key: `schedule-${batchKey}`,
       id: first.id,
@@ -157,6 +166,8 @@ function buildRows(data: Record<DecisionResource, SnapshotRow[]>): DecisionHisto
       weeklyShiftCount: Number(first.weeklyShiftCount ?? actualShiftCount),
       underMinimumWarning: items.some((item) => item.underMinimumWarning === true),
       autoApproved: items.every((item) => item.autoApproved === true),
+      penaltyId,
+      penaltyAmount: penaltyAmount || undefined,
       reason: String(first.note || '').replace(/\[[A-Z_]+(?::[^\]]+)?\]/g, '').trim(),
       shifts: sorted.flatMap((item) => {
         const date = asDate(item.date)
@@ -187,6 +198,8 @@ export function subscribeToWeeklyDecisionHistory(
   const data: Record<DecisionResource, SnapshotRow[]> = {
     leave: [], late: [], salary: [], staff: [], schedule: [],
   }
+  let penaltyRows: SnapshotRow[] = []
+  let penaltiesReady = false
   const ready = new Set<DecisionResource>()
   const startTimestamp = Timestamp.fromDate(start)
   const endTimestamp = Timestamp.fromDate(end)
@@ -201,10 +214,32 @@ export function subscribeToWeeklyDecisionHistory(
     (snapshot) => {
       data[resource] = snapshot.docs.map((item) => ({ id: item.id, ...item.data() }))
       ready.add(resource)
-      if (ready.size === sources.length) callback(buildRows(data))
+      if (ready.size === sources.length && penaltiesReady) callback(buildRows(data, penaltyRows))
     },
     (error) => onError?.(error)
   ))
 
-  return () => unsubscribers.forEach((unsubscribe) => unsubscribe())
+  const unsubscribePenalties = onSnapshot(
+    query(
+      collection(db, 'penalties'),
+      where('penaltyDate', '>=', startTimestamp),
+      where('penaltyDate', '<=', endTimestamp),
+      orderBy('penaltyDate', 'desc')
+    ),
+    (snapshot) => {
+      penaltyRows = snapshot.docs.map((item) => ({ id: item.id, ...item.data() }))
+      penaltiesReady = true
+      if (ready.size === sources.length) callback(buildRows(data, penaltyRows))
+    },
+    (error) => {
+      penaltiesReady = true
+      if (ready.size === sources.length) callback(buildRows(data, penaltyRows))
+      onError?.(error)
+    }
+  )
+
+  return () => {
+    unsubscribers.forEach((unsubscribe) => unsubscribe())
+    unsubscribePenalties()
+  }
 }

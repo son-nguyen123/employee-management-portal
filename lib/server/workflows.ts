@@ -945,6 +945,7 @@ export async function submitSchedules(actor: RequestActor, raw: unknown) {
         reviewedBy: fixedModeActive ? 'system:fixed-schedule' : 'system:auto-schedule',
         reviewedAt: now,
         penaltyId: shouldPenalize && workflowPolicy.scheduleLatePenalty > 0 ? penaltyRef.id : null,
+        penaltyAmount: shouldPenalize ? workflowPolicy.scheduleLatePenalty : 0,
         firstSubmittedAt: Timestamp.fromDate(requestTime),
         editDeadlineAt: Timestamp.fromDate(editDeadlineAt),
         createdAt: now,
@@ -1296,6 +1297,7 @@ export async function replaceSchedules(actor: RequestActor, raw: unknown) {
   const managerIds = await activeManagerIds()
   const requestTime = new Date()
   let resultingEditDeadline = requestTime
+  let resultingPenaltyAmount = 0
 
   await adminDb.runTransaction(async (transaction) => {
     const [workflowSnapshot, ...oldSnapshots] = await Promise.all([
@@ -1334,6 +1336,8 @@ export async function replaceSchedules(actor: RequestActor, raw: unknown) {
       throw new ApiError(409, 'Bảng lịch đã hết hạn điều chỉnh và hiện đã được khóa.')
     }
     const retainedPenaltyId = oldData.map((schedule) => schedule.penaltyId).find(Boolean) || null
+    const retainedPenaltyAmount = Math.max(0, ...oldData.map((schedule) => Number(schedule.penaltyAmount || 0)))
+    resultingPenaltyAmount = retainedPenaltyAmount
     const retainedFixedSchedule = oldData.some((schedule) => schedule.fixedSchedule === true)
 
     const now = FieldValue.serverTimestamp()
@@ -1361,6 +1365,7 @@ export async function replaceSchedules(actor: RequestActor, raw: unknown) {
         reviewedBy: 'system:auto-schedule',
         reviewedAt: now,
         penaltyId: retainedPenaltyId,
+        penaltyAmount: retainedPenaltyAmount,
         firstSubmittedAt: Timestamp.fromDate(firstSubmittedAt),
         editDeadlineAt: Timestamp.fromDate(editDeadlineAt),
         createdAt: now,
@@ -1409,7 +1414,7 @@ export async function replaceSchedules(actor: RequestActor, raw: unknown) {
     sourceId: newRefs[0].id,
   })
 
-  return { ids: newRefs.map((ref) => ref.id), penalty: 0, editDeadlineAt: resultingEditDeadline.toISOString() }
+  return { ids: newRefs.map((ref) => ref.id), penalty: resultingPenaltyAmount, editDeadlineAt: resultingEditDeadline.toISOString() }
 }
 
 export async function setScheduleBatchEditing(actor: RequestActor, raw: unknown) {

@@ -8,7 +8,7 @@ function envNumber(name: string, fallback: number, min = 0): number {
 export const workflowPolicy = {
   minimumWeeklyShifts: envNumber('MINIMUM_WEEKLY_SHIFTS', 6, 1),
   scheduleDeadlineHour: envNumber('SCHEDULE_DEADLINE_HOUR', 18, 0),
-  scheduleLatePenalty: envNumber('PENALTY_LATE_SCHEDULE_AMOUNT', 500),
+  scheduleLatePenalty: envNumber('PENALTY_LATE_SCHEDULE_AMOUNT', 1000),
   sameDayScheduleChangePenalty: envNumber('PENALTY_SAME_DAY_SCHEDULE_CHANGE_AMOUNT', 1_000),
   leaveNoticeDeadlineHour: envNumber('LEAVE_NOTICE_DEADLINE_HOUR', 16, 0),
   leaveOnTimeRejectedPenalty: envNumber('PENALTY_REJECTED_LEAVE_AMOUNT', 500),

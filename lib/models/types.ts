@@ -59,6 +59,7 @@ export interface WorkSchedule {
   requiresReapproval?: boolean
   allowSundayResubmissionWithoutPenalty?: boolean
   penaltyId?: string | null
+  penaltyAmount?: number
   revisionCount?: number
   weeklyShiftCount?: number
   underMinimumWarning?: boolean
