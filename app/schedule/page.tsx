@@ -1237,7 +1237,7 @@ export default function SchedulePage() {
       )}
 
       {latePenaltyConfirmationOpen && (
-        <div className="fixed inset-0 z-[80] flex items-end justify-center bg-slate-950/60 p-3 backdrop-blur-sm sm:items-center" onClick={() => setLatePenaltyConfirmationOpen(false)}>
+        <div className="fixed inset-0 z-[80] flex items-center justify-center bg-slate-950/60 p-3 backdrop-blur-sm" onClick={() => setLatePenaltyConfirmationOpen(false)}>
           <section role="dialog" aria-modal="true" className="w-full max-w-lg rounded-[2rem] bg-white p-5 shadow-2xl dark:bg-slate-900" onClick={(event) => event.stopPropagation()}>
             <div className="flex items-start gap-3">
               <div className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-rose-100 text-rose-600 dark:bg-rose-500/10 dark:text-rose-300"><AlertTriangle className="h-6 w-6" /></div>
@@ -1249,7 +1249,7 @@ export default function SchedulePage() {
             </div>
             <div className="mt-5 grid grid-cols-2 gap-2">
               <button type="button" onClick={() => setLatePenaltyConfirmationOpen(false)} className="min-h-12 rounded-2xl border border-slate-200 font-bold dark:border-slate-700">Hủy xác nhận</button>
-              <button type="button" onClick={() => void submitSchedule(false, true)} className="flex min-h-12 items-center justify-center gap-2 rounded-2xl bg-rose-600 font-extrabold text-white shadow-lg shadow-rose-600/20"><Check className="h-4 w-4" /> Xác nhận và trừ tiền</button>
+              <button type="button" onClick={() => void submitSchedule(false, true)} className="flex min-h-12 items-center justify-center whitespace-nowrap rounded-2xl bg-rose-600 px-3 text-center font-extrabold text-white shadow-lg shadow-rose-600/20">Xác nhận và trừ tiền</button>
             </div>
           </section>
         </div>
