@@ -51,17 +51,16 @@ import { setEmployeeAccountStatus, subscribeToAllEmployees } from '@/lib/service
 import type { Employee } from '@/lib/models/types'
 import { getEmployeeReviewContext } from '@/lib/services/employeeReviewService'
 
-type WeekView = 'current' | 'previous'
+type ManagementView = 'schedule' | 'pending'
 
-function weekWindow(view: WeekView) {
+function recentNotificationWindow() {
   const now = new Date()
-  const monday = new Date(now)
-  const weekday = monday.getDay() || 7
-  monday.setDate(monday.getDate() - weekday + 1 + (view === 'previous' ? -7 : 0))
-  monday.setHours(0, 0, 0, 0)
-  const end = new Date(monday)
-  end.setDate(monday.getDate() + 7)
-  return { start: monday, end }
+  const start = new Date(now)
+  start.setDate(start.getDate() - 5)
+  start.setHours(0, 0, 0, 0)
+  const end = new Date(now)
+  end.setHours(23, 59, 59, 999)
+  return { start, end }
 }
 
 const managementMeta = {
@@ -313,7 +312,7 @@ export default function NotificationsPage() {
   const [pendingItems, setPendingItems] = useState<ManagementPendingItem[]>([])
   const [loading, setLoading] = useState(true)
   const [message, setMessage] = useState('')
-  const [weekView, setWeekView] = useState<WeekView>('current')
+  const [managementView, setManagementView] = useState<ManagementView>('schedule')
   const [selectedPending, setSelectedPending] = useState<ManagementPendingItem | null>(null)
   const [rejectIntentId, setRejectIntentId] = useState<string | null>(null)
   const [selectedNotification, setSelectedNotification] = useState<Notification | null>(null)
@@ -333,14 +332,17 @@ export default function NotificationsPage() {
 
   const visibleItems = items.filter((item) => {
     const createdAt = item.createdAt instanceof Date ? item.createdAt : item.createdAt.toDate()
-    const window = weekWindow(weekView)
+    const window = recentNotificationWindow()
     return createdAt >= window.start && createdAt < window.end
   })
   const visiblePendingItems = pendingItems.filter((item) => {
-    const window = weekWindow(weekView)
+    const window = recentNotificationWindow()
     return item.createdAt >= window.start && item.createdAt < window.end && (item.type !== 'account' || role === 'admin')
   })
-  const visibleManagementHistory = [...decisions].sort((left, right) => right.reviewedAt.getTime() - left.reviewedAt.getTime())
+  const recentWindow = recentNotificationWindow()
+  const visibleManagementHistory = [...decisions]
+    .filter((item) => item.reviewedAt >= recentWindow.start && item.reviewedAt < recentWindow.end)
+    .sort((left, right) => right.reviewedAt.getTime() - left.reviewedAt.getTime())
   const unreadItems = visibleItems.filter((item) => !item.isRead)
   const readItems = visibleItems.filter((item) => item.isRead)
   const employeeMap = useMemo(() => new Map(employees.map((employee) => [employee.uid, employee])), [employees])
@@ -442,7 +444,7 @@ export default function NotificationsPage() {
         setItems(notifications)
         setLoading(false)
       })
-      const window = weekWindow(weekView)
+      const window = recentNotificationWindow()
       const unsubscribeHistory = subscribeToWeeklyDecisionHistory(window.start, new Date(window.end.getTime() - 1), setDecisions, () => setMessage('Chưa thể tải các quyết định đã xử lý.'))
       const unsubscribeEmployees = subscribeToAllEmployees(setEmployees, () => undefined)
       return () => {
@@ -457,7 +459,7 @@ export default function NotificationsPage() {
       setItems(notifications)
       setLoading(false)
     })
-  }, [authUser, isManagement, isPreviewMode, weekView])
+  }, [authUser, isManagement, isPreviewMode])
 
   useEffect(() => {
     if (!authUser || isManagement) return
@@ -474,7 +476,7 @@ export default function NotificationsPage() {
     setSelectedPending(null)
     setSelectedNotification(null)
     setSelectedDecision(null)
-  }, [weekView])
+  }, [managementView])
 
   useEffect(() => {
     if (!selectedPending && !selectedNotification && !selectedDecision) return
@@ -532,14 +534,14 @@ export default function NotificationsPage() {
 
   const openNotification = async (item: Notification) => {
     if (item.id && !item.isRead) {
+      const previousItems = items
+      setItems((current) => current.map((row) => row.id === item.id ? { ...row, isRead: true } : row))
       if (isPreviewMode) {
-        setItems((current) => current.map((row) =>
-          row.id === item.id ? { ...row, isRead: true } : row
-        ))
       } else {
         try {
           await markNotificationAsRead(item.id)
         } catch {
+          setItems(previousItems)
           setMessage('Chưa thể đánh dấu thông báo đã đọc.')
         }
       }
@@ -549,13 +551,15 @@ export default function NotificationsPage() {
 
   const markAll = async () => {
     if (!authUser) return
+    const previousItems = items
+    setItems((current) => current.map((item) => ({ ...item, isRead: true })))
     if (isPreviewMode) {
-      setItems((current) => current.map((item) => ({ ...item, isRead: true })))
       return
     }
     try {
       await markAllNotificationsAsRead(authUser.uid)
     } catch {
+      setItems(previousItems)
       setMessage('Chưa thể đánh dấu tất cả thông báo.')
     }
   }
@@ -667,10 +671,14 @@ export default function NotificationsPage() {
         subtitle={isManagement ? 'Yêu cầu mới và kết quả xử lý theo tuần' : 'Cập nhật từ quản lý và hệ thống'}
       />
       <PageContainer>
-        <div className="mb-4 grid grid-cols-2 gap-2 rounded-2xl bg-slate-100 p-1 dark:bg-slate-800">
-          <button type="button" onClick={() => setWeekView('previous')} className={`min-h-11 rounded-xl text-sm font-bold ${weekView === 'previous' ? 'bg-white text-indigo-600 shadow-sm dark:bg-slate-950' : 'text-muted-foreground'}`}>Tuần trước</button>
-          <button type="button" onClick={() => setWeekView('current')} className={`min-h-11 rounded-xl text-sm font-bold ${weekView === 'current' ? 'bg-white text-indigo-600 shadow-sm dark:bg-slate-950' : 'text-muted-foreground'}`}>Tuần này</button>
-        </div>
+        {isManagement ? (
+          <div className="mb-4 grid grid-cols-2 gap-2 rounded-2xl bg-slate-100 p-1 dark:bg-slate-800">
+            <button type="button" onClick={() => setManagementView('schedule')} className={`min-h-11 rounded-xl text-sm font-bold ${managementView === 'schedule' ? 'bg-white text-indigo-600 shadow-sm dark:bg-slate-950' : 'text-muted-foreground'}`}>Lịch</button>
+            <button type="button" onClick={() => setManagementView('pending')} className={`min-h-11 rounded-xl text-sm font-bold ${managementView === 'pending' ? 'bg-white text-indigo-600 shadow-sm dark:bg-slate-950' : 'text-muted-foreground'}`}>Cần duyệt{visiblePendingItems.length > 0 && <span className="ml-1.5 rounded-full bg-rose-500 px-1.5 py-0.5 text-[10px] text-white">{visiblePendingItems.length}</span>}</button>
+          </div>
+        ) : (
+          <p className="mb-4 rounded-2xl bg-slate-100 px-4 py-3 text-center text-sm font-bold text-slate-600 dark:bg-slate-800 dark:text-slate-300">6 ngày gần nhất</p>
+        )}
         {!isManagement && !!visibleItems.some((item) => !item.isRead) && (
           <button
             onClick={markAll}
@@ -690,6 +698,7 @@ export default function NotificationsPage() {
           </div>
         ) : isManagement ? (
           <div className="space-y-3">
+            {managementView === 'pending' && <>
             {visiblePendingItems.map((item) => {
               const meta = managementMeta[item.type]
               const quick = quickReview(item)
@@ -728,6 +737,9 @@ export default function NotificationsPage() {
               )
             })}
             {visiblePendingItems.length > 0 && visibleManagementHistory.length > 0 && <div className="flex items-center gap-3 py-2 text-[10px] font-black uppercase tracking-[0.16em] text-slate-400"><span className="h-px flex-1 bg-slate-200 dark:bg-slate-700" /><span>Đã xử lý</span><span className="h-px flex-1 bg-slate-200 dark:bg-slate-700" /></div>}
+            {!visiblePendingItems.length && <div className="mobile-card p-8 text-center"><CheckCheck className="mx-auto h-8 w-8 text-emerald-600" /><h2 className="mt-3 font-extrabold">Không có mục cần duyệt</h2><p className="mt-1 text-sm text-muted-foreground">Các yêu cầu mới trong 6 ngày gần nhất sẽ xuất hiện ở đây.</p></div>}
+            </>}
+            {managementView === 'schedule' && <>
             {visibleManagementHistory.map((item) => {
               const employee = employeeMap.get(item.employeeId)
               const meta = managementMeta[item.resource]
@@ -754,15 +766,8 @@ export default function NotificationsPage() {
                 </article>
               )
             })}
-            {!visiblePendingItems.length && !visibleManagementHistory.length && (
-              <div className="mobile-card p-8 text-center">
-                <CheckCheck className="mx-auto h-8 w-8 text-emerald-600" />
-                <h2 className="mt-3 font-extrabold">{weekView === 'current' ? 'Tuần này chưa có thông báo' : 'Tuần trước không có thông báo'}</h2>
-                <p className="mt-1 text-sm text-muted-foreground">
-                  Yêu cầu mới và kết quả xử lý sẽ xuất hiện tại đây.
-                </p>
-              </div>
-            )}
+            {!visibleManagementHistory.length && <div className="mobile-card p-8 text-center"><CheckCheck className="mx-auto h-8 w-8 text-emerald-600" /><h2 className="mt-3 font-extrabold">Chưa có cập nhật lịch</h2><p className="mt-1 text-sm text-muted-foreground">Kết quả trong 6 ngày gần nhất sẽ xuất hiện ở đây.</p></div>}
+            </>}
           </div>
         ) : (
           <div className="space-y-3">
@@ -809,7 +814,7 @@ export default function NotificationsPage() {
               )
             })}
             {!visibleItems.length && (
-              <div className="mobile-card p-8 text-center font-bold">{weekView === 'current' ? 'Tuần này chưa có thông báo.' : 'Tuần trước không có thông báo.'}</div>
+              <div className="mobile-card p-8 text-center font-bold">Không có thông báo trong 6 ngày gần nhất.</div>
             )}
           </div>
         )}

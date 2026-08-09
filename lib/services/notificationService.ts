@@ -224,7 +224,12 @@ export function subscribeToManagementPendingCount(
   callback: (count: number) => void,
   includeAccountApprovals = true
 ): () => void {
-  return subscribeToManagementPendingItems((items) => callback(items.filter((item) => includeAccountApprovals || item.type !== 'account').length))
+  return subscribeToManagementPendingItems((items) => {
+    const start = new Date()
+    start.setDate(start.getDate() - 5)
+    start.setHours(0, 0, 0, 0)
+    callback(items.filter((item) => item.createdAt >= start && (includeAccountApprovals || item.type !== 'account')).length)
+  })
 }
 
 /**

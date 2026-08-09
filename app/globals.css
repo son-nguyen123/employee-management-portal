@@ -281,6 +281,47 @@ body.modal-layer-open [data-app-bottom-navigation] {
     @apply rounded-3xl border border-slate-200/70 bg-white shadow-sm shadow-slate-950/5 dark:border-white/10 dark:bg-slate-900;
   }
 
+  /* Keep the compact admin result cells from stretching the employee row. */
+  #schedules button span.text-right.text-xs.font-black {
+    display: inline-flex;
+    min-width: 4.25rem;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 0.125rem;
+    border-radius: 9999px;
+    padding: 0.3rem 0.5rem;
+    line-height: 1.1;
+    text-align: center;
+  }
+
+  #schedules button span.text-right.text-xs.font-black.text-emerald-600 {
+    background: #ecfdf5;
+    color: #047857;
+  }
+
+  #schedules button span.text-right.text-xs.font-black.text-amber-600 {
+    background: #fffbeb;
+    color: #b45309;
+  }
+
+  #schedules button span.text-right.text-xs.font-black.text-rose-600 {
+    background: #fff1f2;
+    color: #be123c;
+  }
+
+  .dark #schedules button span.text-right.text-xs.font-black.text-emerald-600 {
+    background: rgb(6 78 59 / 0.35);
+  }
+
+  .dark #schedules button span.text-right.text-xs.font-black.text-amber-600 {
+    background: rgb(120 53 15 / 0.35);
+  }
+
+  .dark #schedules button span.text-right.text-xs.font-black.text-rose-600 {
+    background: rgb(136 19 55 / 0.35);
+  }
+
   .mobile-field {
     @apply min-h-12 w-full rounded-2xl border border-slate-200 bg-white px-4 text-base outline-none transition focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 dark:border-slate-700 dark:bg-slate-900;
   }

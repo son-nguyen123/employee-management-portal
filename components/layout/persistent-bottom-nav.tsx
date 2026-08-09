@@ -36,13 +36,19 @@ export function PersistentBottomNav() {
     if (isManagement) {
       let pendingCount = 0
       let unreadCount = 0
-      const publish = () => setPendingNotificationCount(Math.max(pendingCount, unreadCount))
+      const recentStart = new Date()
+      recentStart.setDate(recentStart.getDate() - 5)
+      recentStart.setHours(0, 0, 0, 0)
+      const publish = () => setPendingNotificationCount(pendingCount + unreadCount)
       const unsubscribePending = subscribeToManagementPendingCount((count) => {
         pendingCount = count
         publish()
       }, role === 'admin')
       const unsubscribeNotifications = subscribeToEmployeeNotifications(authUser.uid, (notifications) => {
-        unreadCount = notifications.filter((item) => !item.isRead).length
+        unreadCount = notifications.filter((item) => {
+          const createdAt = item.createdAt instanceof Date ? item.createdAt : item.createdAt.toDate()
+          return !item.isRead && createdAt >= recentStart
+        }).length
         publish()
       })
       return () => {
@@ -52,7 +58,13 @@ export function PersistentBottomNav() {
     }
 
     return subscribeToEmployeeNotifications(authUser.uid, (notifications) => {
-      setPendingNotificationCount(notifications.filter((item) => !item.isRead).length)
+      const recentStart = new Date()
+      recentStart.setDate(recentStart.getDate() - 5)
+      recentStart.setHours(0, 0, 0, 0)
+      setPendingNotificationCount(notifications.filter((item) => {
+        const createdAt = item.createdAt instanceof Date ? item.createdAt : item.createdAt.toDate()
+        return !item.isRead && createdAt >= recentStart
+      }).length)
     })
   }, [authUser, isManagement, isPreviewMode, role])
 
