@@ -114,6 +114,7 @@ export default function SchedulePage() {
   const [editingOriginStatus, setEditingOriginStatus] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [submitting, setSubmitting] = useState(false)
+  const [downloading, setDownloading] = useState(false)
   const [celebrating, setCelebrating] = useState(false)
   const [message, setMessage] = useState<string | null>(null)
   const [weekNote, setWeekNote] = useState('')
@@ -728,45 +729,132 @@ export default function SchedulePage() {
   const editWindowOpen = !submittedEditDeadline || clockNow < submittedEditDeadline.getTime()
   const canEdit = canEditStatus && editWindowOpen
 
-  const downloadSchedule = () => {
-    const escapeIcs = (value: string) => value.replace(/\\/g, '\\\\').replace(/;/g, '\\;').replace(/,/g, '\\,').replace(/\n/g, '\\n')
-    const stamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\.\d{3}Z$/, 'Z')
-    const events: string[] = []
-    const addEvent = (dayKey: string, start: string, end: string, title: string, suffix: string) => {
-      const date = dayKey.replace(/-/g, '')
-      events.push([
-        'BEGIN:VEVENT',
-        `UID:${authUser?.uid || 'employee'}-${dayKey}-${suffix}@tricandy`,
-        `DTSTAMP:${stamp}`,
-        `DTSTART;TZID=Asia/Ho_Chi_Minh:${date}T${start.replace(':', '')}00`,
-        `DTEND;TZID=Asia/Ho_Chi_Minh:${date}T${end.replace(':', '')}00`,
-        `SUMMARY:${escapeIcs(title)}`,
-        'END:VEVENT',
-      ].join('\r\n'))
-    }
-    Object.entries(selected).forEach(([dayKey, shifts]) => shifts.forEach((shift) => {
-      if (shift === 'Custom') {
-        const custom = customData[dayKey] || { start: '08:00', end: '17:00' }
-        addEvent(dayKey, custom.start, custom.end, 'Ca làm tùy chỉnh', `custom-${custom.start}`)
-        return
+  const downloadSchedule = async () => {
+    if (downloading) return
+    setDownloading(true)
+    try {
+      const scale = 2
+      const width = 900
+      const visibleDays = days.filter((day) => selected[day.key]?.length || dutyDay === day.key)
+      const rowHeight = 104
+      const headerHeight = 154
+      const summaryHeight = 104
+      const footerHeight = 34
+      const height = Math.max(500, headerHeight + summaryHeight + Math.max(1, visibleDays.length) * rowHeight + footerHeight)
+      const canvas = document.createElement('canvas')
+      canvas.width = width * scale
+      canvas.height = height * scale
+      const context = canvas.getContext('2d')
+      if (!context) throw new Error('Thiết bị chưa hỗ trợ xuất ảnh lịch.')
+      context.scale(scale, scale)
+      context.textBaseline = 'middle'
+
+      const roundedRect = (x: number, y: number, boxWidth: number, boxHeight: number, radius: number, fill: string | CanvasGradient, stroke?: string) => {
+        const safeRadius = Math.min(radius, boxWidth / 2, boxHeight / 2)
+        context.beginPath()
+        context.moveTo(x + safeRadius, y)
+        context.lineTo(x + boxWidth - safeRadius, y)
+        context.quadraticCurveTo(x + boxWidth, y, x + boxWidth, y + safeRadius)
+        context.lineTo(x + boxWidth, y + boxHeight - safeRadius)
+        context.quadraticCurveTo(x + boxWidth, y + boxHeight, x + boxWidth - safeRadius, y + boxHeight)
+        context.lineTo(x + safeRadius, y + boxHeight)
+        context.quadraticCurveTo(x, y + boxHeight, x, y + boxHeight - safeRadius)
+        context.lineTo(x, y + safeRadius)
+        context.quadraticCurveTo(x, y, x + safeRadius, y)
+        context.closePath()
+        context.fillStyle = fill
+        context.fill()
+        if (stroke) {
+          context.strokeStyle = stroke
+          context.lineWidth = 2
+          context.stroke()
+        }
       }
-      const fixed = shift === 'Morning'
-        ? { start: '07:30', end: '11:30', title: 'Ca sáng' }
-        : shift === 'Afternoon'
-          ? { start: '13:00', end: '17:00', title: 'Ca chiều' }
-          : { start: '18:00', end: '22:00', title: 'Ca tối' }
-      addEvent(dayKey, fixed.start, fixed.end, fixed.title, shift.toLowerCase())
-    }))
-    if (dutyDay) addEvent(dutyDay, '17:00', '17:30', 'Lịch trực', 'duty')
-    const calendar = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//Tri Candy//Lich lam//VI', 'CALSCALE:GREGORIAN', ...events, 'END:VCALENDAR', ''].join('\r\n')
-    const url = URL.createObjectURL(new Blob([calendar], { type: 'text/calendar;charset=utf-8' }))
-    const anchor = document.createElement('a')
-    anchor.href = url
-    anchor.download = `lich-lam-${days[0]?.key || localDateKey(new Date())}.ics`
-    document.body.appendChild(anchor)
-    anchor.click()
-    anchor.remove()
-    window.setTimeout(() => URL.revokeObjectURL(url), 1000)
+      const text = (value: string, x: number, y: number, font: string, fill: string, align: CanvasTextAlign = 'left') => {
+        context.font = font
+        context.fillStyle = fill
+        context.textAlign = align
+        context.fillText(value, x, y)
+      }
+      const shiftLabel = (shift: Shift) => shift === 'Morning' ? 'sáng' : shift === 'Afternoon' ? 'chiều' : shift === 'Evening' ? 'tối' : 'tùy chỉnh'
+      const shiftTime = (dayKey: string, shift: Shift) => {
+        if (shift === 'Custom') {
+          const custom = customData[dayKey] || { start: '08:00', end: '17:00' }
+          return `${custom.start}–${custom.end}`
+        }
+        return shift === 'Morning' ? '07:30–11:30' : shift === 'Afternoon' ? '13:00–17:00' : '18:00–22:00'
+      }
+
+      context.fillStyle = '#eef2ff'
+      context.fillRect(0, 0, width, height)
+      roundedRect(18, 18, width - 36, height - 36, 34, '#ffffff', '#dbe4ff')
+      const headerGradient = context.createLinearGradient(18, 18, width - 18, 18)
+      headerGradient.addColorStop(0, '#4f46e5')
+      headerGradient.addColorStop(1, '#7c3aed')
+      roundedRect(18, 18, width - 36, headerHeight, 34, headerGradient)
+      context.fillStyle = headerGradient
+      context.fillRect(18, 52, width - 36, headerHeight - 34)
+      text('BẢNG ĐĂNG KÝ TUẦN', 54, 58, '700 20px -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif', '#c7d2fe')
+      text('Lịch làm của bạn', 54, 103, '800 34px -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif', '#ffffff')
+      const statusText = submittedStatus === 'Approved' ? 'Đã xác nhận' : submittedStatus === 'Rejected' ? 'Bị từ chối' : submittedStatus === 'Cancelled' ? 'Đã hủy' : 'Đang đồng bộ'
+      const statusWidth = Math.max(150, context.measureText(statusText).width + 42)
+      roundedRect(width - statusWidth - 50, 67, statusWidth, 52, 26, '#d1fae5')
+      text(statusText, width - statusWidth / 2 - 50, 93, '700 20px -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif', '#047857', 'center')
+
+      const summaryY = headerHeight + 18
+      roundedRect(42, summaryY, width - 84, 78, 20, '#f8fafc')
+      context.beginPath()
+      context.arc(80, summaryY + 39, 25, 0, Math.PI * 2)
+      context.fillStyle = '#e0e7ff'
+      context.fill()
+      text('▦', 80, summaryY + 40, '700 30px sans-serif', '#4f46e5', 'center')
+      text(selectedCount ? 'Các ngày đã đăng ký' : 'Nghỉ cả tuần', 122, summaryY + 29, '800 22px -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif', '#0f172a')
+      text(selectedCount ? `${visibleDays.length} ngày · ${selectedCount} ca${dutyDay ? ' · có lịch trực' : ''}` : 'Không đăng ký ca nào trong tuần này', 122, summaryY + 55, '500 17px -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif', '#64748b')
+
+      let rowY = summaryY + summaryHeight
+      if (!visibleDays.length) {
+        roundedRect(42, rowY + 12, width - 84, rowHeight - 24, 18, '#f8fafc')
+        text('Tuần này bạn không đăng ký ca nào', width / 2, rowY + 52, '700 19px -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif', '#334155', 'center')
+      } else {
+        visibleDays.forEach((day) => {
+          const dayShifts = selected[day.key] || []
+          const dayLabel = `${day.name} (${day.date.getDate()}/${day.date.getMonth() + 1})`
+          context.beginPath()
+          context.arc(82, rowY + rowHeight / 2, 29, 0, Math.PI * 2)
+          context.fillStyle = '#eef2ff'
+          context.fill()
+          text(day.shortName, 82, rowY + rowHeight / 2, '800 17px -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif', '#4f46e5', 'center')
+          text(dayLabel, 132, rowY + 39, '800 22px -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif', '#0f172a')
+          const labels = dayShifts.map((shift) => `${shiftLabel(shift)} ${shiftTime(day.key, shift)}`)
+          if (dutyDay === day.key) labels.push('trực 17:00–17:30')
+          text(labels.join(' · ') || 'Không đăng ký ca', 132, rowY + 72, '500 18px -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif', dutyDay === day.key ? '#e11d48' : '#64748b')
+          context.strokeStyle = '#e2e8f0'
+          context.lineWidth = 1
+          context.beginPath()
+          context.moveTo(42, rowY + rowHeight - 1)
+          context.lineTo(width - 42, rowY + rowHeight - 1)
+          context.stroke()
+          rowY += rowHeight
+        })
+      }
+      text(`Tri Candy · ${days[0]?.key || localDateKey(new Date())}`, 42, height - 34, '500 14px -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif', '#94a3b8')
+
+      const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/png'))
+      if (!blob) throw new Error('Chưa thể tạo ảnh lịch.')
+      const url = URL.createObjectURL(blob)
+      const anchor = document.createElement('a')
+      anchor.href = url
+      anchor.download = `lich-lam-${days[0]?.key || localDateKey(new Date())}.png`
+      document.body.appendChild(anchor)
+      anchor.click()
+      anchor.remove()
+      window.setTimeout(() => URL.revokeObjectURL(url), 1500)
+      setMessage('Đã tải ảnh lịch về máy.')
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'Chưa thể tải ảnh lịch về máy.')
+    } finally {
+      setDownloading(false)
+    }
   }
 
   if (loading) {
@@ -847,8 +935,8 @@ export default function SchedulePage() {
                   <h2 className="mt-1 text-lg font-extrabold">Lịch làm của bạn</h2>
                 </div>
                 <div className="flex items-center gap-2">
-                  <button type="button" onClick={downloadSchedule} aria-label="Tải lịch về máy" title="Tải lịch về máy" className="grid h-10 w-10 place-items-center rounded-xl bg-white/15 text-white transition hover:bg-white/25 active:scale-95">
-                    <Download className="h-4 w-4" />
+                  <button type="button" onClick={() => void downloadSchedule()} disabled={downloading} aria-label="Tải ảnh lịch về máy" title="Tải ảnh lịch về máy" className="grid h-10 w-10 place-items-center rounded-xl bg-white/15 text-white transition hover:bg-white/25 active:scale-95 disabled:cursor-wait disabled:opacity-70">
+                    {downloading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
                   </button>
                   <Badge variant={submittedStatus === 'Approved' ? 'success' : submittedStatus === 'Rejected' ? 'destructive' : submittedStatus === 'Cancelled' ? 'outline' : 'warning'}>
                     {submittedStatus === 'Approved'
