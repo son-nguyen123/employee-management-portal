@@ -2,12 +2,13 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { Camera, Check, CreditCard, Crop, IdCard, ImageUp, Landmark, Link as LinkIcon, Loader2, LogOut, Move, Phone, Save, UserRound, X } from 'lucide-react'
+import { CalendarDays, Camera, Check, CreditCard, Crop, IdCard, ImageUp, Landmark, Link as LinkIcon, Loader2, LogOut, Move, Phone, Save, UserRound, X } from 'lucide-react'
 import { useAuth } from '@/lib/hooks/useAuth'
 import { auth } from '@/lib/firebase'
-import { createEmployee, updateEmployee } from '@/lib/services/employeeService'
+import { createEmployee, setEmployeeScheduleMode, updateEmployee } from '@/lib/services/employeeService'
 import { updateUserProfile } from '@/lib/services/authService'
 import { profileImageUrl } from '@/lib/utils/profileImage'
+import type { EmployeeScheduleMode } from '@/lib/models/types'
 
 export default function ProfileSetupPage() {
   const router = useRouter()
@@ -21,6 +22,7 @@ export default function ProfileSetupPage() {
     bankName: '',
     bankAccountName: '',
     bankAccountNumber: '',
+    scheduleMode: 'rotating' as EmployeeScheduleMode,
   })
   const [saving, setSaving] = useState(false)
   const [signingOut, setSigningOut] = useState(false)
@@ -43,6 +45,7 @@ export default function ProfileSetupPage() {
       bankName: employee?.bankName || '',
       bankAccountName: employee?.bankAccountName || '',
       bankAccountNumber: employee?.bankAccountNumber || '',
+      scheduleMode: employee?.scheduleMode || 'rotating',
     })
   }, [authUser, employee, isLoading, router])
 
@@ -157,7 +160,11 @@ export default function ProfileSetupPage() {
     setMessage('')
     try {
       if (employee) {
-        await updateEmployee(authUser.uid, values)
+        const { scheduleMode, ...profileValues } = values
+        await updateEmployee(authUser.uid, profileValues)
+        if (scheduleMode !== (employee.scheduleMode || 'rotating')) {
+          await setEmployeeScheduleMode(scheduleMode)
+        }
       } else {
         await createEmployee(authUser.uid, {
           ...values,
@@ -165,6 +172,7 @@ export default function ProfileSetupPage() {
           joinDate: new Date(),
           role: 'employee',
           status: 'active',
+          scheduleMode: values.scheduleMode,
         })
       }
       await updateUserProfile(values.fullName, values.photoURL)
@@ -286,6 +294,20 @@ export default function ProfileSetupPage() {
               </div>
             </label>
           </div>
+          <section className="rounded-3xl border border-violet-100 bg-violet-50/70 p-4 dark:border-violet-500/20 dark:bg-violet-500/10">
+            <div className="flex items-start gap-3">
+              <div className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-violet-600 text-white"><CalendarDays className="h-5 w-5" /></div>
+              <div className="min-w-0 flex-1"><h2 className="font-extrabold">Cách xếp lịch làm</h2><p className="mt-1 text-xs leading-5 text-muted-foreground">Lịch cố định được tự động xác nhận và lặp lại theo tuần. Xoay ca sẽ đăng ký lại từng tuần.</p></div>
+            </div>
+            <div className="mt-3 grid grid-cols-2 gap-2 rounded-2xl bg-white/80 p-1 dark:bg-slate-900/70">
+              {([['rotating', 'Xoay ca', 'Đăng ký từng tuần'], ['fixed', 'Làm cố định', 'Tự động lặp lại']] as const).map(([mode, label, description]) => (
+                <button key={mode} type="button" onClick={() => setForm((current) => ({ ...current, scheduleMode: mode }))} disabled={saving || signingOut} className={`rounded-xl px-2 py-3 text-left transition ${form.scheduleMode === mode ? 'bg-violet-600 text-white shadow-md' : 'text-slate-600 hover:bg-violet-50 dark:text-slate-300 dark:hover:bg-violet-500/10'}`}>
+                  <span className="block text-sm font-black">{label}</span><span className={`mt-1 block text-[10px] font-semibold ${form.scheduleMode === mode ? 'text-white/80' : 'text-muted-foreground'}`}>{description}</span>
+                </button>
+              ))}
+            </div>
+            {employee && form.scheduleMode !== (employee.scheduleMode || 'rotating') && <p className="mt-3 rounded-2xl bg-amber-50 px-3 py-2 text-xs font-bold leading-5 text-amber-800 dark:bg-amber-500/10 dark:text-amber-200">Chuyển chế độ chỉ được xác nhận vào Thứ Bảy. Chế độ mới áp dụng từ tuần kế tiếp.</p>}
+          </section>
           <button type="submit" disabled={saving} className="mobile-primary-button mt-2">
             {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
             {saving ? 'Đang lưu...' : 'Lưu và tiếp tục'}

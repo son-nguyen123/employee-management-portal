@@ -27,6 +27,8 @@ type WorkflowAction =
   | 'getAuditReceiptSettings'
   | 'updateAuditReceiptSettings'
   | 'manageEmployeeStatus'
+  | 'setEmployeeScheduleMode'
+  | 'ensureFixedSchedule'
   | 'getAccountRegistrationWindow'
   | 'updateAccountRegistrationWindow'
   | 'respondPenaltyConsent'

@@ -100,8 +100,16 @@ export default function Page() {
           getAllSchedules(),
           getWeeklyScheduleTarget(weekKey),
         ])
+        const fixedForNextWeek = employees.filter((employee) => {
+          if (employee.status !== 'active' || employee.scheduleMode !== 'fixed') return false
+          const effective = employee.scheduleModeEffectiveWeekStart || ''
+          const needsSetup = employee.fixedScheduleNeedsSetupWeekStart || ''
+          return (!effective || effective <= weekKey) && (!needsSetup || weekKey < needsSetup)
+        })
+        const confirmed = new Set(schedules.filter((item) => item.status !== 'Cancelled' && inRegistrationWeek(item.date)).map((item) => item.employeeId))
+        fixedForNextWeek.forEach((employee) => confirmed.add(employee.uid))
         setAdminStats({
-          confirmed: new Set(schedules.filter((item) => item.status !== 'Cancelled' && inRegistrationWeek(item.date)).map((item) => item.employeeId)).size,
+          confirmed: confirmed.size,
           total: target.expectedEmployees || employees.filter((item) => item.status === 'active').length,
           pending: new Set(schedules.filter((item) => item.underMinimumWarning && inRegistrationWeek(item.date)).map((item) => item.employeeId)).size,
         })
@@ -120,14 +128,18 @@ export default function Page() {
 
     const loadRegistrationWeek = async () => {
       const now = new Date()
-      const monday = new Date(now)
-      const useCurrentWeek = now.getDay() === 1
-      const daysUntilNextMonday = useCurrentWeek ? 0 : ((8 - now.getDay()) % 7) || 7
-      monday.setDate(now.getDate() + daysUntilNextMonday)
-      monday.setHours(0, 0, 0, 0)
-      const sunday = new Date(monday)
-      sunday.setDate(monday.getDate() + 6)
-      sunday.setHours(23, 59, 59, 999)
+      const weekday = now.getDay() || 7
+      const currentMonday = new Date(now)
+      currentMonday.setDate(now.getDate() - weekday + 1)
+      currentMonday.setHours(0, 0, 0, 0)
+      const currentSunday = new Date(currentMonday)
+      currentSunday.setDate(currentMonday.getDate() + 6)
+      currentSunday.setHours(23, 59, 59, 999)
+      const nextMonday = new Date(currentMonday)
+      nextMonday.setDate(currentMonday.getDate() + 7)
+      const nextSunday = new Date(nextMonday)
+      nextSunday.setDate(nextMonday.getDate() + 6)
+      nextSunday.setHours(23, 59, 59, 999)
       const joined = employee.joinDate instanceof Date ? employee.joinDate : employee.joinDate.toDate()
       const appearsNew = Date.now() - joined.getTime() <= 45 * 24 * 60 * 60 * 1000
 
@@ -135,20 +147,34 @@ export default function Page() {
         const allSchedules = isPreviewMode
           ? getPreviewSchedules().filter((item) => item.employeeId === authUser.uid)
           : await getEmployeeSchedules(authUser.uid)
-        const schedules = isPreviewMode
+        const currentSchedules = isPreviewMode
           ? allSchedules.filter((item) => {
               const date = item.date instanceof Date
                 ? item.date
                 : typeof item.date === 'string'
                   ? new Date(item.date)
                   : item.date.toDate()
-              return date >= monday && date <= sunday
+              return date >= currentMonday && date <= currentSunday
             })
-          : await getSchedulesByDateRange(authUser.uid, monday, sunday)
+          : await getSchedulesByDateRange(authUser.uid, currentMonday, currentSunday)
+        const nextSchedules = isPreviewMode
+          ? allSchedules.filter((item) => {
+              const date = item.date instanceof Date
+                ? item.date
+                : typeof item.date === 'string'
+                  ? new Date(item.date)
+                  : item.date.toDate()
+              return date >= nextMonday && date <= nextSunday
+            })
+          : await getSchedulesByDateRange(authUser.uid, nextMonday, nextSunday)
+        const hasCurrentWeek = currentSchedules.some((item) => item.status !== 'Cancelled')
+        const hasNextWeek = nextSchedules.some((item) => item.status !== 'Cancelled')
+        const shouldUseCurrentWeek = weekday >= 1 && weekday <= 5 && !hasCurrentWeek
+        const targetHasSchedule = shouldUseCurrentWeek ? hasCurrentWeek : hasNextWeek
         setSchedulePrompt({
-          visible: !schedules.some((item) => item.status !== 'Cancelled'),
+          visible: !targetHasSchedule,
           isNew: appearsNew && !allSchedules.some((item) => item.status !== 'Cancelled'),
-          href: useCurrentWeek ? '/schedule?week=current' : '/schedule',
+          href: shouldUseCurrentWeek ? '/schedule?week=current' : '/schedule',
         })
       } catch {
         setSchedulePrompt({ visible: false, isNew: false, href: '/schedule' })
@@ -268,7 +294,7 @@ export default function Page() {
               <p className="font-extrabold">
                 {schedulePrompt.isNew ? 'Có vẻ bạn là thành viên mới' : 'Có vẻ bạn chưa có lịch'}
               </p>
-              <p className="text-xs text-indigo-700 dark:text-indigo-200">{schedulePrompt.isNew ? 'Nhân viên mới: chọn từ hôm nay đến hết tuần sau' : 'Tuần kế tiếp chưa có lịch · Thêm lịch ngay'}</p>
+              <p className="text-xs text-indigo-700 dark:text-indigo-200">{schedulePrompt.isNew ? 'Nhân viên mới: chọn lịch từ đầu tuần hiện tại' : schedulePrompt.href === '/schedule?week=current' ? 'Tuần này chưa có lịch · Thêm lịch ngay' : 'Tuần kế tiếp chưa có lịch · Thêm lịch ngay'}</p>
             </div>
             <ChevronRight className="h-5 w-5 shrink-0" />
           </Link>

@@ -6,7 +6,7 @@ import Image from 'next/image'
 import { ArrowLeft, CalendarCheck, Check, ChevronRight, ExternalLink, Loader2, MessageSquareText, Phone, RotateCcw, UsersRound, X } from 'lucide-react'
 import { useAuth, useUserRole } from '@/lib/hooks/useAuth'
 import { setEmployeeAccountStatus, subscribeToAllEmployees } from '@/lib/services/employeeService'
-import { reviewWorkScheduleBatch, subscribeToAllSchedules } from '@/lib/services/scheduleService'
+import { ensureFixedSchedule, reviewWorkScheduleBatch, subscribeToAllSchedules } from '@/lib/services/scheduleService'
 import { getPreviewSchedules, updatePreviewSchedule } from '@/lib/services/previewWorkflow'
 import type { Employee, WorkSchedule } from '@/lib/models/types'
 import { Header } from '@/components/layout/header'
@@ -94,6 +94,7 @@ export default function AdminDashboardPage() {
   const [processedReason, setProcessedReason] = useState('')
   const [referenceNow] = useState(() => Date.now())
   const legacyAutoApprovalRef = useRef(new Set<string>())
+  const fixedSyncRef = useRef(new Set<string>())
 
   useEffect(() => {
     const timeout = window.setTimeout(() => {
@@ -181,6 +182,25 @@ export default function AdminDashboardPage() {
   }, [authUser, isPreviewMode])
 
   const activeEmployees = useMemo(() => employees.filter((item) => item.status === 'active'), [employees])
+  const fixedForNextWeek = useMemo(() => activeEmployees.filter((employee) => {
+    const targetWeek = nextMondayKey()
+    if (employee.scheduleMode !== 'fixed') return false
+    const effective = employee.scheduleModeEffectiveWeekStart || ''
+    const needsSetup = employee.fixedScheduleNeedsSetupWeekStart || ''
+    return (!effective || effective <= targetWeek) && (!needsSetup || targetWeek < needsSetup)
+  }), [activeEmployees])
+  useEffect(() => {
+    if (isPreviewMode || !authUser || !['admin', 'manager'].includes(role || '') || !fixedForNextWeek.length) return
+    const targetWeek = nextMondayKey()
+    fixedForNextWeek.forEach((employee) => {
+      const syncKey = `${employee.uid}-${targetWeek}`
+      if (fixedSyncRef.current.has(syncKey)) return
+      fixedSyncRef.current.add(syncKey)
+      void ensureFixedSchedule(targetWeek, employee.uid).catch(() => {
+        fixedSyncRef.current.delete(syncKey)
+      })
+    })
+  }, [authUser, fixedForNextWeek, isPreviewMode, role])
   const pendingEmployees = useMemo(() => employees.filter((item) => item.status === 'pending'), [employees])
   const inactiveEmployees = useMemo(() => employees.filter((item) => item.status === 'inactive'), [employees])
 
@@ -291,13 +311,16 @@ export default function AdminDashboardPage() {
     const submitted = new Set(schedules.filter((item) =>
       item.status !== 'Cancelled' && mondayKey(toDate(item.date)) === nextMondayKey()
     ).map((item) => item.employeeId))
-    return activeEmployees.filter((employee) => !submitted.has(employee.uid))
-  }, [activeEmployees, schedules])
+    return activeEmployees.filter((employee) => !submitted.has(employee.uid) && !fixedForNextWeek.some((fixed) => fixed.uid === employee.uid))
+  }, [activeEmployees, fixedForNextWeek, schedules])
   const submittedEmployees = useMemo(
-    () => new Set(schedules.filter((item) =>
+    () => new Set([
+      ...schedules.filter((item) =>
       item.status !== 'Cancelled' && mondayKey(toDate(item.date)) === nextMondayKey()
-    ).map((item) => item.employeeId)).size,
-    [schedules]
+      ).map((item) => item.employeeId),
+      ...fixedForNextWeek.map((employee) => employee.uid),
+    ]).size,
+    [fixedForNextWeek, schedules]
   )
   const weeklyTarget = activeEmployees.length
   const attentionBatches = processedBatches.filter((batch) => batch.status === 'Rejected' || batchNeedsAttention(batch))
@@ -356,6 +379,7 @@ export default function AdminDashboardPage() {
         <Header title="Danh sách nhân viên" subtitle={`${activeEmployees.length} nhân viên đang hoạt động`} backHref="/" />
         <PageContainer maxWidth="2xl">
           {message && <p className="mb-3 rounded-2xl bg-indigo-50 p-3 text-sm font-semibold text-indigo-900 dark:bg-indigo-500/10 dark:text-indigo-100">{message}</p>}
+          {fixedForNextWeek.length > 0 && <section className="mb-5 rounded-3xl border border-violet-200 bg-violet-50 p-4 dark:border-violet-500/30 dark:bg-violet-500/10"><div className="flex items-center justify-between gap-3"><h2 className="font-black text-violet-900 dark:text-violet-100">Lịch cố định tuần sau</h2><span className="rounded-full bg-violet-600 px-2.5 py-1 text-xs font-black text-white">{fixedForNextWeek.length} người</span></div><p className="mt-2 text-sm leading-6 text-violet-800 dark:text-violet-200">{fixedForNextWeek.map((employee) => employee.fullName).join(' · ')}</p></section>}
           {role === 'admin' && pendingEmployees.length > 0 && (
             <section className="mb-5 rounded-3xl border border-amber-200 bg-amber-50 p-4 dark:border-amber-500/30 dark:bg-amber-500/10">
               <h2 className="font-black text-amber-900 dark:text-amber-100">Tài khoản mới chờ duyệt ({pendingEmployees.length})</h2>
@@ -384,6 +408,7 @@ export default function AdminDashboardPage() {
                     <h2 className="truncate text-sm font-extrabold">{employee.fullName}</h2>
                     <p className="mt-1 truncate text-xs text-muted-foreground">{employee.employeeCode} · {employee.phone || 'Chưa có SĐT'}</p>
                   </div>
+                  {employee.scheduleMode === 'fixed' && <span className="shrink-0 rounded-full bg-violet-50 px-2 py-1 text-[10px] font-black text-violet-700 dark:bg-violet-500/10 dark:text-violet-200">Cố định</span>}
                   <ChevronRight className="h-4 w-4 shrink-0 text-slate-400" />
                 </Link>
               ))}

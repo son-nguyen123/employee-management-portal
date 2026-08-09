@@ -24,6 +24,7 @@ export interface PreviewSchedule {
   underMinimumWarning?: boolean
   autoApproved?: boolean
   reviewedAt?: string
+  fixedSchedule?: boolean
 }
 
 const STORAGE_KEY = 'employee-portal-preview-schedules'

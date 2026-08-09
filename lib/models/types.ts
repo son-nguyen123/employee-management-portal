@@ -1,6 +1,8 @@
 import { Timestamp } from 'firebase/firestore'
 
 // Employee Document
+export type EmployeeScheduleMode = 'rotating' | 'fixed'
+
 export interface Employee {
   uid: string
   employeeCode: string
@@ -17,6 +19,10 @@ export interface Employee {
   joinDate: Timestamp | Date
   createdAt: Timestamp | Date
   updatedAt: Timestamp | Date
+  scheduleMode?: EmployeeScheduleMode
+  scheduleModeEffectiveWeekStart?: string
+  fixedScheduleNeedsSetupWeekStart?: string
+  fixedScheduleTemplateWeekStart?: string
 }
 
 // Work Schedule Document
@@ -57,6 +63,7 @@ export interface WorkSchedule {
   weeklyShiftCount?: number
   underMinimumWarning?: boolean
   autoApproved?: boolean
+  fixedSchedule?: boolean
   createdAt: Timestamp | Date
   updatedAt: Timestamp | Date
 }

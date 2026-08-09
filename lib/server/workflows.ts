@@ -624,10 +624,205 @@ function scheduleEditDeadline(firstShift: Date, firstSubmittedAt: Date): Date {
   return new Date(submittedMidnight.getTime() + 24 * 60 * 60 * 1000)
 }
 
+function vietnamWeekStartKey(date: Date, weeksFromCurrent = 0): string {
+  const dateKey = vietnamDateKey(date)
+  const base = new Date(`${dateKey}T12:00:00+07:00`)
+  const weekdayName = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'Asia/Ho_Chi_Minh',
+    weekday: 'short',
+  }).format(base)
+  const weekday = ({ Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6, Sun: 7 } as Record<string, number>)[weekdayName] || 1
+  base.setUTCDate(base.getUTCDate() - (weekday - 1) + weeksFromCurrent * 7)
+  return vietnamDateKey(base)
+}
+
+function employeeScheduleMode(data: Record<string, unknown>): 'rotating' | 'fixed' {
+  return data.scheduleMode === 'fixed' ? 'fixed' : 'rotating'
+}
+
+function isNewEmployeeProfile(data: Record<string, unknown>, now: Date): boolean {
+  const joined = firestoreDate(data.joinDate) || firestoreDate(data.createdAt)
+  return Boolean(joined && now.getTime() - joined.getTime() <= 45 * 24 * 60 * 60 * 1000)
+}
+
 function firestoreDate(value: unknown): Date | null {
   if (value instanceof Date) return value
   if (value instanceof Timestamp) return value.toDate()
   return null
+}
+
+export async function setEmployeeScheduleMode(actor: RequestActor, raw: unknown) {
+  requireStaff(actor)
+  const body = objectBody(raw)
+  const mode = body.mode === 'fixed' ? 'fixed' : body.mode === 'rotating' ? 'rotating' : null
+  if (!mode) throw new ApiError(400, 'Chế độ lịch làm không hợp lệ.')
+
+  const employeeRef = adminDb.collection('employees').doc(actor.uid)
+  const employeeSnapshot = await employeeRef.get()
+  if (!employeeSnapshot.exists) throw new ApiError(404, 'Chưa tìm thấy hồ sơ nhân viên.')
+  const employeeData = employeeSnapshot.data() as Record<string, unknown>
+  const currentMode = employeeScheduleMode(employeeData)
+  if (currentMode === mode) {
+    return { mode, effectiveWeekStart: String(employeeData.scheduleModeEffectiveWeekStart || vietnamWeekStartKey(new Date())) }
+  }
+
+  const now = new Date()
+  const weekday = new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Ho_Chi_Minh', weekday: 'short' }).format(now)
+  if (weekday !== 'Sat') {
+    throw new ApiError(409, 'Chỉ được đổi giữa lịch cố định và xoay ca vào Thứ Bảy.')
+  }
+
+  const effectiveWeekStart = vietnamWeekStartKey(now, 1)
+  const targetStart = new Date(`${effectiveWeekStart}T00:00:00+07:00`)
+  const targetEnd = new Date(targetStart.getTime() + 7 * 24 * 60 * 60 * 1000)
+  const futureSchedules = await adminDb.collection('workSchedules')
+    .where('employeeId', '==', actor.uid)
+    .where('date', '>=', Timestamp.fromDate(targetStart))
+    .where('date', '<', Timestamp.fromDate(targetEnd))
+    .get()
+  const batch = adminDb.batch()
+  const cancellationTime = FieldValue.serverTimestamp()
+  futureSchedules.docs.forEach((schedule) => {
+    if (schedule.get('status') === 'Cancelled') return
+    batch.update(schedule.ref, {
+      status: 'Cancelled',
+      cancellationReason: 'Đã đổi chế độ lịch; cần tạo lại lịch tuần kế tiếp.',
+      updatedAt: cancellationTime,
+      lockedAt: cancellationTime,
+    })
+  })
+  const updates: Record<string, unknown> = {
+    scheduleMode: mode,
+    scheduleModeEffectiveWeekStart: effectiveWeekStart,
+    updatedAt: FieldValue.serverTimestamp(),
+  }
+  if (mode === 'fixed') updates.fixedScheduleNeedsSetupWeekStart = effectiveWeekStart
+  else updates.fixedScheduleNeedsSetupWeekStart = FieldValue.delete()
+  batch.set(employeeRef, updates, { merge: true })
+  await batch.commit()
+  return { mode, effectiveWeekStart }
+}
+
+export async function ensureFixedSchedule(actor: RequestActor, raw: unknown) {
+  requireStaff(actor)
+  const body = objectBody(raw)
+  const targetWeekStart = weekKey(body.weekStart)
+  const employeeId = typeof body.employeeId === 'string' ? text(body.employeeId, 'Nhân viên', 128) : actor.uid
+  if (employeeId !== actor.uid && !['admin', 'manager'].includes(actor.role)) {
+    throw new ApiError(403, 'Chỉ quản lý mới có thể đồng bộ lịch cố định của nhân viên khác.')
+  }
+  const employeeRef = adminDb.collection('employees').doc(employeeId)
+  const employeeSnapshot = await employeeRef.get()
+  if (!employeeSnapshot.exists) throw new ApiError(404, 'Chưa tìm thấy hồ sơ nhân viên.')
+  const employeeData = employeeSnapshot.data() as Record<string, unknown>
+  if (employeeScheduleMode(employeeData) !== 'fixed') return { created: false, ids: [], needsSetup: false }
+
+  const effectiveWeekStart = String(employeeData.scheduleModeEffectiveWeekStart || '')
+  if (effectiveWeekStart && targetWeekStart < effectiveWeekStart) return { created: false, ids: [], needsSetup: false }
+  const needsSetupWeekStart = String(employeeData.fixedScheduleNeedsSetupWeekStart || '')
+  if (needsSetupWeekStart && targetWeekStart >= needsSetupWeekStart) return { created: false, ids: [], needsSetup: true }
+
+  const targetStart = new Date(`${targetWeekStart}T00:00:00+07:00`)
+  const targetEnd = new Date(targetStart.getTime() + 7 * 24 * 60 * 60 * 1000)
+  const existingSnapshot = await adminDb.collection('workSchedules')
+    .where('employeeId', '==', employeeId)
+    .where('date', '>=', Timestamp.fromDate(targetStart))
+    .where('date', '<', Timestamp.fromDate(targetEnd))
+    .get()
+  if (existingSnapshot.docs.some((snapshot) => snapshot.get('status') !== 'Cancelled')) {
+    return { created: false, ids: [], needsSetup: false }
+  }
+
+  const allSchedules = await adminDb.collection('workSchedules').where('employeeId', '==', employeeId).get()
+  const candidates = allSchedules.docs.filter((snapshot) => {
+    const data = snapshot.data()
+    if (['Cancelled', 'Rejected', 'Draft'].includes(String(data.status))) return false
+    if (data.fixedSchedule === true) return true
+    return !employeeData.scheduleModeEffectiveWeekStart && data.status === 'Approved'
+  })
+  if (!candidates.length) return { created: false, ids: [], needsSetup: false }
+
+  const grouped = new Map<string, Array<{ data: Record<string, unknown>; date: Date }>>()
+  candidates.forEach((snapshot) => {
+    const data = snapshot.data() as Record<string, unknown>
+    const date = firestoreDate(data.date)
+    if (!date) return
+    const week = vietnamWeekStartKey(date)
+    if (week >= targetWeekStart) return
+    grouped.set(week, [...(grouped.get(week) || []), { data, date }])
+  })
+  const sourceWeekStart = [...grouped.keys()].sort().at(-1)
+  const sourceRows = sourceWeekStart ? grouped.get(sourceWeekStart) || [] : []
+  if (!sourceWeekStart || !sourceRows.length) return { created: false, ids: [], needsSetup: false }
+
+  const managerIds = await activeManagerIds()
+  const requestRef = adminDb.collection('workflowRequests').doc(`fixed-schedule-${employeeId}-${targetWeekStart}`)
+  const scheduleRefs = sourceRows.map(() => adminDb.collection('workSchedules').doc())
+  const targetMonday = new Date(`${targetWeekStart}T12:00:00+07:00`)
+  const now = new Date()
+  const actualShiftCount = sourceRows.filter(({ data }) => !String(data.note || '').includes('[NO_SHIFTS]') && !String(data.note || '').includes('[DUTY_ONLY]')).length
+  let createdNow = false
+  await adminDb.runTransaction(async (transaction) => {
+    if ((await transaction.get(requestRef)).exists) return
+    createdNow = true
+    const serverNow = FieldValue.serverTimestamp()
+    sourceRows.forEach(({ data, date }, index) => {
+      const sourceMidday = new Date(`${vietnamDateKey(date)}T12:00:00+07:00`)
+      const offset = Math.round((sourceMidday.getTime() - new Date(`${sourceWeekStart}T12:00:00+07:00`).getTime()) / (24 * 60 * 60 * 1000))
+      const targetDate = new Date(targetMonday)
+      targetDate.setUTCDate(targetDate.getUTCDate() + offset)
+      transaction.create(scheduleRefs[index], {
+        employeeId,
+        date: Timestamp.fromDate(targetDate),
+        shift: data.shift,
+        status: 'Approved',
+        note: String(data.note || ''),
+        batchKey: scheduleBatchKey(employeeId, mondayFor(targetDate)),
+        fixedSchedule: true,
+        requiresReapproval: false,
+        revisionCount: 0,
+        weeklyShiftCount: actualShiftCount,
+        underMinimumWarning: actualShiftCount < workflowPolicy.minimumWeeklyShifts,
+        autoApproved: true,
+        reviewNote: 'Lịch cố định tự động xác nhận từ tuần trước.',
+        reviewedBy: 'system:fixed-schedule',
+        reviewedAt: serverNow,
+        firstSubmittedAt: Timestamp.fromDate(now),
+        editDeadlineAt: Timestamp.fromDate(targetMonday),
+        createdAt: serverNow,
+        updatedAt: serverNow,
+        lockedAt: serverNow,
+      })
+    })
+    transaction.create(requestRef, {
+      employeeId,
+      action: 'ensureFixedSchedule',
+      targetIds: scheduleRefs.map((ref) => ref.id),
+      weekStart: targetWeekStart,
+      createdAt: serverNow,
+    })
+    transaction.set(employeeRef, { fixedScheduleTemplateWeekStart: targetWeekStart, updatedAt: serverNow }, { merge: true })
+    managerIds.forEach((managerId) => transaction.set(
+      managerNotificationRef(managerId, `fixed-schedule-${employeeId}-${targetWeekStart}`),
+      managerNotification(
+        managerId,
+        'Lịch cố định đã tự động xác nhận',
+        `Lịch tuần ${targetWeekStart} của nhân viên đã được lặp lại từ lịch cố định.`,
+        actualShiftCount < workflowPolicy.minimumWeeklyShifts ? 'warning' : 'info'
+      )
+    ))
+  })
+  if (!createdNow) return { created: false, ids: [], needsSetup: false }
+  await sendManagerPushes({
+    managerIds,
+    sourceKey: `fixed-schedule-${employeeId}-${targetWeekStart}`,
+    title: 'Lịch cố định đã tự động xác nhận',
+    body: `Lịch tuần ${targetWeekStart} đã được lặp lại từ lịch cố định.`,
+    link: '/admin/dashboard',
+    source: 'workSchedules',
+    sourceId: scheduleRefs[0]?.id || targetWeekStart,
+  })
+  return { created: true, ids: scheduleRefs.map((ref) => ref.id), needsSetup: false }
 }
 
 function leaveNoticeDeadline(firstShift: Date): Date {
@@ -667,6 +862,7 @@ export async function submitSchedules(actor: RequestActor, raw: unknown) {
   const isLate = requestTime.getTime() >= scheduleDeadline(firstDate).getTime()
   const editDeadlineAt = scheduleEditDeadline(firstDate, requestTime)
   const weekStart = mondayFor(firstDate)
+  const scheduleWeekStartKey = vietnamWeekStartKey(firstDate)
   const weekEnd = new Date(weekStart)
   weekEnd.setUTCDate(weekEnd.getUTCDate() + 6)
   weekEnd.setUTCHours(23, 59, 59, 999)
@@ -683,12 +879,17 @@ export async function submitSchedules(actor: RequestActor, raw: unknown) {
     end.setUTCHours(23, 59, 59, 999)
     return start <= weekStart && end >= weekEnd
   })
-  const shouldPenalize = isLate && !hasCoveringLongLeave
   const batchKey = scheduleBatchKey(actor.uid, weekStart)
-  const [managerIds, existingSchedules] = await Promise.all([
+  const [managerIds, existingSchedules, employeeSnapshot] = await Promise.all([
     activeManagerIds(),
     adminDb.collection('workSchedules').where('employeeId', '==', actor.uid).get(),
+    adminDb.collection('employees').doc(actor.uid).get(),
   ])
+  const employeeData = employeeSnapshot.data() as Record<string, unknown> | undefined
+  const scheduleMode = employeeData ? employeeScheduleMode(employeeData) : 'rotating'
+  const effectiveWeekStart = String(employeeData?.scheduleModeEffectiveWeekStart || '')
+  const fixedModeActive = scheduleMode === 'fixed' && (!effectiveWeekStart || scheduleWeekStartKey >= effectiveWeekStart)
+  const shouldPenalize = isLate && !hasCoveringLongLeave && !fixedModeActive && !isNewEmployeeProfile(employeeData || {}, requestTime)
   const alreadyHasWeek = existingSchedules.docs.some((snapshot) => {
     const data = snapshot.data()
     if (data.status === 'Cancelled') return false
@@ -715,15 +916,18 @@ export async function submitSchedules(actor: RequestActor, raw: unknown) {
         status: 'Approved',
         note: schedule.note,
         batchKey,
+        fixedSchedule: fixedModeActive,
         requiresReapproval: false,
         revisionCount: 0,
         weeklyShiftCount: actualShiftCount,
         underMinimumWarning: underMinimum,
         autoApproved: true,
-        reviewNote: underMinimum
-          ? `Tự động xác nhận · lịch có ${actualShiftCount}/${workflowPolicy.minimumWeeklyShifts} ca.`
-          : `Tự động xác nhận · lịch đạt ${actualShiftCount} ca.`,
-        reviewedBy: 'system:auto-schedule',
+        reviewNote: fixedModeActive
+          ? 'Lịch cố định tự động xác nhận.'
+          : underMinimum
+            ? `Tự động xác nhận · lịch có ${actualShiftCount}/${workflowPolicy.minimumWeeklyShifts} ca.`
+            : `Tự động xác nhận · lịch đạt ${actualShiftCount} ca.`,
+        reviewedBy: fixedModeActive ? 'system:fixed-schedule' : 'system:auto-schedule',
         reviewedAt: now,
         penaltyId: shouldPenalize && workflowPolicy.scheduleLatePenalty > 0 ? penaltyRef.id : null,
         firstSubmittedAt: Timestamp.fromDate(requestTime),
@@ -733,6 +937,15 @@ export async function submitSchedules(actor: RequestActor, raw: unknown) {
         lockedAt: now,
       })
     })
+    if (employeeData && fixedModeActive) {
+      transaction.set(adminDb.collection('employees').doc(actor.uid), {
+        fixedScheduleTemplateWeekStart: scheduleWeekStartKey,
+        ...(String(employeeData.fixedScheduleNeedsSetupWeekStart || '') <= scheduleWeekStartKey
+          ? { fixedScheduleNeedsSetupWeekStart: FieldValue.delete() }
+          : {}),
+        updatedAt: now,
+      }, { merge: true })
+    }
 
     if (shouldPenalize && workflowPolicy.scheduleLatePenalty > 0) {
       transaction.create(penaltyRef, {
@@ -757,10 +970,12 @@ export async function submitSchedules(actor: RequestActor, raw: unknown) {
     }
     transaction.set(adminDb.collection('notifications').doc(`schedule-status-${scheduleRefs[0].id}`), {
       employeeId: actor.uid,
-      title: 'Lịch tuần đã tự động xác nhận',
+      title: fixedModeActive ? 'Lịch cố định đã tự động xác nhận' : 'Lịch tuần đã tự động xác nhận',
       message: underMinimum
         ? `Lịch của bạn đã lưu với ${actualShiftCount}/${workflowPolicy.minimumWeeklyShifts} ca và được đánh dấu cần lưu ý.`
-        : `Lịch của bạn đã lưu và đạt ${actualShiftCount} ca trong tuần.`,
+        : fixedModeActive
+          ? `Lịch cố định của bạn đã lưu và sẽ được lặp lại cho các tuần tiếp theo.`
+          : `Lịch của bạn đã lưu và đạt ${actualShiftCount} ca trong tuần.`,
       type: underMinimum ? 'warning' : 'success',
       isRead: false,
       createdAt: now,
@@ -771,7 +986,7 @@ export async function submitSchedules(actor: RequestActor, raw: unknown) {
         managerNotificationRef(managerId, `schedule-${batchKey}`),
         managerNotification(
           managerId,
-          underMinimum ? 'Lịch tuần tự duyệt · cần lưu ý' : 'Lịch tuần đã tự động duyệt',
+          fixedModeActive ? 'Lịch cố định đã tự động duyệt' : underMinimum ? 'Lịch tuần tự duyệt · cần lưu ý' : 'Lịch tuần đã tự động duyệt',
           `Lịch tuần ${weekStart.toLocaleDateString('vi-VN')} vừa được cập nhật: ${actualShiftCount} ca.${underMinimum ? ` Dưới mức ${workflowPolicy.minimumWeeklyShifts} ca.` : ''}`,
           underMinimum ? 'warning' : 'info'
         )
@@ -783,6 +998,7 @@ export async function submitSchedules(actor: RequestActor, raw: unknown) {
       action: 'submitSchedules',
       targetIds: scheduleRefs.map((ref) => ref.id),
       penaltyId: shouldPenalize ? penaltyRef.id : null,
+      scheduleMode,
       createdAt: now,
     })
   })
@@ -790,10 +1006,12 @@ export async function submitSchedules(actor: RequestActor, raw: unknown) {
   await sendManagerPushes({
     managerIds,
     sourceKey: `schedule-${batchKey}`,
-    title: underMinimum ? 'Lịch tuần cần lưu ý' : 'Lịch tuần đã tự động duyệt',
+    title: fixedModeActive ? 'Lịch cố định đã tự động duyệt' : underMinimum ? 'Lịch tuần cần lưu ý' : 'Lịch tuần đã tự động duyệt',
     body: underMinimum
       ? `Một nhân viên vừa cập nhật lịch ${actualShiftCount}/${workflowPolicy.minimumWeeklyShifts} ca.`
-      : `Một nhân viên vừa cập nhật lịch ${actualShiftCount} ca.`,
+      : fixedModeActive
+        ? `Một nhân viên lịch cố định vừa cập nhật ${actualShiftCount} ca cho tuần ${scheduleWeekStartKey}.`
+        : `Một nhân viên vừa cập nhật lịch ${actualShiftCount} ca.`,
     link: '/notifications',
     source: 'workSchedules',
     sourceId: scheduleRefs[0].id,
@@ -1101,6 +1319,7 @@ export async function replaceSchedules(actor: RequestActor, raw: unknown) {
       throw new ApiError(409, 'Bảng lịch đã hết hạn điều chỉnh và hiện đã được khóa.')
     }
     const retainedPenaltyId = oldData.map((schedule) => schedule.penaltyId).find(Boolean) || null
+    const retainedFixedSchedule = oldData.some((schedule) => schedule.fixedSchedule === true)
 
     const now = FieldValue.serverTimestamp()
     const weekStart = mondayFor(schedules[0].date)
@@ -1115,6 +1334,7 @@ export async function replaceSchedules(actor: RequestActor, raw: unknown) {
         status: 'Approved',
         note: schedule.note,
         batchKey,
+        fixedSchedule: retainedFixedSchedule,
         requiresReapproval: false,
         revisionCount,
         weeklyShiftCount: revisedShiftCount,

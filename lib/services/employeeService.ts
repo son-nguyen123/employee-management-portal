@@ -12,7 +12,7 @@ import {
 } from 'firebase/firestore'
 import { db } from '@/lib/firebase'
 import { auth } from '@/lib/firebase'
-import { Employee } from '@/lib/models/types'
+import { Employee, EmployeeScheduleMode } from '@/lib/models/types'
 import { callWorkflowApi } from '@/lib/services/workflowApi'
 
 const EMPLOYEES_COLLECTION = 'employees'
@@ -152,4 +152,8 @@ export function subscribeToActiveEmployees(
 
 export async function setEmployeeAccountStatus(employeeId: string, status: 'active' | 'inactive'): Promise<{ employeeId: string; status: 'active' | 'inactive'; releasedSchedules: number }> {
   return callWorkflowApi('manageEmployeeStatus', { employeeId, status })
+}
+
+export async function setEmployeeScheduleMode(mode: EmployeeScheduleMode): Promise<{ mode: EmployeeScheduleMode; effectiveWeekStart: string }> {
+  return callWorkflowApi('setEmployeeScheduleMode', { mode })
 }

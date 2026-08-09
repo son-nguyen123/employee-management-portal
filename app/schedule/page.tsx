@@ -27,6 +27,7 @@ import {
   setWorkScheduleBatchEditing,
   getEmployeeSchedules,
   getDutyAvailability,
+  ensureFixedSchedule,
   subscribeToSchedulesByDateRange,
   submitWorkSchedules,
 } from '@/lib/services/scheduleService'
@@ -238,22 +239,10 @@ export default function SchedulePage() {
 
   const days = useMemo<DayItem[]>(() => {
     const now = new Date()
-    if (isNewEmployee) {
-      const first = new Date(now)
-      first.setHours(0, 0, 0, 0)
-      const last = new Date(first)
-      last.setDate(first.getDate() + ((7 - first.getDay()) % 7) + 7)
-      const names = ['Chá»§ Nháº­t', 'Thá»© Hai', 'Thá»© Ba', 'Thá»© TÆ°', 'Thá»© NÄƒm', 'Thá»© SÃ¡u', 'Thá»© Báº£y']
-      const shortNames = ['CN', 'T2', 'T3', 'T4', 'T5', 'T6', 'T7']
-      const result: DayItem[] = []
-      for (const date = new Date(first); date <= last; date.setDate(date.getDate() + 1)) {
-        const itemDate = new Date(date)
-        result.push({ key: localDateKey(itemDate), name: names[itemDate.getDay()], shortName: shortNames[itemDate.getDay()], date: itemDate })
-      }
-      return result
-    }
     const currentDay = now.getDay()
-    const daysUntilNextMonday = currentWeekMode
+    const newEmployeeNeedsCurrentWeek = isNewEmployee && currentDay >= 1 && currentDay <= 5
+    const useCurrentWeek = currentWeekMode || newEmployeeNeedsCurrentWeek
+    const daysUntilNextMonday = useCurrentWeek
       ? -((currentDay || 7) - 1)
       : ((8 - currentDay) % 7) || 7
     const monday = new Date(now)
@@ -267,6 +256,11 @@ export default function SchedulePage() {
       return { key: localDateKey(date), name, shortName: shortNames[index], date }
     })
   }, [currentWeekMode, isNewEmployee])
+
+  useEffect(() => {
+    if (!authUser || isPreviewMode || employee?.scheduleMode !== 'fixed' || !days.length) return
+    void ensureFixedSchedule(days[0].key).catch(() => undefined)
+  }, [authUser, days, employee?.scheduleMode, isPreviewMode])
 
   const loadDutyAvailability = useCallback(async () => {
     if (!authUser || !days.length) return
@@ -625,6 +619,7 @@ export default function SchedulePage() {
           weeklyShiftCount: selectedCount,
           underMinimumWarning: selectedCount < 6,
           autoApproved: true,
+          fixedSchedule: employee?.scheduleMode === 'fixed',
           reviewedAt: new Date().toISOString(),
         }))
         addPreviewSchedules(previewRows)

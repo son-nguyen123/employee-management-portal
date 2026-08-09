@@ -25,6 +25,7 @@ export async function POST(request: Request) {
     const phone = clean(body.phone, 30)
     const photoURL = clean(body.photoURL, 500)
     const facebookUrl = clean(body.facebookUrl, 500)
+    const scheduleMode = body.scheduleMode === 'fixed' ? 'fixed' : 'rotating'
     if (codeKey.length < 3 || !fullName || !phone || !/^https?:\/\//i.test(photoURL) || !/^https?:\/\//i.test(facebookUrl)) {
       return NextResponse.json({ error: 'Thông tin hồ sơ không hợp lệ.' }, { status: 400 })
     }
@@ -53,6 +54,7 @@ export async function POST(request: Request) {
         email: token.email || '',
         photoURL,
         facebookUrl,
+        scheduleMode,
         ...(clean(body.bankName, 100) && clean(body.bankAccountName, 150) && clean(body.bankAccountNumber, 24) ? {
           bankName: clean(body.bankName, 100),
           bankAccountName: clean(body.bankAccountName, 150),

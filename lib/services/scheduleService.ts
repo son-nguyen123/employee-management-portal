@@ -18,6 +18,10 @@ export function getDutyAvailability(startDate: string, endDate: string): Promise
   return callWorkflowApi('getDutyAvailability', { startDate, endDate })
 }
 
+export function ensureFixedSchedule(weekStart: string, employeeId?: string): Promise<{ created: boolean; ids: string[]; needsSetup: boolean }> {
+  return callWorkflowApi('ensureFixedSchedule', { weekStart, ...(employeeId ? { employeeId } : {}) })
+}
+
 /**
  * Create a new work schedule
  */

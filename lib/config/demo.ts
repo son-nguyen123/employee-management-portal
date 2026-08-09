@@ -56,6 +56,7 @@ export const DEMO_EMPLOYEE = {
   joinDate: new Date('2024-01-15'),
   role: DEMO_USER.role,
   status: 'active' as const,
+  scheduleMode: 'rotating' as const,
 }
 
 // Feature flags for demo mode
