@@ -63,6 +63,13 @@ function recentNotificationWindow() {
   return { start, end }
 }
 
+function currentMonthNotificationWindow() {
+  const now = new Date()
+  const start = new Date(now.getFullYear(), now.getMonth(), 1)
+  const end = new Date(now.getFullYear(), now.getMonth() + 1, 1)
+  return { start, end }
+}
+
 const managementMeta = {
   account: { icon: UserRound, color: 'bg-fuchsia-600', gradient: 'from-fuchsia-500 via-pink-500 to-rose-500', soft: 'bg-fuchsia-50 text-fuchsia-800 dark:bg-fuchsia-500/10 dark:text-fuchsia-100' },
   schedule: { icon: CalendarDays, color: 'bg-indigo-600', gradient: 'from-indigo-500 via-violet-500 to-fuchsia-600', soft: 'bg-indigo-50 text-indigo-800 dark:bg-indigo-500/10 dark:text-indigo-100' },
@@ -332,7 +339,7 @@ export default function NotificationsPage() {
 
   const visibleItems = items.filter((item) => {
     const createdAt = item.createdAt instanceof Date ? item.createdAt : item.createdAt.toDate()
-    const window = recentNotificationWindow()
+    const window = isManagement ? recentNotificationWindow() : currentMonthNotificationWindow()
     return createdAt >= window.start && createdAt < window.end
   })
   const visiblePendingItems = pendingItems.filter((item) => {
@@ -681,7 +688,7 @@ export default function NotificationsPage() {
             <button type="button" onClick={() => setManagementView('pending')} className={`min-h-11 rounded-xl text-sm font-bold ${managementView === 'pending' ? 'bg-white text-indigo-600 shadow-sm dark:bg-slate-950' : 'text-muted-foreground'}`}>Cần duyệt{visiblePendingItems.length > 0 && <span className="ml-1.5 rounded-full bg-rose-500 px-1.5 py-0.5 text-[10px] text-white">{visiblePendingItems.length}</span>}</button>
           </div>
         ) : (
-          <p className="mb-4 rounded-2xl bg-slate-100 px-4 py-3 text-center text-sm font-bold text-slate-600 dark:bg-slate-800 dark:text-slate-300">6 ngày gần nhất</p>
+          <p className="mb-4 rounded-2xl bg-slate-100 px-4 py-3 text-center text-sm font-bold text-slate-600 dark:bg-slate-800 dark:text-slate-300">Thông báo trong tháng này</p>
         )}
         {!isManagement && !!visibleItems.some((item) => !item.isRead) && (
           <button
@@ -818,7 +825,7 @@ export default function NotificationsPage() {
               )
             })}
             {!visibleItems.length && (
-              <div className="mobile-card p-8 text-center font-bold">Không có thông báo trong 6 ngày gần nhất.</div>
+              <div className="mobile-card p-8 text-center font-bold">Không có thông báo trong tháng này.</div>
             )}
           </div>
         )}

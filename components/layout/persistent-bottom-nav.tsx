@@ -45,12 +45,12 @@ export function PersistentBottomNav() {
     }
 
     return subscribeToEmployeeNotifications(authUser.uid, (notifications) => {
-      const recentStart = new Date()
-      recentStart.setDate(recentStart.getDate() - 5)
-      recentStart.setHours(0, 0, 0, 0)
+      const now = new Date()
+      const monthStart = new Date(now.getFullYear(), now.getMonth(), 1)
+      const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 1)
       setPendingNotificationCount(notifications.filter((item) => {
         const createdAt = item.createdAt instanceof Date ? item.createdAt : item.createdAt.toDate()
-        return !item.isRead && createdAt >= recentStart
+        return !item.isRead && createdAt >= monthStart && createdAt < monthEnd
       }).length)
     })
   }, [authUser, isManagement, isPreviewMode, role])
