@@ -787,7 +787,15 @@ export default function SchedulePage() {
   const editWindowOpen = !submittedEditDeadline || clockNow < submittedEditDeadline.getTime()
   const canEdit = canEditStatus && editWindowOpen
   const lateScheduleWarning = !overtimeMode && !changeMode && !editing && !submittedIds.length && targetIsCurrentWeek && !isNewEmployee && employee?.scheduleMode !== 'fixed'
-  const schedulePenaltyActive = submittedPenaltyAmount > 0
+  const scheduleWeekEnd = new Date(days[days.length - 1]?.date || days[0]?.date || new Date())
+  scheduleWeekEnd.setHours(23, 59, 59, 999)
+  const fallbackSchedulePenalty = employeePenalties.find((item) => {
+    if (item.status === 'Cancelled' || item.sourceType !== 'scheduleSubmission') return false
+    const penaltyDate = item.penaltyDate instanceof Date ? item.penaltyDate : item.penaltyDate.toDate()
+    return penaltyDate >= (days[0]?.date || new Date(0)) && penaltyDate <= scheduleWeekEnd
+  })
+  const effectivePenaltyAmount = submittedPenaltyAmount || Number(fallbackSchedulePenalty?.amount || 0)
+  const schedulePenaltyActive = effectivePenaltyAmount > 0
   const latePenaltyDisplayAmount = Number(process.env.NEXT_PUBLIC_PENALTY_LATE_SCHEDULE_AMOUNT || 1000)
 
   const downloadSchedule = async () => {
@@ -1058,7 +1066,7 @@ export default function SchedulePage() {
                   </p>
                   <p className="mt-0.5 text-xs text-muted-foreground">
                     {selectedCount
-                      ? <>{days.filter((day) => selected[day.key]?.length).length} ngày · {selectedCount} ca{dutyDay ? ' · có lịch trực' : ''}{schedulePenaltyActive && <span className="ml-1 font-black text-rose-600">· Trừ {submittedPenaltyAmount.toLocaleString('vi-VN')}đ</span>}</>
+                      ? <>{days.filter((day) => selected[day.key]?.length).length} ngày · {selectedCount} ca{dutyDay ? ' · có lịch trực' : ''}{schedulePenaltyActive && <span className="ml-1 font-black text-rose-600">· Trừ {effectivePenaltyAmount.toLocaleString('vi-VN')}đ</span>}</>
                       : 'Không đăng ký ca làm nào trong tuần này'}
                   </p>
                 </div>
@@ -1249,7 +1257,10 @@ export default function SchedulePage() {
             </div>
             <div className="mt-5 grid grid-cols-2 gap-2">
               <button type="button" onClick={() => setLatePenaltyConfirmationOpen(false)} className="min-h-12 rounded-2xl border border-slate-200 font-bold dark:border-slate-700">Hủy xác nhận</button>
-              <button type="button" onClick={() => void submitSchedule(false, true)} className="flex min-h-12 items-center justify-center whitespace-nowrap rounded-2xl bg-rose-600 px-3 text-center font-extrabold text-white shadow-lg shadow-rose-600/20">Xác nhận và trừ tiền</button>
+              <button type="button" onClick={() => void submitSchedule(true, true)} disabled={submitting} className="flex min-h-12 items-center justify-center gap-2 whitespace-nowrap rounded-2xl bg-rose-600 px-3 text-center font-extrabold text-white shadow-lg shadow-rose-600/20 disabled:cursor-wait disabled:opacity-70">
+                {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
+                {submitting ? 'Đang xử lý…' : 'Xác nhận và trừ tiền'}
+              </button>
             </div>
           </section>
         </div>
