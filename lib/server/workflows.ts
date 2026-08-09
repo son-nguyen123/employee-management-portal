@@ -644,11 +644,6 @@ function employeeScheduleMode(data: Record<string, unknown>): 'rotating' | 'fixe
   return data.scheduleMode === 'fixed' ? 'fixed' : 'rotating'
 }
 
-function isNewEmployeeProfile(data: Record<string, unknown>, now: Date): boolean {
-  const joined = firestoreDate(data.joinDate) || firestoreDate(data.createdAt)
-  return Boolean(joined && now.getTime() - joined.getTime() <= 45 * 24 * 60 * 60 * 1000)
-}
-
 function firestoreDate(value: unknown): Date | null {
   if (value instanceof Date) return value
   if (value instanceof Timestamp) return value.toDate()
@@ -904,7 +899,15 @@ export async function submitSchedules(actor: RequestActor, raw: unknown) {
   if (schedules.some((schedule) => vietnamWeekStartKey(schedule.date) !== scheduleWeekStartKey)) {
     throw new ApiError(400, 'Các ca đăng ký phải thuộc cùng một tuần.')
   }
-  const shouldPenalize = isLate && !hasCoveringLongLeave && !fixedModeActive && !isNewEmployeeProfile(employeeData || {}, requestTime)
+  // A "new employee" means an employee who has never submitted a schedule,
+  // not simply someone whose account was created recently. Pending/legacy
+  // schedules still prove that the employee has already had a registration
+  // opportunity and must therefore follow the late-submission rule.
+  const hasPreviousSchedule = existingSchedules.docs.some((snapshot) => {
+    const data = snapshot.data()
+    return data.status !== 'Cancelled'
+  })
+  const shouldPenalize = isLate && !hasCoveringLongLeave && !fixedModeActive && hasPreviousSchedule
   const alreadyHasWeek = existingSchedules.docs.some((snapshot) => {
     const data = snapshot.data()
     if (data.status === 'Cancelled') return false
@@ -2717,19 +2720,16 @@ export async function reviewScheduleBatch(actor: RequestActor, raw: unknown) {
 
     let shouldWaivePenalty = false
     if (waiveNewEmployeePenalty) {
-      const joinedValue = employeeSnapshot.get('joinDate') || employeeSnapshot.get('createdAt')
-      const joinedAt = joinedValue instanceof Timestamp ? joinedValue.toDate() : null
       const allEmployeeSchedules = await transaction.get(
         adminDb.collection('workSchedules').where('employeeId', '==', employeeId)
       )
       const hasPreviousSchedule = allEmployeeSchedules.docs.some((snapshot) =>
         !ids.includes(snapshot.id) && snapshot.get('status') !== 'Cancelled'
       )
-      shouldWaivePenalty = Boolean(
-        joinedAt &&
-        Date.now() - joinedAt.getTime() <= 45 * 24 * 60 * 60 * 1000 &&
-        !hasPreviousSchedule
-      )
+      // Waive only the first ever schedule for an employee. Account age is
+      // not a reliable proxy because a newly-created account may already have
+      // submitted a pending/legacy schedule.
+      shouldWaivePenalty = !hasPreviousSchedule
     }
     const penaltyIds = Array.from(new Set(schedules.map((schedule) => schedule.penaltyId).filter((value): value is string => typeof value === 'string' && value.length > 0)))
     const penaltySnapshots = await Promise.all(penaltyIds.map((id) => transaction.get(adminDb.collection('penalties').doc(id))))
