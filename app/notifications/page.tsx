@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   AlertTriangle,
   ArrowLeft,
@@ -329,6 +329,7 @@ export default function NotificationsPage() {
   const [selectedDecision, setSelectedDecision] = useState<DecisionHistoryItem | null>(null)
   const [undoReason, setUndoReason] = useState('')
   const [approvalConfirmationItem, setApprovalConfirmationItem] = useState<ManagementPendingItem | null>(null)
+  const legacyAutoApprovalRef = useRef(new Set<string>())
 
   const visibleItems = items.filter((item) => {
     const createdAt = item.createdAt instanceof Date ? item.createdAt : item.createdAt.toDate()
@@ -417,9 +418,20 @@ export default function NotificationsPage() {
     if (isManagement) {
       const unsubscribePending = subscribeToManagementPendingItems(
         (pending) => {
-          setPendingItems(pending.filter((item) => item.type !== 'account' || role === 'admin'))
+          const visible = pending.filter((item) => item.type !== 'account' || role === 'admin')
+          const legacySchedules = visible.filter((item) => item.type === 'schedule')
+          setPendingItems(visible.filter((item) => item.type !== 'schedule'))
+          legacySchedules.forEach((item) => {
+            if (legacyAutoApprovalRef.current.has(item.id)) return
+            legacyAutoApprovalRef.current.add(item.id)
+            void reviewWorkScheduleBatch(item.targetIds, 'Approved', 'Tự động chuyển đổi theo chính sách lịch mới.').catch(() => {
+              legacyAutoApprovalRef.current.delete(item.id)
+              setPendingItems((current) => current.some((row) => row.id === item.id) ? current : [item, ...current])
+              setMessage('Có lịch cũ chưa thể tự động đồng bộ. Hệ thống sẽ thử lại khi dữ liệu thay đổi.')
+            })
+          })
           setLoading(false)
-          setMessage('')
+          if (!legacySchedules.length) setMessage('')
         },
         () => {
           setMessage('Chưa thể tải các việc đang chờ xử lý. Vui lòng thử lại.')

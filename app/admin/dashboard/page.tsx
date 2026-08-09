@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
 import Image from 'next/image'
 import { ArrowLeft, CalendarCheck, Check, ChevronRight, ExternalLink, Loader2, MessageSquareText, Phone, RotateCcw, UsersRound, X } from 'lucide-react'
@@ -93,6 +93,7 @@ export default function AdminDashboardPage() {
   const [newEmployeeApprovalBatch, setNewEmployeeApprovalBatch] = useState<ScheduleBatch | null>(null)
   const [processedReason, setProcessedReason] = useState('')
   const [referenceNow] = useState(() => Date.now())
+  const legacyAutoApprovalRef = useRef(new Set<string>())
 
   useEffect(() => {
     const timeout = window.setTimeout(() => {
@@ -243,6 +244,21 @@ export default function AdminDashboardPage() {
       }
     })
   }, [schedules, referenceNow])
+  useEffect(() => {
+    if (isPreviewMode || !authUser || !['admin', 'manager'].includes(role || '')) return
+    pendingBatches.forEach((batch) => {
+      if (legacyAutoApprovalRef.current.has(batch.key)) return
+      legacyAutoApprovalRef.current.add(batch.key)
+      void reviewWorkScheduleBatch(
+        batch.schedules.map((item) => item.id),
+        'Approved',
+        'Tự động chuyển đổi theo chính sách lịch mới.'
+      ).catch(() => {
+        legacyAutoApprovalRef.current.delete(batch.key)
+        setMessage('Có lịch cũ chưa thể tự động đồng bộ. Hệ thống sẽ thử lại khi dữ liệu thay đổi.')
+      })
+    })
+  }, [authUser, isPreviewMode, pendingBatches, role])
   const processedBatches = useMemo(() => {
     const grouped = new Map<string, ProcessedScheduleBatch>()
     schedules.filter((item) =>

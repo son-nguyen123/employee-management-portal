@@ -2471,6 +2471,7 @@ export async function reviewScheduleBatch(actor: RequestActor, raw: unknown) {
     const now = FieldValue.serverTimestamp()
     refs.forEach((ref) => transaction.set(ref, {
       status,
+      autoApproved: status === 'Approved',
       requiresReapproval: false,
       allowSundayResubmissionWithoutPenalty,
       reviewNote: note,
