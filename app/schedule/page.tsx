@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { Fragment, useCallback, useEffect, useMemo, useState } from 'react'
 import { createPortal } from 'react-dom'
 import {
   CalendarDays,
@@ -59,6 +59,18 @@ const shiftOptions: { value: Shift; label: string; shortLabel: string; time: str
   { value: 'Evening', label: 'Ca tối', shortLabel: 'tối', time: '18:00–22:00' },
   { value: 'Custom', label: 'Tùy chỉnh', shortLabel: 'tùy chỉnh', time: 'Tự chọn giờ' },
 ]
+
+const shiftDisplayOrder: Shift[] = ['Morning', 'Afternoon', 'Custom', 'Evening']
+
+const orderedShifts = (shifts: Shift[]) => [...shifts].sort((left, right) => shiftDisplayOrder.indexOf(left) - shiftDisplayOrder.indexOf(right))
+
+const shiftTextClass = (shift: Shift) => shift === 'Morning'
+  ? 'font-bold text-emerald-600 dark:text-emerald-400'
+  : shift === 'Afternoon'
+    ? 'font-bold text-orange-500 dark:text-orange-400'
+    : shift === 'Evening'
+      ? 'font-bold text-rose-600 dark:text-rose-400'
+      : 'font-bold text-violet-600 dark:text-violet-400'
 
 const timeOptions = Array.from({ length: 96 }, (_, index) => {
   const hour = Math.floor(index / 4)
@@ -208,9 +220,10 @@ export default function SchedulePage() {
   useEffect(() => {
     const mode = new URLSearchParams(window.location.search).get('mode')
     const week = new URLSearchParams(window.location.search).get('week')
+    const weekday = new Date().getDay()
     setOvertimeMode(mode === 'overtime')
     setChangeMode(mode === 'change')
-    setCurrentWeekMode(mode === 'change' ? new Date().getDay() !== 0 : week === 'current')
+    setCurrentWeekMode(mode === 'change' ? weekday !== 0 : week === 'current' && weekday >= 1 && weekday <= 5)
   }, [])
 
   useEffect(() => {
@@ -241,8 +254,8 @@ export default function SchedulePage() {
   const days = useMemo<DayItem[]>(() => {
     const now = new Date()
     const currentDay = now.getDay()
-    const newEmployeeNeedsCurrentWeek = isNewEmployee && currentDay >= 1 && currentDay <= 5
-    const useCurrentWeek = currentWeekMode || newEmployeeNeedsCurrentWeek
+    const regularRegistration = !overtimeMode && !changeMode
+    const useCurrentWeek = currentWeekMode || (regularRegistration && currentDay >= 1 && currentDay <= 5)
     const daysUntilNextMonday = useCurrentWeek
       ? -((currentDay || 7) - 1)
       : ((8 - currentDay) % 7) || 7
@@ -256,7 +269,17 @@ export default function SchedulePage() {
       date.setDate(monday.getDate() + index)
       return { key: localDateKey(date), name, shortName: shortNames[index], date }
     })
-  }, [currentWeekMode, isNewEmployee])
+  }, [changeMode, currentWeekMode, isNewEmployee, overtimeMode])
+
+  const targetIsCurrentWeek = useMemo(() => {
+    if (!days.length) return false
+    const now = new Date()
+    const weekday = now.getDay() || 7
+    const monday = new Date(now)
+    monday.setDate(now.getDate() - weekday + 1)
+    monday.setHours(0, 0, 0, 0)
+    return days[0].key === localDateKey(monday)
+  }, [days])
 
   useEffect(() => {
     if (!authUser || isPreviewMode || employee?.scheduleMode !== 'fixed' || !days.length) return
@@ -601,6 +624,7 @@ export default function SchedulePage() {
       const rows = payload()
       let ids: string[]
       let editDeadlineAt: Date | null = null
+      let penaltyAmount = 0
       if (isPreviewMode) {
         if (submittedIds.length) {
           const existing = getPreviewSchedules().filter((item) => !submittedIds.includes(item.id))
@@ -632,6 +656,7 @@ export default function SchedulePage() {
           : await submitWorkSchedules(rows, confirmed)
         ids = result.ids
         editDeadlineAt = new Date(result.editDeadlineAt)
+        penaltyAmount = result.penalty
       }
       window.sessionStorage.removeItem('schedule-draft')
       setSubmittedIds(ids)
@@ -647,7 +672,9 @@ export default function SchedulePage() {
       setEditing(false)
       setEditingOriginStatus(null)
       setCelebrating(true)
-      setMessage(selectedCount < 6
+      setMessage(penaltyAmount > 0
+        ? `Đã xác nhận lịch ${selectedCount} ca. Khoản phạt đăng ký trễ ${penaltyAmount.toLocaleString('vi-VN')}đ đã được ghi nhận.`
+        : selectedCount < 6
         ? `Đã xác nhận lịch ${selectedCount}/6 ca. Hệ thống đã duyệt và đánh dấu màu vàng để quản lý lưu ý.`
         : `Đã xác nhận lịch ${selectedCount} ca. Hệ thống đã tự động duyệt.`)
       window.setTimeout(() => setCelebrating(false), 2400)
@@ -728,6 +755,7 @@ export default function SchedulePage() {
   const canEditStatus = ['Pending', 'Rejected', 'Approved'].includes(submittedStatus || '')
   const editWindowOpen = !submittedEditDeadline || clockNow < submittedEditDeadline.getTime()
   const canEdit = canEditStatus && editWindowOpen
+  const lateScheduleWarning = !overtimeMode && !changeMode && !editing && !submittedIds.length && targetIsCurrentWeek && !isNewEmployee && employee?.scheduleMode !== 'fixed'
 
   const downloadSchedule = async () => {
     if (downloading) return
@@ -736,9 +764,9 @@ export default function SchedulePage() {
       const scale = 2
       const width = 900
       const visibleDays = days.filter((day) => selected[day.key]?.length || dutyDay === day.key)
-      const rowHeight = 104
-      const headerHeight = 154
-      const summaryHeight = 104
+      const rowHeight = 132
+      const headerHeight = 170
+      const summaryHeight = 118
       const footerHeight = 34
       const height = Math.max(500, headerHeight + summaryHeight + Math.max(1, visibleDays.length) * rowHeight + footerHeight)
       const canvas = document.createElement('canvas')
@@ -777,13 +805,7 @@ export default function SchedulePage() {
         context.fillText(value, x, y)
       }
       const shiftLabel = (shift: Shift) => shift === 'Morning' ? 'sáng' : shift === 'Afternoon' ? 'chiều' : shift === 'Evening' ? 'tối' : 'tùy chỉnh'
-      const shiftTime = (dayKey: string, shift: Shift) => {
-        if (shift === 'Custom') {
-          const custom = customData[dayKey] || { start: '08:00', end: '17:00' }
-          return `${custom.start}–${custom.end}`
-        }
-        return shift === 'Morning' ? '07:30–11:30' : shift === 'Afternoon' ? '13:00–17:00' : '18:00–22:00'
-      }
+      const shiftTextColor = (shift: Shift) => shift === 'Morning' ? '#059669' : shift === 'Afternoon' ? '#f97316' : shift === 'Evening' ? '#e11d48' : '#7c3aed'
 
       context.fillStyle = '#eef2ff'
       context.fillRect(0, 0, width, height)
@@ -797,19 +819,20 @@ export default function SchedulePage() {
       text('BẢNG ĐĂNG KÝ TUẦN', 54, 58, '700 20px -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif', '#c7d2fe')
       text('Lịch làm của bạn', 54, 103, '800 34px -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif', '#ffffff')
       const statusText = submittedStatus === 'Approved' ? 'Đã xác nhận' : submittedStatus === 'Rejected' ? 'Bị từ chối' : submittedStatus === 'Cancelled' ? 'Đã hủy' : 'Đang đồng bộ'
+      context.font = '700 20px -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif'
       const statusWidth = Math.max(150, context.measureText(statusText).width + 42)
       roundedRect(width - statusWidth - 50, 67, statusWidth, 52, 26, '#d1fae5')
       text(statusText, width - statusWidth / 2 - 50, 93, '700 20px -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif', '#047857', 'center')
 
       const summaryY = headerHeight + 18
-      roundedRect(42, summaryY, width - 84, 78, 20, '#f8fafc')
+      roundedRect(42, summaryY, width - 84, 92, 20, '#f8fafc')
       context.beginPath()
-      context.arc(80, summaryY + 39, 25, 0, Math.PI * 2)
+      context.arc(80, summaryY + 46, 25, 0, Math.PI * 2)
       context.fillStyle = '#e0e7ff'
       context.fill()
-      text('▦', 80, summaryY + 40, '700 30px sans-serif', '#4f46e5', 'center')
-      text(selectedCount ? 'Các ngày đã đăng ký' : 'Nghỉ cả tuần', 122, summaryY + 29, '800 22px -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif', '#0f172a')
-      text(selectedCount ? `${visibleDays.length} ngày · ${selectedCount} ca${dutyDay ? ' · có lịch trực' : ''}` : 'Không đăng ký ca nào trong tuần này', 122, summaryY + 55, '500 17px -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif', '#64748b')
+      text('▦', 80, summaryY + 47, '700 30px sans-serif', '#4f46e5', 'center')
+      text(selectedCount ? 'Các ngày đã đăng ký' : 'Nghỉ cả tuần', 122, summaryY + 35, '800 22px -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif', '#0f172a')
+      text(selectedCount ? `${visibleDays.length} ngày · ${selectedCount} ca${dutyDay ? ' · có lịch trực' : ''}` : 'Không đăng ký ca nào trong tuần này', 122, summaryY + 66, '500 17px -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif', '#64748b')
 
       let rowY = summaryY + summaryHeight
       if (!visibleDays.length) {
@@ -824,10 +847,32 @@ export default function SchedulePage() {
           context.fillStyle = '#eef2ff'
           context.fill()
           text(day.shortName, 82, rowY + rowHeight / 2, '800 17px -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif', '#4f46e5', 'center')
-          text(dayLabel, 132, rowY + 39, '800 22px -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif', '#0f172a')
-          const labels = dayShifts.map((shift) => `${shiftLabel(shift)} ${shiftTime(day.key, shift)}`)
-          if (dutyDay === day.key) labels.push('trực 17:00–17:30')
-          text(labels.join(' · ') || 'Không đăng ký ca', 132, rowY + 72, '500 18px -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif', dutyDay === day.key ? '#e11d48' : '#64748b')
+          text(dayLabel, 132, rowY + 42, '800 22px -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif', '#0f172a')
+          const labels = orderedShifts(dayShifts).map((shift) => ({
+            label: shift === 'Custom'
+              ? `tùy chỉnh ${customData[day.key]?.start || '08:00'}–${customData[day.key]?.end || '17:00'}`
+              : shiftLabel(shift),
+            color: shiftTextColor(shift),
+          }))
+          if (dutyDay === day.key) labels.push({ label: 'trực 17:00–17:30', color: '#e11d48' })
+          if (!labels.length) labels.push({ label: 'Không đăng ký ca', color: '#64748b' })
+          let labelX = 132
+          let labelY = rowY + 82
+          labels.forEach((item, index) => {
+            context.font = '600 18px -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif'
+            const separator = index > 0 ? ' · ' : ''
+            const segmentWidth = context.measureText(`${separator}${item.label}`).width
+            if (labelX > 132 && labelX + segmentWidth > width - 54) {
+              labelX = 132
+              labelY += 27
+            }
+            if (separator) {
+              text(separator, labelX, labelY, '500 18px -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif', '#cbd5e1')
+              labelX += context.measureText(separator).width
+            }
+            text(item.label, labelX, labelY, '600 18px -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif', item.color)
+            labelX += context.measureText(item.label).width
+          })
           context.strokeStyle = '#e2e8f0'
           context.lineWidth = 1
           context.beginPath()
@@ -841,16 +886,29 @@ export default function SchedulePage() {
 
       const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/png'))
       if (!blob) throw new Error('Chưa thể tạo ảnh lịch.')
-      const url = URL.createObjectURL(blob)
-      const anchor = document.createElement('a')
-      anchor.href = url
-      anchor.download = `lich-lam-${days[0]?.key || localDateKey(new Date())}.png`
-      document.body.appendChild(anchor)
-      anchor.click()
-      anchor.remove()
-      window.setTimeout(() => URL.revokeObjectURL(url), 1500)
-      setMessage('Đã tải ảnh lịch về máy.')
+      const filename = `lich-lam-${days[0]?.key || localDateKey(new Date())}.png`
+      const file = new File([blob], filename, { type: 'image/png' })
+      const shareNavigator = navigator as Navigator & {
+        canShare?: (data?: { files?: File[] }) => boolean
+        share?: (data: { files?: File[]; title?: string }) => Promise<void>
+      }
+      const isAppleTouchDevice = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)
+      if (isAppleTouchDevice && shareNavigator.share && shareNavigator.canShare?.({ files: [file] })) {
+        await shareNavigator.share({ files: [file], title: 'Lịch làm của bạn' })
+        setMessage('Đã mở bảng chia sẻ. Chọn “Lưu hình ảnh” để lưu lịch vào Ảnh.')
+      } else {
+        const url = URL.createObjectURL(blob)
+        const anchor = document.createElement('a')
+        anchor.href = url
+        anchor.download = filename
+        document.body.appendChild(anchor)
+        anchor.click()
+        anchor.remove()
+        window.setTimeout(() => URL.revokeObjectURL(url), 1500)
+        setMessage('Đã tải ảnh lịch về máy.')
+      }
     } catch (error) {
+      if (error instanceof DOMException && error.name === 'AbortError') return
       setMessage(error instanceof Error ? error.message : 'Chưa thể tải ảnh lịch về máy.')
     } finally {
       setDownloading(false)
@@ -863,7 +921,7 @@ export default function SchedulePage() {
 
   return (
     <main className="min-h-screen pb-32">
-      <Header title={changeMode ? 'Đổi / thêm ca' : overtimeMode ? 'Xin làm thêm' : 'Đăng ký lịch làm'} subtitle={`${isNewEmployee ? 'Từ hôm nay đến hết tuần sau' : currentWeekMode ? 'Tuần hiện tại' : 'Tuần kế tiếp'} · ${days[0].name} đến ${days[days.length - 1].name}`} />
+      <Header title={changeMode ? 'Đổi / thêm ca' : overtimeMode ? 'Xin làm thêm' : 'Đăng ký lịch làm'} subtitle={`${isNewEmployee ? 'Lịch dành cho nhân viên mới' : targetIsCurrentWeek ? 'Tuần hiện tại' : 'Tuần kế tiếp'} · ${days[0].name} đến ${days[days.length - 1].name}`} />
       <div className="mx-auto max-w-2xl px-3 py-4 sm:px-6">
         {changeMode && (
           <div className="mb-4 grid grid-cols-2 gap-2 rounded-2xl bg-slate-100 p-1 dark:bg-slate-800">
@@ -872,10 +930,10 @@ export default function SchedulePage() {
           </div>
         )}
         <section className="mb-4 rounded-[2rem] bg-gradient-to-br from-indigo-700 via-indigo-800 to-violet-900 p-5 text-white shadow-xl shadow-indigo-950/20">
-          <CalendarDays className="h-7 w-7 text-indigo-200" />
+            <CalendarDays className="h-7 w-7 text-indigo-200" />
           <div className="flex items-start justify-between gap-4">
             <div>
-              <p className="text-xs font-semibold text-indigo-100">{isNewEmployee ? 'Lịch dành cho nhân viên mới' : currentWeekMode ? 'Lịch tuần này' : 'Lịch tuần sau'}</p>
+              <p className="text-xs font-semibold text-indigo-100">{isNewEmployee ? 'Lịch dành cho nhân viên mới' : targetIsCurrentWeek ? 'Lịch tuần này' : 'Lịch tuần sau'}</p>
               <h2 className="mt-1 text-xl font-extrabold">
                 {days[0].date.toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit' })}
                 {' – '}
@@ -892,6 +950,12 @@ export default function SchedulePage() {
         {message && (
           <div className="mb-4 rounded-2xl border border-indigo-200 bg-indigo-50 p-3 text-sm font-medium text-indigo-800">
             {message}
+          </div>
+        )}
+        {lateScheduleWarning && (
+          <div className="mb-4 flex items-start gap-3 rounded-3xl border border-rose-200 bg-rose-50 p-4 text-rose-900 shadow-sm dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-100">
+            <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-rose-600 dark:text-rose-300" />
+            <div className="text-sm leading-6"><p className="font-extrabold">Đăng ký lịch tuần này đã trễ hạn</p><p className="mt-1">Nếu bạn xác nhận, hệ thống sẽ ghi nhận khoản phạt đăng ký trễ theo quy định (mặc định 500đ). Nếu đang nghỉ bệnh, bạn có thể chờ đến Thứ Bảy để nhập lịch tuần sau.</p></div>
           </div>
         )}
         {changeMode && submittedChangeSummary && (
@@ -978,13 +1042,14 @@ export default function SchedulePage() {
                     <div className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-indigo-50 text-xs font-black text-indigo-600 dark:bg-indigo-500/10">{day.shortName}</div>
                     <div className="min-w-0">
                       <p className="text-sm font-extrabold">{day.name} ({day.date.toLocaleDateString('vi-VN', { day: 'numeric', month: 'numeric' })})</p>
-                      <p className="mt-0.5 text-sm text-muted-foreground">
-                        {(selected[day.key] || []).map((shift) =>
-                          shift === 'Custom'
-                            ? `tùy chỉnh ${customData[day.key]?.start || '08:00'}–${customData[day.key]?.end || '17:00'}`
-                            : shiftOptions.find((item) => item.value === shift)?.shortLabel
-                        ).filter(Boolean).join(' – ')}
-                        {dutyDay === day.key && <span className="font-bold text-rose-600">{selected[day.key]?.length ? ' + ' : ''}trực 17:00–17:30</span>}
+                      <p className="mt-0.5 text-sm">
+                        {orderedShifts(selected[day.key] || []).map((shift, index) => (
+                          <Fragment key={shift}>
+                            {index > 0 && <span className="mx-1 text-slate-300">·</span>}
+                            <span className={shiftTextClass(shift)}>{shift === 'Custom' ? `tùy chỉnh ${customData[day.key]?.start || '08:00'}–${customData[day.key]?.end || '17:00'}` : shiftOptions.find((item) => item.value === shift)?.shortLabel}</span>
+                          </Fragment>
+                        ))}
+                        {dutyDay === day.key && <span className="font-bold text-rose-600">{selected[day.key]?.length ? <span className="mx-1 text-slate-300">·</span> : ''}trực 17:00–17:30</span>}
                       </p>
                     </div>
                   </div>
@@ -1153,6 +1218,11 @@ export default function SchedulePage() {
             {selectedCount < 6 && (
               <p className="mt-3 rounded-2xl bg-amber-50 p-3 text-sm font-bold leading-6 text-amber-900 dark:bg-amber-500/10 dark:text-amber-200">
                 Bạn chỉ đăng ký {selectedCount} ca, dưới mức tối thiểu 6 ca/tuần. Bạn có chắc muốn báo lịch này cho quản lý?
+              </p>
+            )}
+            {lateScheduleWarning && (
+              <p className="mt-3 rounded-2xl border border-rose-200 bg-rose-50 p-3 text-sm font-bold leading-6 text-rose-900 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-100">
+                Lịch tuần này đã trễ hạn. Khi xác nhận, khoản phạt đăng ký trễ theo quy định (mặc định 500đ) sẽ được ghi nhận.
               </p>
             )}
             {weekNote.trim() && <p className="mt-3 rounded-2xl bg-indigo-50 p-3 text-sm text-indigo-900 dark:bg-indigo-500/10 dark:text-indigo-100"><strong>Ghi chú:</strong> {weekNote.trim()}</p>}

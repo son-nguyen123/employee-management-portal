@@ -598,6 +598,14 @@ function vietnamDateKey(date: Date): string {
   }).format(date)
 }
 
+function vietnamWeekdayNumber(date: Date): number {
+  const weekdayName = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'Asia/Ho_Chi_Minh',
+    weekday: 'short',
+  }).format(date)
+  return ({ Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6, Sun: 7 } as Record<string, number>)[weekdayName] || 1
+}
+
 function scheduleDeadline(firstShift: Date): Date {
   const monday = mondayFor(firstShift)
   // Nhân viên được tạo và sửa tự do hết Thứ Bảy. Từ 00:00 Chủ Nhật mới tính là trễ.
@@ -627,11 +635,7 @@ function scheduleEditDeadline(firstShift: Date, firstSubmittedAt: Date): Date {
 function vietnamWeekStartKey(date: Date, weeksFromCurrent = 0): string {
   const dateKey = vietnamDateKey(date)
   const base = new Date(`${dateKey}T12:00:00+07:00`)
-  const weekdayName = new Intl.DateTimeFormat('en-US', {
-    timeZone: 'Asia/Ho_Chi_Minh',
-    weekday: 'short',
-  }).format(base)
-  const weekday = ({ Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6, Sun: 7 } as Record<string, number>)[weekdayName] || 1
+  const weekday = vietnamWeekdayNumber(base)
   base.setUTCDate(base.getUTCDate() - (weekday - 1) + weeksFromCurrent * 7)
   return vietnamDateKey(base)
 }
@@ -889,6 +893,17 @@ export async function submitSchedules(actor: RequestActor, raw: unknown) {
   const scheduleMode = employeeData ? employeeScheduleMode(employeeData) : 'rotating'
   const effectiveWeekStart = String(employeeData?.scheduleModeEffectiveWeekStart || '')
   const fixedModeActive = scheduleMode === 'fixed' && (!effectiveWeekStart || scheduleWeekStartKey >= effectiveWeekStart)
+  const openWeekStartKey = vietnamWeekdayNumber(requestTime) >= 6
+    ? vietnamWeekStartKey(requestTime, 1)
+    : vietnamWeekStartKey(requestTime)
+  if (!fixedModeActive && scheduleWeekStartKey !== openWeekStartKey) {
+    throw new ApiError(409, vietnamWeekdayNumber(requestTime) >= 6
+      ? 'Tuần đăng ký mới đã được mở từ Thứ Bảy. Hãy chọn tuần kế tiếp.'
+      : 'Từ Thứ Hai đến Thứ Sáu, bạn chỉ được nhập lịch tuần hiện tại. Lịch tuần sau sẽ mở vào Thứ Bảy.')
+  }
+  if (schedules.some((schedule) => vietnamWeekStartKey(schedule.date) !== scheduleWeekStartKey)) {
+    throw new ApiError(400, 'Các ca đăng ký phải thuộc cùng một tuần.')
+  }
   const shouldPenalize = isLate && !hasCoveringLongLeave && !fixedModeActive && !isNewEmployeeProfile(employeeData || {}, requestTime)
   const alreadyHasWeek = existingSchedules.docs.some((snapshot) => {
     const data = snapshot.data()

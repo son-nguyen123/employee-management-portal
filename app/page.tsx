@@ -169,7 +169,7 @@ export default function Page() {
           : await getSchedulesByDateRange(authUser.uid, nextMonday, nextSunday)
         const hasCurrentWeek = currentSchedules.some((item) => item.status !== 'Cancelled')
         const hasNextWeek = nextSchedules.some((item) => item.status !== 'Cancelled')
-        const shouldUseCurrentWeek = weekday >= 1 && weekday <= 5 && !hasCurrentWeek
+        const shouldUseCurrentWeek = weekday >= 1 && weekday <= 5
         const targetHasSchedule = shouldUseCurrentWeek ? hasCurrentWeek : hasNextWeek
         setSchedulePrompt({
           visible: !targetHasSchedule,
