@@ -49,6 +49,35 @@ function ShiftRows({ title, rows }: { title: string; rows?: ManagementShift[] })
   return <section><p className="mb-1 text-xs font-black uppercase tracking-wider text-muted-foreground">{title}</p><div className="divide-y divide-slate-100 dark:divide-white/10">{rows.map((row, index) => <div key={`${row.date.toISOString()}-${row.shift}-${index}`} className="grid grid-cols-[1fr_.8fr] gap-3 py-3 text-sm"><strong className="capitalize">{row.date.toLocaleDateString('vi-VN', { weekday: 'long', day: '2-digit', month: '2-digit' })}</strong><span className="text-muted-foreground">{shiftLabel[row.shift]}</span></div>)}</div></section>
 }
 
+function decisionFromPending(
+  item: ManagementPendingItem,
+  status: 'Approved' | 'Rejected',
+  reviewNote: string,
+  penaltyAmount?: number
+): DecisionHistoryItem {
+  const resource: DecisionHistoryItem['resource'] = item.type === 'leave' || item.type === 'late' || item.type === 'salary'
+    ? item.type
+    : 'staff'
+  const ids = item.targetIds.length ? item.targetIds : [item.id]
+  return {
+    key: `${resource}-${item.id}`,
+    id: ids[0],
+    ids,
+    resource,
+    employeeId: item.employeeId,
+    title: item.title,
+    detail: item.detail,
+    status,
+    reviewNote,
+    reviewedAt: new Date(),
+    reason: item.reason,
+    shifts: item.shifts,
+    removedShifts: item.removedShifts,
+    restoredShifts: item.restoredShifts,
+    penaltyAmount: penaltyAmount || undefined,
+  }
+}
+
 export function OtherRequestWorkspace({ employees }: { employees: Employee[] }) {
   const { authUser, isPreviewMode } = useAuth()
   const role = useUserRole()
@@ -111,7 +140,10 @@ export function OtherRequestWorkspace({ employees }: { employees: Employee[] }) 
     options: { skipPenaltyDialog?: boolean; penaltyAmount?: number } = {}
   ) => {
     if (!authUser || processing) return
-    if (status === 'Rejected' && !note.trim()) { setMessage('Vui lòng nhập lý do từ chối.'); return }
+    if (status === 'Rejected' && !note.trim()) {
+      setMessage('Vui lòng nhập lý do từ chối trước khi xử lý.')
+      return
+    }
     if (!options.skipPenaltyDialog && (item.type === 'leave' || item.type === 'late')) {
       const suggested = status === 'Approved' ? item.penaltyIfApproved || 0 : item.penaltyIfRejected || 0
       setPenaltyDialog({
@@ -133,6 +165,9 @@ export function OtherRequestWorkspace({ employees }: { employees: Employee[] }) 
         if (item.type === 'salary') await updateSalaryAdvanceStatus(item.targetIds[0], status, authUser.uid, note.trim())
         if (item.type === 'staff') await updateStaffRequestStatus(item.targetIds[0], status, note.trim())
       }
+      const reviewNote = note.trim()
+      const decision = decisionFromPending(item, status, reviewNote, penaltyAmount)
+      setDecisions((current) => [decision, ...current.filter((row) => row.key !== decision.key)])
       setPending((current) => current.filter((row) => row.id !== item.id))
       setSelected(null)
       setNote('')
@@ -197,10 +232,10 @@ export function OtherRequestWorkspace({ employees }: { employees: Employee[] }) 
           : 'border-l-rose-500'
       const textClass = row.status === 'Approved' ? 'text-emerald-600' : row.status === 'Pending' ? 'text-amber-600' : 'text-rose-600'
       const rowKey = row.kind === 'pending' ? row.pending.id : row.decision.key
-      const showProcessedDivider = index > 0 && row.status !== 'Pending' && rows[index - 1].status === 'Pending'
+      const showProcessedDivider = row.kind === 'decision' && (index === 0 || rows[index - 1].status === 'Pending')
       return <Fragment key={rowKey}>{showProcessedDivider && <div className="flex items-center gap-3 py-2 text-[10px] font-black uppercase tracking-[0.16em] text-slate-400"><span className="h-px flex-1 bg-slate-200 dark:bg-slate-700" /><span>Đã xử lý</span><span className="h-px flex-1 bg-slate-200 dark:bg-slate-700" /></div>}<button type="button" onClick={() => { setSelected(row); setNote(''); setMessage('') }} className={`mobile-card flex min-h-20 w-full items-center gap-3 border-l-4 p-3 text-left ${borderClass}`}>
         <RequestIdentityAvatar name={name} photoURL={photoURL} icon={Icon} iconColor={itemMeta.color} />
-        <div className="min-w-0 flex-1"><h3 className="truncate text-base font-extrabold">{name}</h3>{code && <p className="truncate text-sm font-semibold text-muted-foreground">{code}</p>}</div>
+        <div className="min-w-0 flex-1"><h3 className="truncate text-base font-extrabold">{name}</h3>{code && <p className="truncate text-sm font-semibold text-muted-foreground">{code}</p>}{row.kind === 'decision' && <p className={`mt-1 text-xs font-black ${textClass}`}>Đã xử lý</p>}</div>
         <div className="text-right"><span className={`text-xs font-black ${textClass}`}>{row.status === 'Approved' ? 'Đã duyệt' : row.status === 'Pending' ? 'Chờ duyệt' : 'Từ chối'}</span><ChevronRight className="ml-auto mt-1 h-4 w-4 text-slate-400" /></div>
       </button></Fragment>
     })}{!rows.length && <div className="mobile-card p-8 text-center"><Check className="mx-auto h-8 w-8 text-emerald-600" /><p className="mt-3 font-bold">Không có yêu cầu khác trong tuần này.</p></div>}</div>
@@ -218,8 +253,14 @@ export function OtherRequestWorkspace({ employees }: { employees: Employee[] }) 
       const removed = selected.kind === 'pending' ? selected.pending.removedShifts : selected.decision.removedShifts
       const restored = selected.kind === 'pending' ? selected.pending.restoredShifts : selected.decision.restoredShifts
       const next = selected.kind === 'decision' ? selected.decision.status === 'Approved' ? 'Rejected' : 'Approved' : null
-      return <div className="fixed inset-0 z-[75] overflow-y-auto bg-slate-100 dark:bg-slate-950"><header className="sticky top-0 z-10 border-b bg-white/95 backdrop-blur-xl dark:border-white/10 dark:bg-slate-950/95"><div className="mx-auto flex min-h-20 max-w-lg items-center gap-3 px-4 pt-[env(safe-area-inset-top)]"><button type="button" onClick={() => setSelected(null)} className="grid h-11 w-11 place-items-center rounded-2xl bg-slate-100 dark:bg-slate-800" aria-label="Quay lại"><ArrowLeft className="h-5 w-5" /></button><div><h2 className="font-black">Chi tiết yêu cầu</h2><p className="text-sm text-muted-foreground">Xem, xử lý hoặc hoàn tác</p></div></div></header><main className="mx-auto max-w-lg p-3"><article className="overflow-hidden rounded-[2rem] bg-white shadow-xl dark:bg-slate-900"><section className={`bg-gradient-to-r ${itemMeta.gradient} p-5 text-white`}><h2 className="text-xl font-black">{title}</h2><p className="mt-2 font-extrabold">{name}</p><p className="mt-1 text-sm text-white/85">{detail}</p><span className="mt-3 inline-flex rounded-full bg-white/20 px-3 py-1 text-xs font-black">{selected.status === 'Approved' ? 'Đã duyệt' : selected.status === 'Pending' ? 'Cần xử lý' : 'Đã từ chối'}</span></section><section className="space-y-4 p-4">{reason && <p className="rounded-2xl bg-slate-50 p-3 text-sm leading-6 dark:bg-slate-800"><strong>Ghi chú:</strong> {reason}</p>}<ShiftRows title="Ca mới / ca thêm" rows={shifts} /><ShiftRows title="Ca muốn hủy" rows={removed} /><ShiftRows title="Ca xin đi làm lại" rows={restored} />{selected.kind === 'decision' && selected.decision.reviewNote && <p className="rounded-2xl bg-amber-50 p-3 text-sm text-amber-900"><strong>Phản hồi cũ:</strong> {selected.decision.reviewNote}</p>}<textarea value={note} onChange={(event) => setNote(event.target.value)} rows={3} placeholder={selected.kind === 'pending' ? 'Lý do từ chối (nếu từ chối)...' : next === 'Rejected' ? 'Nhập lý do hoàn tác...' : 'Ghi chú mới (không bắt buộc)...'} className="w-full resize-none rounded-2xl border border-slate-200 px-4 py-3 text-base leading-6 dark:border-slate-700 dark:bg-slate-900" />{selected.kind === 'pending' ? <div className="grid grid-cols-2 gap-2"><button type="button" disabled={processing || !note.trim()} onClick={() => void processPending(selected.pending, 'Rejected')} className="flex min-h-12 items-center justify-center gap-2 rounded-2xl border border-rose-200 font-extrabold text-rose-600 disabled:opacity-50"><X className="h-4 w-4" /> Từ chối</button><button type="button" disabled={processing} onClick={() => void processPending(selected.pending, 'Approved')} className="flex min-h-12 items-center justify-center gap-2 rounded-2xl bg-emerald-600 font-extrabold text-white disabled:opacity-50">{processing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />} Duyệt</button></div> : <button type="button" disabled={processing || (next === 'Rejected' && !note.trim())} onClick={() => void changeDecision(selected.decision)} className={`flex min-h-12 w-full items-center justify-center gap-2 rounded-2xl font-extrabold text-white disabled:opacity-50 ${next === 'Rejected' ? 'bg-rose-600' : 'bg-emerald-600'}`}><RotateCcw className="h-4 w-4" /> Hoàn tác thành {next === 'Rejected' ? 'Từ chối' : 'Duyệt'}</button>}</section></article></main></div>
+      return <div className="fixed inset-0 z-[75] overflow-y-auto bg-slate-100 dark:bg-slate-950"><header className="sticky top-0 z-10 border-b bg-white/95 backdrop-blur-xl dark:border-white/10 dark:bg-slate-950/95"><div className="mx-auto flex min-h-20 max-w-lg items-center gap-3 px-4 pt-[env(safe-area-inset-top)]"><button type="button" onClick={() => setSelected(null)} className="grid h-11 w-11 place-items-center rounded-2xl bg-slate-100 dark:bg-slate-800" aria-label="Quay lại"><ArrowLeft className="h-5 w-5" /></button><div><h2 className="font-black">Chi tiết yêu cầu</h2><p className="text-sm text-muted-foreground">Xem, xử lý hoặc hoàn tác</p></div></div></header><main className="mx-auto max-w-lg p-3"><article className="overflow-hidden rounded-[2rem] bg-white shadow-xl dark:bg-slate-900"><section className={`bg-gradient-to-r ${itemMeta.gradient} p-5 text-white`}><h2 className="text-xl font-black">{title}</h2><p className="mt-2 font-extrabold">{name}</p><p className="mt-1 text-sm text-white/85">{detail}</p><span className="mt-3 inline-flex rounded-full bg-white/20 px-3 py-1 text-xs font-black">{selected.status === 'Approved' ? 'Đã duyệt' : selected.status === 'Pending' ? 'Cần xử lý' : 'Đã từ chối'}</span></section><section className="space-y-4 p-4">{reason && <p className="rounded-2xl bg-slate-50 p-3 text-sm leading-6 dark:bg-slate-800"><strong>Ghi chú:</strong> {reason}</p>}<ShiftRows title="Ca mới / ca thêm" rows={shifts} /><ShiftRows title="Ca muốn hủy" rows={removed} /><ShiftRows title="Ca xin đi làm lại" rows={restored} />{selected.kind === 'decision' && selected.decision.reviewNote && <p className="rounded-2xl bg-amber-50 p-3 text-sm text-amber-900"><strong>Phản hồi cũ:</strong> {selected.decision.reviewNote}</p>}<textarea value={note} onChange={(event) => setNote(event.target.value)} rows={3} placeholder={selected.kind === 'pending' ? 'Lý do từ chối (bắt buộc)...' : next === 'Rejected' ? 'Nhập lý do hoàn tác...' : 'Ghi chú mới (không bắt buộc)...'} className="w-full resize-none rounded-2xl border border-slate-200 px-4 py-3 text-base leading-6 dark:border-slate-700 dark:bg-slate-900" />{selected.kind === 'pending' ? <div className="grid grid-cols-2 gap-2"><button type="button" disabled={processing} onClick={() => void processPending(selected.pending, 'Rejected')} className="flex min-h-12 items-center justify-center gap-2 rounded-2xl border border-rose-200 font-extrabold text-rose-600 disabled:opacity-50"><X className="h-4 w-4" /> Từ chối</button><button type="button" disabled={processing} onClick={() => void processPending(selected.pending, 'Approved')} className="flex min-h-12 items-center justify-center gap-2 rounded-2xl bg-emerald-600 font-extrabold text-white disabled:opacity-50">{processing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />} Duyệt</button></div> : <button type="button" disabled={processing || (next === 'Rejected' && !note.trim())} onClick={() => void changeDecision(selected.decision)} className={`flex min-h-12 w-full items-center justify-center gap-2 rounded-2xl font-extrabold text-white disabled:opacity-50 ${next === 'Rejected' ? 'bg-rose-600' : 'bg-emerald-600'}`}><RotateCcw className="h-4 w-4" /> Hoàn tác thành {next === 'Rejected' ? 'Từ chối' : 'Duyệt'}</button>}</section></article></main></div>
     })()}
+
+    {message === 'Vui lòng nhập lý do từ chối trước khi xử lý.' && selected?.kind === 'pending' && (
+      <div role="alert" className="fixed inset-x-4 top-[calc(env(safe-area-inset-top)+5.5rem)] z-[90] mx-auto max-w-md rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-bold text-rose-700 shadow-xl dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-200">
+        {message}
+      </div>
+    )}
 
     {penaltyDialog && (
       <div className="fixed inset-0 z-[95] flex items-end justify-center bg-slate-950/55 p-3 backdrop-blur-sm sm:items-center" onClick={() => !processing && setPenaltyDialog(null)}>
