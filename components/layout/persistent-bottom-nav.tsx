@@ -34,7 +34,21 @@ export function PersistentBottomNav() {
     }
 
     if (isManagement) {
-      return subscribeToManagementPendingCount(setPendingNotificationCount, role === 'admin')
+      let pendingCount = 0
+      let unreadCount = 0
+      const publish = () => setPendingNotificationCount(Math.max(pendingCount, unreadCount))
+      const unsubscribePending = subscribeToManagementPendingCount((count) => {
+        pendingCount = count
+        publish()
+      }, role === 'admin')
+      const unsubscribeNotifications = subscribeToEmployeeNotifications(authUser.uid, (notifications) => {
+        unreadCount = notifications.filter((item) => !item.isRead).length
+        publish()
+      })
+      return () => {
+        unsubscribePending()
+        unsubscribeNotifications()
+      }
     }
 
     return subscribeToEmployeeNotifications(authUser.uid, (notifications) => {

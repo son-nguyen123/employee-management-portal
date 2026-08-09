@@ -20,6 +20,10 @@ export interface PreviewSchedule {
   reviewNote?: string
   editPreviousStatus?: PreviewScheduleStatus
   requiresReapproval?: boolean
+  weeklyShiftCount?: number
+  underMinimumWarning?: boolean
+  autoApproved?: boolean
+  reviewedAt?: string
 }
 
 const STORAGE_KEY = 'employee-portal-preview-schedules'
@@ -53,7 +57,11 @@ const defaultSchedules: PreviewSchedule[] = [
     date: nextWeekDate(0),
     shift: 'Morning',
     note: '',
-    status: 'Pending',
+    status: 'Approved',
+    weeklyShiftCount: 5,
+    underMinimumWarning: true,
+    autoApproved: true,
+    reviewedAt: new Date().toISOString(),
   },
   {
     id: 'preview-schedule-2',
@@ -66,6 +74,9 @@ const defaultSchedules: PreviewSchedule[] = [
     shift: 'Afternoon',
     note: '',
     status: 'Approved',
+    weeklyShiftCount: 6,
+    autoApproved: true,
+    reviewedAt: new Date().toISOString(),
   },
   {
     id: 'preview-schedule-3',
@@ -77,7 +88,10 @@ const defaultSchedules: PreviewSchedule[] = [
     date: nextWeekDate(1),
     shift: 'Evening',
     note: '',
-    status: 'Pending',
+    status: 'Approved',
+    weeklyShiftCount: 6,
+    autoApproved: true,
+    reviewedAt: new Date().toISOString(),
   },
   {
     id: 'preview-schedule-4',
@@ -90,6 +104,9 @@ const defaultSchedules: PreviewSchedule[] = [
     shift: 'Morning',
     note: '',
     status: 'Approved',
+    weeklyShiftCount: 6,
+    autoApproved: true,
+    reviewedAt: new Date().toISOString(),
   },
   {
     id: 'preview-schedule-5',

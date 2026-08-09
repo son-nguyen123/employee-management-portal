@@ -15,6 +15,9 @@ export interface DecisionHistoryItem {
   status: DecisionStatus
   reviewNote: string
   reviewedAt: Date
+  weeklyShiftCount?: number
+  underMinimumWarning?: boolean
+  autoApproved?: boolean
   reason?: string
   shifts?: Array<{ date: Date; shift: 'Morning' | 'Afternoon' | 'Evening' }>
   removedShifts?: Array<{ date: Date; shift: 'Morning' | 'Afternoon' | 'Evening'; scheduleId?: string }>
@@ -139,6 +142,7 @@ function buildRows(data: Record<DecisionResource, SnapshotRow[]>): DecisionHisto
       const current = asDate(item.reviewedAt)
       return current > latest ? current : latest
     }, new Date(0))
+    const actualShiftCount = sorted.filter((item) => !String(item.note || '').includes('[DUTY_ONLY]') && !String(item.note || '').includes('[NO_SHIFTS]')).length
     rows.push({
       key: `schedule-${batchKey}`,
       id: first.id,
@@ -146,10 +150,13 @@ function buildRows(data: Record<DecisionResource, SnapshotRow[]>): DecisionHisto
       resource: 'schedule',
       employeeId: String(first.employeeId || ''),
       title: 'Bảng đăng ký lịch',
-      detail: `${sorted.length} ca · ${dateLabel(first.date)}–${dateLabel(last.date)}`,
+      detail: `${actualShiftCount} ca · ${dateLabel(first.date)}–${dateLabel(last.date)}`,
       status: first.status as DecisionStatus,
       reviewNote: String(first.reviewNote || ''),
       reviewedAt,
+      weeklyShiftCount: Number(first.weeklyShiftCount ?? actualShiftCount),
+      underMinimumWarning: items.some((item) => item.underMinimumWarning === true),
+      autoApproved: items.every((item) => item.autoApproved === true),
       reason: String(first.note || '').replace(/\[[A-Z_]+(?::[^\]]+)?\]/g, '').trim(),
       shifts: sorted.flatMap((item) => {
         const date = asDate(item.date)

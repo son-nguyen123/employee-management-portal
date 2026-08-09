@@ -339,7 +339,7 @@ export default function NotificationsPage() {
     const window = weekWindow(weekView)
     return item.createdAt >= window.start && item.createdAt < window.end && (item.type !== 'account' || role === 'admin')
   })
-  const visibleManagementHistory = [...decisions].sort((left, right) => Number(left.status === 'Approved') - Number(right.status === 'Approved'))
+  const visibleManagementHistory = [...decisions].sort((left, right) => right.reviewedAt.getTime() - left.reviewedAt.getTime())
   const unreadItems = visibleItems.filter((item) => !item.isRead)
   const readItems = visibleItems.filter((item) => item.isRead)
   const employeeMap = useMemo(() => new Map(employees.map((employee) => [employee.uid, employee])), [employees])
@@ -373,6 +373,9 @@ export default function NotificationsPage() {
           status: 'Approved',
           reviewNote: '',
           reviewedAt: previewNow,
+          weeklyShiftCount: 6,
+          underMinimumWarning: false,
+          autoApproved: true,
           shifts: [
             { date: previewNow, shift: 'Morning' },
             { date: new Date(previewNow.getTime() + 86400000), shift: 'Afternoon' },
@@ -717,7 +720,7 @@ export default function NotificationsPage() {
               const employee = employeeMap.get(item.employeeId)
               const meta = managementMeta[item.resource]
               return (
-                <article key={item.key} className="mobile-card overflow-hidden">
+                <article key={item.key} className={`mobile-card overflow-hidden border-l-4 ${item.resource === 'schedule' && item.underMinimumWarning ? 'border-l-amber-400' : item.status === 'Approved' ? 'border-l-emerald-500' : 'border-l-rose-500'}`}>
                   <button
                     type="button"
                     onClick={() => { setSelectedDecision(item); setUndoReason(''); setMessage('') }}
@@ -728,7 +731,11 @@ export default function NotificationsPage() {
                       <h2 className="font-extrabold">{item.title}</h2>
                       <p className="mt-1 font-bold">{employee?.fullName || item.employeeId}{employee?.employeeCode ? ` · ${employee.employeeCode}` : ''}</p>
                       <p className="mt-1 line-clamp-2 text-sm text-muted-foreground">{item.detail}</p>
-                      <p className={`mt-2 text-xs font-bold ${item.status === 'Approved' ? 'text-emerald-600' : 'text-rose-600'}`}>{item.status === 'Approved' ? 'Đã duyệt' : 'Đã từ chối'} · có thể mở lại và hoàn tác</p>
+                      <p className={`mt-2 text-xs font-bold ${item.resource === 'schedule' && item.underMinimumWarning ? 'text-amber-600' : item.status === 'Approved' ? 'text-emerald-600' : 'text-rose-600'}`}>
+                        {item.resource === 'schedule' && item.autoApproved
+                          ? item.underMinimumWarning ? `Tự động duyệt · Cần lưu ý ${item.weeklyShiftCount || 0}/6 ca` : `Tự động duyệt · Tốt ${item.weeklyShiftCount || 0} ca`
+                          : `${item.status === 'Approved' ? 'Đã duyệt' : 'Đã từ chối'} · có thể mở lại và hoàn tác`}
+                      </p>
                     </div>
                     <ChevronRight className="mt-3 h-5 w-5 shrink-0 text-slate-400" />
                   </button>
@@ -898,7 +905,7 @@ export default function NotificationsPage() {
             <header className="sticky top-0 z-10 border-b border-slate-200/70 bg-white/95 backdrop-blur-xl dark:border-white/10 dark:bg-slate-950/95">
               <div className="mx-auto flex min-h-20 max-w-lg items-center gap-3 px-4 pt-[env(safe-area-inset-top)]">
                 <button type="button" onClick={() => setSelectedDecision(null)} className="grid h-11 w-11 place-items-center rounded-2xl bg-slate-100 dark:bg-slate-800" aria-label="Quay lại"><ArrowLeft className="h-5 w-5" /></button>
-                <div><h1 className="text-lg font-black">Nhân viên đã {selectedDecision.status === 'Approved' ? 'duyệt' : 'từ chối'}</h1><p className="text-sm text-muted-foreground">Chỉ xem quyết định hoặc hoàn tác</p></div>
+                <div><h1 className="text-lg font-black">{selectedDecision.resource === 'schedule' && selectedDecision.autoApproved ? 'Lịch đã tự động duyệt' : `Nhân viên đã ${selectedDecision.status === 'Approved' ? 'duyệt' : 'từ chối'}`}</h1><p className="text-sm text-muted-foreground">{selectedDecision.resource === 'schedule' && selectedDecision.autoApproved ? 'Thông tin đánh giá lịch mới nhất' : 'Chỉ xem quyết định hoặc hoàn tác'}</p></div>
               </div>
             </header>
             <main className="mx-auto max-w-lg p-3 pb-[calc(2rem+env(safe-area-inset-bottom))]">
@@ -909,7 +916,7 @@ export default function NotificationsPage() {
                     <div className="min-w-0 flex-1">
                       <h2 className="truncate text-xl font-black">{employee?.fullName || selectedDecision.employeeId}</h2>
                       <p className="mt-1 text-sm text-white/80">{employee?.employeeCode || 'Nhân viên'} · {selectedDecision.detail}</p>
-                      <span className={`mt-3 inline-flex rounded-full px-3 py-1 text-xs font-black ${selectedDecision.status === 'Approved' ? 'bg-emerald-400/25 text-emerald-50' : 'bg-rose-400/25 text-rose-50'}`}>{selectedDecision.status === 'Approved' ? 'Đã duyệt' : 'Đã từ chối'}</span>
+                      <span className={`mt-3 inline-flex rounded-full px-3 py-1 text-xs font-black ${selectedDecision.underMinimumWarning ? 'bg-amber-300/30 text-amber-50' : selectedDecision.status === 'Approved' ? 'bg-emerald-400/25 text-emerald-50' : 'bg-rose-400/25 text-rose-50'}`}>{selectedDecision.resource === 'schedule' && selectedDecision.autoApproved ? selectedDecision.underMinimumWarning ? 'Tự duyệt · Cần lưu ý' : 'Tự duyệt · Tốt' : selectedDecision.status === 'Approved' ? 'Đã duyệt' : 'Đã từ chối'}</span>
                     </div>
                   </div>
                 </section>
@@ -918,14 +925,18 @@ export default function NotificationsPage() {
                   <DecisionShiftRows items={selectedDecision.removedShifts} />
                   {selectedDecision.reason && <p className="rounded-2xl border border-slate-100 p-3 text-sm leading-6"><strong>Ghi chú:</strong> {selectedDecision.reason}</p>}
                   {selectedDecision.reviewNote && <p className="rounded-2xl bg-amber-50 p-3 text-sm text-amber-900 dark:bg-amber-500/10 dark:text-amber-100"><strong>Phản hồi cũ:</strong> {selectedDecision.reviewNote}</p>}
-                  <div className="border-t border-slate-100 pt-4 dark:border-white/10">
+                  {selectedDecision.resource === 'schedule' && selectedDecision.autoApproved ? (
+                    <div className={`rounded-2xl border p-4 text-sm font-semibold leading-6 ${selectedDecision.underMinimumWarning ? 'border-amber-200 bg-amber-50 text-amber-900 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-100' : 'border-emerald-200 bg-emerald-50 text-emerald-900 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-100'}`}>
+                      Lịch này đã được hệ thống xác nhận tự động. {selectedDecision.underMinimumWarning ? `Nhân viên đăng ký ${selectedDecision.weeklyShiftCount || 0}/6 ca nên được đánh dấu để quản lý lưu ý.` : `Nhân viên đăng ký ${selectedDecision.weeklyShiftCount || 0} ca, đạt mức tối thiểu.`}
+                    </div>
+                  ) : <div className="border-t border-slate-100 pt-4 dark:border-white/10">
                     <div className="flex items-center gap-2"><RotateCcw className="h-4 w-4 text-indigo-600" /><h3 className="font-black">Hoàn tác quyết định</h3></div>
                     <p className="mt-1 text-xs text-muted-foreground">Không mở trang sửa lịch. Thao tác này chỉ đổi quyết định quản lý.</p>
                     {nextStatus === 'Rejected' && <textarea value={undoReason} onChange={(event) => setUndoReason(event.target.value)} rows={3} placeholder="Nhập lý do chuyển thành từ chối..." className="mt-3 w-full resize-none rounded-2xl border border-slate-200 px-4 py-3 text-base leading-6 dark:border-slate-700 dark:bg-slate-900" />}
                     <button type="button" disabled={processingId === selectedDecision.key || (nextStatus === 'Rejected' && !undoReason.trim())} onClick={() => void changeDecision(selectedDecision)} className={`mt-3 flex min-h-12 w-full items-center justify-center gap-2 rounded-2xl font-extrabold text-white disabled:opacity-50 ${nextStatus === 'Rejected' ? 'bg-rose-600' : 'bg-emerald-600'}`}>
                       {processingId === selectedDecision.key ? <Loader2 className="h-4 w-4 animate-spin" /> : <RotateCcw className="h-4 w-4" />} Hoàn tác và chuyển thành {nextStatus === 'Rejected' ? 'Từ chối' : 'Duyệt'}
                     </button>
-                  </div>
+                  </div>}
                 </section>
               </article>
             </main>

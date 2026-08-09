@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { createPortal } from 'react-dom'
 import {
   CalendarDays,
@@ -18,12 +18,10 @@ import {
   ExternalLink,
   SlidersHorizontal,
   Sparkles,
-  Trash2,
   X,
 } from 'lucide-react'
 import { useAuth } from '@/lib/hooks/useAuth'
 import {
-  cancelWorkScheduleBatch,
   replaceWorkSchedules,
   setWorkScheduleBatchEditing,
   getEmployeeSchedules,
@@ -43,7 +41,7 @@ import type { LeaveRequest } from '@/lib/models/types'
 
 type Shift = 'Morning' | 'Afternoon' | 'Evening' | 'Custom'
 type DayItem = { key: string; name: string; shortName: string; date: Date }
-type CustomShift = { start: string; end: string; note: string; request: string }
+type CustomShift = { start: string; end: string }
 type Selection = Record<string, Shift[]>
 type EditBaseline = {
   selected: Selection
@@ -53,14 +51,18 @@ type EditBaseline = {
 }
 
 const DUTY_TEAM_CAPACITY = 7
-const DUTY_WHEEL_ROW_HEIGHT = 64
-
 const shiftOptions: { value: Shift; label: string; shortLabel: string; time: string }[] = [
   { value: 'Morning', label: 'Ca sáng', shortLabel: 'sáng', time: '07:30–11:30' },
   { value: 'Afternoon', label: 'Ca chiều', shortLabel: 'chiều', time: '13:00–17:00' },
   { value: 'Evening', label: 'Ca tối', shortLabel: 'tối', time: '18:00–22:00' },
   { value: 'Custom', label: 'Tùy chỉnh', shortLabel: 'tùy chỉnh', time: 'Tự chọn giờ' },
 ]
+
+const timeOptions = Array.from({ length: 96 }, (_, index) => {
+  const hour = Math.floor(index / 4)
+  const minute = (index % 4) * 15
+  return `${String(hour).padStart(2, '0')}:${String(minute).padStart(2, '0')}`
+})
 
 const cloneSelection = (value: Selection): Selection =>
   Object.fromEntries(Object.entries(value).map(([key, shifts]) => [key, [...shifts]]))
@@ -104,7 +106,6 @@ export default function SchedulePage() {
   const [submittedStatus, setSubmittedStatus] = useState<string | null>(null)
   const [editing, setEditing] = useState(false)
   const [editingOriginStatus, setEditingOriginStatus] = useState<string | null>(null)
-  const [requiresReapproval, setRequiresReapproval] = useState(false)
   const [loading, setLoading] = useState(true)
   const [submitting, setSubmitting] = useState(false)
   const [celebrating, setCelebrating] = useState(false)
@@ -122,7 +123,6 @@ export default function SchedulePage() {
   const [referenceNow] = useState(() => Date.now())
   const [portalReady, setPortalReady] = useState(false)
   const [leaveMarks, setLeaveMarks] = useState<Record<string, { fullDay: boolean; shifts: string[]; status: 'Pending' | 'AwaitingEmployeeConsent' | 'Approved' }>>({})
-  const dutyWheelRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     if (!authUser || isPreviewMode) return
@@ -255,7 +255,6 @@ export default function SchedulePage() {
     void loadDutyAvailability()
   }, [loadDutyAvailability])
 
-  const dutyWheelEntries = useMemo(() => [...days, ...days, ...days], [days])
   const dutyTeamCount = useCallback((dayKey: string) => {
     const storedCount = dutyCounts[dayKey] || 0
     const currentSelectionIsSaved = dayKey === dutyDay && submittedIds.length > 0
@@ -267,15 +266,6 @@ export default function SchedulePage() {
     setDutyPickerOpen(true)
     void loadDutyAvailability()
   }
-
-  useEffect(() => {
-    if (!dutyPickerOpen || !dutyCandidate || !days.length) return
-    const index = Math.max(0, days.findIndex((day) => day.key === dutyCandidate))
-    const timer = window.setTimeout(() => {
-      if (dutyWheelRef.current) dutyWheelRef.current.scrollTop = (days.length + index) * DUTY_WHEEL_ROW_HEIGHT
-    }, 0)
-    return () => window.clearTimeout(timer)
-  }, [days, dutyCandidate, dutyPickerOpen])
 
   const selectDutyCandidate = () => {
     if (!dutyCandidate) return
@@ -321,7 +311,7 @@ export default function SchedulePage() {
             hydrated[key] = Array.from(new Set([...(hydrated[key] || []), shift]))
             if (item.id && shift !== 'Custom') scheduleIds[`${key}-${shift}`] = item.id
             if (customMatch) {
-              custom[key] = { start: customMatch[1], end: customMatch[2], note: '', request: '' }
+              custom[key] = { start: customMatch[1], end: customMatch[2] }
             }
           })
           returnable.forEach((item) => {
@@ -343,7 +333,6 @@ export default function SchedulePage() {
           })
           setSubmittedIds(available.map((item) => item.id!).filter(Boolean))
           setSubmittedStatus(current[0]?.status || 'Approved')
-          setRequiresReapproval(current.some((item) => item.requiresReapproval))
           if (current[0]?.status === 'Editing') {
             setEditingOriginStatus(current[0].editPreviousStatus || 'Pending')
             setEditing(true)
@@ -362,7 +351,6 @@ export default function SchedulePage() {
           setEditBaseline(null)
           setSubmittedIds([])
           setSubmittedStatus(null)
-          setRequiresReapproval(false)
           setEditingOriginStatus(null)
           setEditing(false)
           const savedDraft = window.sessionStorage.getItem('schedule-draft')
@@ -403,11 +391,11 @@ export default function SchedulePage() {
 
   const chooseShift = (dayKey: string, shift: Shift) => {
     if (overtimeMode && original[dayKey]?.includes(shift)) return
-    if (shift === 'Custom' && !selected[dayKey]?.includes('Custom')) {
+    if (shift === 'Custom') {
       setCustomFor(dayKey)
       setCustomData((prev) => ({
         ...prev,
-        [dayKey]: prev[dayKey] || { start: '08:00', end: '17:00', note: '', request: '' },
+        [dayKey]: prev[dayKey] || { start: '08:00', end: '17:00' },
       }))
       return
     }
@@ -426,7 +414,7 @@ export default function SchedulePage() {
   const saveCustom = () => {
     if (!customFor) return
     const item = customData[customFor]
-    if (!item?.start || !item?.end) return
+    if (!item?.start || !item?.end || item.end <= item.start) return
     setSelected((prev) => ({
       ...prev,
       [customFor]: Array.from(new Set([...(prev[customFor] || []), 'Custom' as Shift])),
@@ -452,8 +440,6 @@ export default function SchedulePage() {
           status: 'Pending',
           note: [
             shift === 'Custom' ? `[CUSTOM:${custom?.start || '08:00'}-${custom?.end || '17:00'}]` : '',
-            shift === 'Custom' ? custom?.note || '' : '',
-            shift === 'Custom' ? custom?.request || '' : '',
             isDuty ? '[DUTY] Trực 17:00–17:30' : '',
           ].filter(Boolean).join(' ').trim(),
         })
@@ -588,8 +574,12 @@ export default function SchedulePage() {
           facebookUrl: 'https://facebook.com/',
           date: (row.date as Date).toISOString(),
           shift: row.shift,
-          status: 'Pending' as const,
+          status: 'Approved' as const,
           note: row.note,
+          weeklyShiftCount: selectedCount,
+          underMinimumWarning: selectedCount < 6,
+          autoApproved: true,
+          reviewedAt: new Date().toISOString(),
         }))
         addPreviewSchedules(previewRows)
         ids = previewRows.map((item) => item.id)
@@ -601,9 +591,7 @@ export default function SchedulePage() {
       }
       window.sessionStorage.removeItem('schedule-draft')
       setSubmittedIds(ids)
-      const needsReapproval = editingOriginStatus === 'Approved' || requiresReapproval
-      setSubmittedStatus('Pending')
-      setRequiresReapproval(needsReapproval)
+      setSubmittedStatus('Approved')
       setOriginal(cloneSelection(selected))
       setEditBaseline({
         selected: cloneSelection(selected),
@@ -614,9 +602,9 @@ export default function SchedulePage() {
       setEditing(false)
       setEditingOriginStatus(null)
       setCelebrating(true)
-      setMessage(needsReapproval
-        ? 'Đã gửi lịch sửa đổi. Bảng đang chờ quản lý xác nhận lại.'
-        : 'Gửi lịch thành công! Bảng lịch đang chờ quản lý xác nhận.')
+      setMessage(selectedCount < 6
+        ? `Đã xác nhận lịch ${selectedCount}/6 ca. Hệ thống đã duyệt và đánh dấu màu vàng để quản lý lưu ý.`
+        : `Đã xác nhận lịch ${selectedCount} ca. Hệ thống đã tự động duyệt.`)
       window.setTimeout(() => setCelebrating(false), 2400)
       window.scrollTo({ top: 0, behavior: 'smooth' })
     } catch (error) {
@@ -644,7 +632,7 @@ export default function SchedulePage() {
       setEditingOriginStatus(previousStatus)
       setSubmittedStatus('Editing')
       setEditing(true)
-      setMessage('Bạn đang sửa bảng lịch. Quản lý chỉ thấy lịch mới sau khi bạn gửi lại.')
+      setMessage('Bạn đang sửa bảng lịch. Bản đã xác nhận vẫn được giữ cho tới khi bạn xác nhận điều chỉnh.')
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'Chưa thể mở chế độ chỉnh sửa.')
     } finally {
@@ -681,28 +669,8 @@ export default function SchedulePage() {
     }
   }
 
-  const cancelSchedule = async () => {
-    if (!submittedIds.length || submittedStatus !== 'Pending') return
-    if (!window.confirm('Hủy toàn bộ bảng lịch đang chờ xác nhận?')) return
-    setSubmitting(true)
-    setMessage(null)
-    try {
-      if (isPreviewMode) {
-        const remaining = getPreviewSchedules().filter((item) => !submittedIds.includes(item.id))
-        window.sessionStorage.setItem('employee-portal-preview-schedules', JSON.stringify(remaining))
-      } else {
-        await cancelWorkScheduleBatch(submittedIds)
-      }
-      setSubmittedStatus('Cancelled')
-      setMessage('Đã hủy bảng lịch. Khoản phạt đã phát sinh trước đó (nếu có) vẫn được giữ nguyên.')
-    } catch (error) {
-      setMessage(error instanceof Error ? error.message : 'Chưa thể hủy bảng lịch.')
-    } finally {
-      setSubmitting(false)
-    }
-  }
-
   const customDay = days.find((day) => day.key === customFor)
+  const customTimeInvalid = Boolean(customFor && customData[customFor] && customData[customFor].end <= customData[customFor].start)
   const selectedCount = Object.values(selected).reduce((total, shifts) => total + shifts.length, 0)
   const overtimeCount = Object.entries(selected).reduce((total, [dayKey, selectedShifts]) =>
     total + selectedShifts.filter((shift) => !original[dayKey]?.includes(shift) && !returnableLeaveShifts[`${dayKey}-${shift}`]).length, 0)
@@ -712,7 +680,7 @@ export default function SchedulePage() {
     total + originalShifts.filter((shift) => !selected[dayKey]?.includes(shift)).length, 0)
   const missingDays = days.filter((day) => !selected[day.key]?.length && dutyDay !== day.key)
   const compactMode = submittedIds.length > 0 && !editing && !overtimeMode && !changeMode
-  const canEdit = ['Pending', 'Rejected'].includes(submittedStatus || '')
+  const canEdit = ['Pending', 'Rejected', 'Approved'].includes(submittedStatus || '')
 
   if (loading) {
     return <main className="grid min-h-screen place-items-center"><Loader2 className="h-7 w-7 animate-spin text-indigo-600" /></main>
@@ -798,9 +766,7 @@ export default function SchedulePage() {
                       ? 'Bị từ chối'
                       : submittedStatus === 'Cancelled'
                         ? 'Đã hủy'
-                        : requiresReapproval
-                          ? 'Chờ xác nhận lại'
-                          : 'Chờ xác nhận'}
+                        : 'Đang đồng bộ'}
                 </Badge>
               </div>
             </div>
@@ -824,7 +790,7 @@ export default function SchedulePage() {
                 {!selectedCount && (
                   <div className="m-2 rounded-2xl bg-slate-50 px-4 py-4 text-center dark:bg-slate-800">
                     <p className="font-extrabold">Tuần này bạn không đăng ký ca nào</p>
-                    <p className="mt-1 text-xs text-muted-foreground">Bảng nghỉ cả tuần đã được gửi cho quản lý xác nhận.</p>
+                    <p className="mt-1 text-xs text-muted-foreground">Bảng nghỉ cả tuần đã được hệ thống xác nhận và đánh dấu cần lưu ý.</p>
                   </div>
                 )}
                 {days.filter((day) => selected[day.key]?.length || dutyDay === day.key).map((day) => (
@@ -851,15 +817,10 @@ export default function SchedulePage() {
               </div>
             )}
             {canEdit && (
-              <div className={`m-4 mt-2 grid gap-2 ${submittedStatus === 'Pending' ? 'grid-cols-2' : 'grid-cols-1'}`}>
+              <div className="m-4 mt-2 grid gap-2">
                 <button type="button" onClick={() => void startEditing()} disabled={submitting} className="flex min-h-12 items-center justify-center gap-2 rounded-2xl border border-indigo-200 bg-indigo-50 font-bold text-indigo-700 disabled:opacity-60 dark:border-indigo-500/30 dark:bg-indigo-500/10 dark:text-indigo-200">
                   {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <SlidersHorizontal className="h-4 w-4" />} Điều chỉnh
                 </button>
-                {submittedStatus === 'Pending' && (
-                  <button type="button" onClick={cancelSchedule} disabled={submitting} className="flex min-h-12 items-center justify-center gap-2 rounded-2xl border border-rose-200 bg-rose-50 font-bold text-rose-700 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-200">
-                    {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />} Hủy yêu cầu
-                  </button>
-                )}
               </div>
             )}
             <div className={`${canEdit ? 'mx-4 mb-4 -mt-1' : 'm-4'} border-t border-slate-100 pt-3 dark:border-white/10`}>
@@ -967,17 +928,17 @@ export default function SchedulePage() {
                 </article>
               ))}
             </div>
-            <div className="mt-4 grid gap-3 rounded-3xl border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-900">
+            {(overtimeMode || changeMode) && <div className="mt-4 grid gap-3 rounded-3xl border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-900">
               <label className="text-sm font-extrabold">
                 <span className="flex items-center gap-2"><MessageSquareText className="h-4 w-4 text-indigo-600" /> {overtimeMode || changeMode ? 'Lời nhắn kèm yêu cầu' : 'Ghi chú cho quản lý'}</span>
                 <textarea value={weekNote} onChange={(event) => setWeekNote(event.target.value)} maxLength={400} className="mobile-field mt-2 min-h-24 py-3" placeholder={changeMode ? 'Ví dụ: em đổi ca sáng thứ Ba sang ca chiều...' : overtimeMode ? 'Ví dụ: em có thể hỗ trợ thêm các ca này...' : 'Ví dụ: tuần này em nghỉ 3 buổi...'} />
               </label>
-            </div>
+            </div>}
           </>
         )}
       </div>
 
-      {!compactMode && portalReady && createPortal(
+      {!compactMode && !customFor && !dutyPickerOpen && portalReady && createPortal(
         <div className="fixed inset-x-0 bottom-[calc(4.5rem+env(safe-area-inset-bottom))] z-[55] border-t border-slate-200/70 bg-white/95 p-3 shadow-[0_-8px_24px_rgba(15,23,42,0.08)] backdrop-blur-xl dark:border-white/10 dark:bg-slate-950/95 md:bottom-0">
           <div className="mx-auto grid max-w-2xl grid-cols-[.8fr_1.2fr] gap-2">
             <button type="button" onClick={overtimeMode || changeMode ? () => { setSelected(cloneSelection(original)); setWeekNote('') } : editing ? () => void cancelEditing() : saveDraft} disabled={submitting} className="flex min-h-12 items-center justify-center gap-2 rounded-2xl border border-slate-200 font-bold disabled:opacity-60 dark:border-slate-700">
@@ -985,7 +946,7 @@ export default function SchedulePage() {
             </button>
             <button type="button" onClick={() => void submitSchedule()} disabled={submitting || ((overtimeMode || changeMode) && ((!overtimeCount && !removedCount && !restoredCount) || (changeMode && removedCount > 0 && !overtimeCount && !restoredCount) || !submittedIds.length))} className="mobile-primary-button disabled:opacity-50">
               {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : overtimeMode || changeMode ? <CalendarPlus className="h-4 w-4" /> : <Send className="h-4 w-4" />}
-              {submitting ? 'Đang gửi...' : changeMode ? 'Gửi yêu cầu' : overtimeMode ? `Gửi ${overtimeCount} ca` : editing ? 'Gửi điều chỉnh' : 'Gửi lịch'}
+              {submitting ? 'Đang xác nhận...' : changeMode ? 'Gửi yêu cầu' : overtimeMode ? `Gửi ${overtimeCount} ca` : editing ? 'Xác nhận điều chỉnh' : 'Xác nhận lịch'}
             </button>
           </div>
         </div>,
@@ -1012,7 +973,7 @@ export default function SchedulePage() {
             {weekNote.trim() && <p className="mt-3 rounded-2xl bg-indigo-50 p-3 text-sm text-indigo-900 dark:bg-indigo-500/10 dark:text-indigo-100"><strong>Ghi chú:</strong> {weekNote.trim()}</p>}
             <div className="mt-5 grid grid-cols-2 gap-2">
               <button type="button" onClick={() => setConfirmationOpen(false)} className="min-h-12 rounded-2xl border border-slate-200 font-bold dark:border-slate-700">Xem lại</button>
-              <button type="button" onClick={() => void submitSchedule(true)} className="mobile-primary-button">Xác nhận gửi</button>
+              <button type="button" onClick={() => void submitSchedule(true)} className="mobile-primary-button">Xác nhận lịch</button>
             </div>
           </section>
         </div>
@@ -1026,54 +987,42 @@ export default function SchedulePage() {
             <div className="mx-auto grid h-20 w-20 place-items-center rounded-full bg-gradient-to-br from-indigo-500 to-fuchsia-500 text-white shadow-xl shadow-indigo-500/30">
               <PartyPopper className="h-9 w-9" />
             </div>
-            <h2 className="mt-5 text-2xl font-black">Gửi lịch thành công!</h2>
-            <p className="mt-2 text-sm text-muted-foreground">Tuyệt vời! Bảng lịch của bạn đã được chuyển đến quản lý.</p>
+            <h2 className="mt-5 text-2xl font-black">Xác nhận lịch thành công!</h2>
+            <p className="mt-2 text-sm text-muted-foreground">Bảng lịch đã được lưu, tự động duyệt và cập nhật cho quản lý.</p>
           </div>
         </div>
       )}
 
       {dutyPickerOpen && (
-        <div className="fixed inset-0 z-50 flex items-end bg-slate-950/45 backdrop-blur-sm" onClick={() => setDutyPickerOpen(false)}>
-          <section className="w-full rounded-t-[2rem] bg-white p-4 pb-[max(1rem,env(safe-area-inset-bottom))] shadow-2xl dark:bg-slate-900 sm:mx-auto sm:mb-4 sm:max-w-lg sm:rounded-[2rem]" onClick={(event) => event.stopPropagation()}>
+        <div className="fixed inset-0 z-[75] flex items-end bg-slate-950/45 backdrop-blur-sm" onClick={() => setDutyPickerOpen(false)}>
+          <section className="max-h-[calc(100dvh-1rem)] w-full overflow-y-auto rounded-t-[2rem] bg-white p-4 pb-[max(1rem,env(safe-area-inset-bottom))] shadow-2xl dark:bg-slate-900 sm:mx-auto sm:mb-4 sm:max-w-lg sm:rounded-[2rem]" onClick={(event) => event.stopPropagation()}>
             <div className="mx-auto max-w-lg">
               <div className="mx-auto mb-4 h-1.5 w-12 rounded-full bg-slate-300 dark:bg-slate-700" />
               <div className="mb-3 flex items-center justify-between">
                 <div><p className="text-xs font-bold uppercase tracking-wider text-rose-600">Lịch trực</p><h2 className="text-xl font-extrabold">Chọn ngày trực</h2></div>
                 <button onClick={() => setDutyPickerOpen(false)} className="grid h-11 w-11 place-items-center rounded-2xl bg-slate-100 dark:bg-slate-800"><X className="h-5 w-5" /></button>
               </div>
-              <p className="mb-4 text-sm text-muted-foreground">Vuốt để chọn ngày. Khung giờ cố định 17:00–17:30.</p>
-              <div className="relative overflow-hidden rounded-3xl border border-slate-200 bg-slate-50 dark:border-slate-700 dark:bg-slate-800/70">
-                <div className="pointer-events-none absolute inset-x-3 top-16 z-20 h-16 rounded-2xl border border-rose-300 bg-white/75 shadow-sm dark:border-rose-400/40 dark:bg-slate-900/70" />
-                <div className="pointer-events-none absolute inset-x-0 top-0 z-10 h-16 bg-gradient-to-b from-slate-50 via-slate-50/90 to-transparent dark:from-slate-800/70 dark:via-slate-800/40" />
-                <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10 h-16 bg-gradient-to-t from-slate-50 via-slate-50/90 to-transparent dark:from-slate-800/70 dark:via-slate-800/40" />
-                <div
-                  ref={dutyWheelRef}
-                  className="h-48 snap-y snap-mandatory overflow-y-auto overscroll-contain py-16 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
-                  onScroll={(event) => {
-                    const index = Math.max(0, Math.min(dutyWheelEntries.length - 1, Math.round(event.currentTarget.scrollTop / DUTY_WHEEL_ROW_HEIGHT)))
-                    const item = dutyWheelEntries[index]
-                    if (item) setDutyCandidate(item.key)
-                  }}
-                >
-                  {dutyWheelEntries.map((day, index) => {
-                    const active = dutyCandidate === day.key
-                    return (
-                      <button
-                        key={`${day.key}-${index}`}
-                        type="button"
-                        onClick={() => {
-                          setDutyCandidate(day.key)
-                          dutyWheelRef.current?.scrollTo({ top: index * DUTY_WHEEL_ROW_HEIGHT, behavior: 'smooth' })
-                        }}
-                        className={`relative z-0 flex h-16 w-full snap-center items-center justify-between px-6 text-left transition duration-200 ${active ? 'scale-[1.02] text-rose-700 dark:text-rose-300' : 'scale-95 text-slate-400 dark:text-slate-500'}`}
-                      >
-                        <span className="font-extrabold">{day.name}</span>
-                        <span className="text-sm font-bold tabular-nums">{day.date.toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit' })}</span>
-                      </button>
-                    )
-                  })}
-                </div>
-              </div>
+               <p className="mb-4 text-sm text-muted-foreground">Chạm vào ngày muốn trực. Khung giờ cố định 17:00–17:30.</p>
+               <div className="grid grid-cols-2 gap-2 rounded-3xl border border-slate-200 bg-slate-50 p-2 dark:border-slate-700 dark:bg-slate-800/70">
+                 {days.map((day, index) => {
+                   const active = dutyCandidate === day.key
+                   const count = dutyTeamCount(day.key)
+                   return (
+                     <button
+                       key={day.key}
+                       type="button"
+                       onClick={() => setDutyCandidate(day.key)}
+                       className={`min-h-[74px] rounded-2xl border px-3 py-2.5 text-left transition active:scale-[0.98] ${index === days.length - 1 ? 'col-span-2' : ''} ${active ? 'border-rose-500 bg-white text-rose-700 shadow-md shadow-rose-950/10 ring-2 ring-rose-100 dark:bg-slate-900 dark:text-rose-300 dark:ring-rose-500/15' : 'border-transparent bg-white/70 text-slate-700 dark:bg-slate-900/60 dark:text-slate-200'}`}
+                     >
+                       <span className="flex items-center justify-between gap-2">
+                         <span className="font-extrabold">{day.shortName}</span>
+                         {active && <Check className="h-4 w-4" />}
+                       </span>
+                       <span className="mt-1 block text-xs font-semibold tabular-nums opacity-75">{day.date.toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit' })} · {count}/{DUTY_TEAM_CAPACITY} người</span>
+                     </button>
+                   )
+                 })}
+               </div>
               <div className="mt-3 flex items-center justify-between rounded-2xl bg-rose-50 px-3 py-2 text-xs font-bold text-rose-800 dark:bg-rose-500/10 dark:text-rose-200">
                 <span>{dutyAvailabilityLoading ? 'Đang kiểm tra tổ trực...' : `Tổ đang chọn: ${dutyCandidate ? dutyTeamCount(dutyCandidate) : 0}/${DUTY_TEAM_CAPACITY} người`}</span>
                 {!dutyAvailabilityLoading && dutyCandidate && dutyTeamCount(dutyCandidate) > DUTY_TEAM_CAPACITY && <span className="text-rose-600 dark:text-rose-300">Quá tải</span>}
@@ -1105,20 +1054,22 @@ export default function SchedulePage() {
       )}
 
       {customFor && (
-        <div className="fixed inset-0 z-50 flex items-end bg-slate-950/45 backdrop-blur-sm" onClick={() => setCustomFor(null)}>
-          <section className="w-full rounded-t-[2rem] bg-white p-4 pb-[max(1rem,env(safe-area-inset-bottom))] shadow-2xl dark:bg-slate-900" onClick={(event) => event.stopPropagation()}>
+        <div className="fixed inset-0 z-[75] flex items-end bg-slate-950/45 backdrop-blur-sm" onClick={() => setCustomFor(null)}>
+          <section className="max-h-[calc(100dvh-1rem)] w-full overflow-y-auto rounded-t-[2rem] bg-white p-4 pb-[max(1rem,env(safe-area-inset-bottom))] shadow-2xl dark:bg-slate-900" onClick={(event) => event.stopPropagation()}>
             <div className="mx-auto max-w-lg">
               <div className="mb-4 flex items-center justify-between">
                 <div><p className="text-xs font-bold uppercase tracking-wider text-indigo-600">Ca tùy chỉnh</p><h2 className="text-xl font-extrabold">{customDay?.name}</h2></div>
                 <button onClick={() => setCustomFor(null)} className="grid h-11 w-11 place-items-center rounded-2xl bg-slate-100 dark:bg-slate-800"><X className="h-5 w-5" /></button>
               </div>
-              <div className="grid grid-cols-2 gap-3">
-                <label className="text-sm font-bold">Giờ bắt đầu<input type="time" className="mobile-field mt-2" value={customData[customFor]?.start || ''} onChange={(e) => setCustomData((prev) => ({ ...prev, [customFor]: { ...prev[customFor], start: e.target.value } }))} /></label>
-                <label className="text-sm font-bold">Giờ kết thúc<input type="time" className="mobile-field mt-2" value={customData[customFor]?.end || ''} onChange={(e) => setCustomData((prev) => ({ ...prev, [customFor]: { ...prev[customFor], end: e.target.value } }))} /></label>
-              </div>
-              <label className="mt-3 block text-sm font-bold">Ghi chú<textarea className="mobile-field mt-2 min-h-20 py-3" placeholder="Ví dụ: cần nghỉ giữa ca 30 phút" value={customData[customFor]?.note || ''} onChange={(e) => setCustomData((prev) => ({ ...prev, [customFor]: { ...prev[customFor], note: e.target.value } }))} /></label>
-              <label className="mt-3 block text-sm font-bold">Yêu cầu đặc biệt<textarea className="mobile-field mt-2 min-h-20 py-3" placeholder="Nhập nếu có" value={customData[customFor]?.request || ''} onChange={(e) => setCustomData((prev) => ({ ...prev, [customFor]: { ...prev[customFor], request: e.target.value } }))} /></label>
-              <button type="button" onClick={saveCustom} className="mobile-primary-button mt-4"><SlidersHorizontal className="h-4 w-4" /> Áp dụng ca tùy chỉnh</button>
+               <p className="mb-4 rounded-2xl bg-indigo-50 px-3 py-2 text-sm font-semibold text-indigo-800 dark:bg-indigo-500/10 dark:text-indigo-100">Chọn giờ cho riêng ngày này. Bạn có thể mở lại để sửa bất cứ lúc nào trước khi xác nhận cả tuần.</p>
+               <div className="grid grid-cols-[1fr_auto_1fr] items-end gap-2">
+                 <label className="text-sm font-bold">Bắt đầu<select className="mobile-field mt-2 appearance-none text-center font-extrabold tabular-nums" value={customData[customFor]?.start || '08:00'} onChange={(e) => setCustomData((prev) => ({ ...prev, [customFor]: { ...prev[customFor], start: e.target.value } }))}>{timeOptions.map((time) => <option key={`start-${time}`} value={time}>{time}</option>)}</select></label>
+                 <span className="mb-3 text-sm font-black text-slate-400">đến</span>
+                 <label className="text-sm font-bold">Kết thúc<select className="mobile-field mt-2 appearance-none text-center font-extrabold tabular-nums" value={customData[customFor]?.end || '17:00'} onChange={(e) => setCustomData((prev) => ({ ...prev, [customFor]: { ...prev[customFor], end: e.target.value } }))}>{timeOptions.map((time) => <option key={`end-${time}`} value={time}>{time}</option>)}</select></label>
+               </div>
+               {customTimeInvalid && <p className="mt-3 rounded-2xl bg-rose-50 px-3 py-2 text-sm font-bold text-rose-700">Giờ kết thúc phải sau giờ bắt đầu.</p>}
+               <button type="button" disabled={customTimeInvalid} onClick={saveCustom} className="mobile-primary-button mt-5 w-full disabled:opacity-50"><Check className="h-4 w-4" /> Xác nhận ca tùy chỉnh</button>
+               {selected[customFor]?.includes('Custom') && <button type="button" onClick={() => { setSelected((prev) => { const next = { ...prev }; const shifts = (next[customFor] || []).filter((shift) => shift !== 'Custom'); if (shifts.length) next[customFor] = shifts; else delete next[customFor]; return next }); setCustomFor(null) }} className="mt-2 min-h-11 w-full rounded-2xl text-sm font-bold text-rose-600">Bỏ ca tùy chỉnh ngày này</button>}
             </div>
           </section>
         </div>

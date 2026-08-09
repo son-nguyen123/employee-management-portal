@@ -52,6 +52,9 @@ export interface WorkSchedule {
   allowSundayResubmissionWithoutPenalty?: boolean
   penaltyId?: string | null
   revisionCount?: number
+  weeklyShiftCount?: number
+  underMinimumWarning?: boolean
+  autoApproved?: boolean
   createdAt: Timestamp | Date
   updatedAt: Timestamp | Date
 }

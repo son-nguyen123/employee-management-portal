@@ -600,12 +600,12 @@ function vietnamDateKey(date: Date): string {
 
 function scheduleDeadline(firstShift: Date): Date {
   const monday = mondayFor(firstShift)
-  // Hết Thứ Sáu là hạn cuối: gửi từ 00:00 Thứ Bảy (giờ Việt Nam) được tính là trễ.
+  // Nhân viên được tạo và sửa tự do hết Thứ Bảy. Từ 00:00 Chủ Nhật mới tính là trễ.
   return new Date(
     Date.UTC(
       monday.getUTCFullYear(),
       monday.getUTCMonth(),
-      monday.getUTCDate() - 2,
+      monday.getUTCDate() - 1,
       -7,
       0,
       0
@@ -700,17 +700,23 @@ export async function submitSchedules(actor: RequestActor, raw: unknown) {
         employeeId: actor.uid,
         date: Timestamp.fromDate(schedule.date),
         shift: schedule.shift,
-        status: 'Pending',
+        status: 'Approved',
         note: schedule.note,
         batchKey,
         requiresReapproval: false,
         revisionCount: 0,
         weeklyShiftCount: actualShiftCount,
         underMinimumWarning: underMinimum,
+        autoApproved: true,
+        reviewNote: underMinimum
+          ? `Tự động xác nhận · lịch có ${actualShiftCount}/${workflowPolicy.minimumWeeklyShifts} ca.`
+          : `Tự động xác nhận · lịch đạt ${actualShiftCount} ca.`,
+        reviewedBy: 'system:auto-schedule',
+        reviewedAt: now,
         penaltyId: shouldPenalize && workflowPolicy.scheduleLatePenalty > 0 ? penaltyRef.id : null,
         createdAt: now,
         updatedAt: now,
-        lockedAt: null,
+        lockedAt: now,
       })
     })
 
@@ -735,9 +741,11 @@ export async function submitSchedules(actor: RequestActor, raw: unknown) {
     }
     transaction.set(adminDb.collection('notifications').doc(`schedule-status-${scheduleRefs[0].id}`), {
       employeeId: actor.uid,
-      title: 'Đã gửi yêu cầu lịch',
-      message: 'Yêu cầu đã gửi đến quản lý và đang chờ duyệt.',
-      type: 'warning',
+      title: 'Lịch tuần đã tự động xác nhận',
+      message: underMinimum
+        ? `Lịch của bạn đã lưu với ${actualShiftCount}/${workflowPolicy.minimumWeeklyShifts} ca và được đánh dấu cần lưu ý.`
+        : `Lịch của bạn đã lưu và đạt ${actualShiftCount} ca trong tuần.`,
+      type: underMinimum ? 'warning' : 'success',
       isRead: false,
       createdAt: now,
     })
@@ -747,8 +755,9 @@ export async function submitSchedules(actor: RequestActor, raw: unknown) {
         managerNotificationRef(managerId, `schedule-${batchKey}`),
         managerNotification(
           managerId,
-          'Bảng lịch mới chờ xác nhận',
-          `Một nhân viên vừa gửi bảng lịch tuần ${weekStart.toLocaleDateString('vi-VN')}.${underMinimum ? ` Cảnh báo: chỉ có ${actualShiftCount}/${workflowPolicy.minimumWeeklyShifts} ca tối thiểu.` : ''}`
+          underMinimum ? 'Lịch tuần tự duyệt · cần lưu ý' : 'Lịch tuần đã tự động duyệt',
+          `Lịch tuần ${weekStart.toLocaleDateString('vi-VN')} vừa được cập nhật: ${actualShiftCount} ca.${underMinimum ? ` Dưới mức ${workflowPolicy.minimumWeeklyShifts} ca.` : ''}`,
+          underMinimum ? 'warning' : 'info'
         )
       )
     })
@@ -765,10 +774,10 @@ export async function submitSchedules(actor: RequestActor, raw: unknown) {
   await sendManagerPushes({
     managerIds,
     sourceKey: `schedule-${batchKey}`,
-    title: 'Bảng lịch mới chờ xác nhận',
+    title: underMinimum ? 'Lịch tuần cần lưu ý' : 'Lịch tuần đã tự động duyệt',
     body: underMinimum
-      ? `Cảnh báo: lịch chỉ có ${actualShiftCount}/${workflowPolicy.minimumWeeklyShifts} ca tối thiểu.`
-      : 'Một nhân viên vừa gửi bảng lịch tuần. Mở Trí Candy để xử lý.',
+      ? `Một nhân viên vừa cập nhật lịch ${actualShiftCount}/${workflowPolicy.minimumWeeklyShifts} ca.`
+      : `Một nhân viên vừa cập nhật lịch ${actualShiftCount} ca.`,
     link: '/notifications',
     source: 'workSchedules',
     sourceId: scheduleRefs[0].id,
@@ -1050,7 +1059,7 @@ export async function replaceSchedules(actor: RequestActor, raw: unknown) {
     const oldData = oldSnapshots.map((snapshot) => snapshot.data()!)
     if (oldData.some((schedule) =>
       schedule.employeeId !== actor.uid ||
-      !['Pending', 'Registered', 'ChangesRequested', 'Rejected', 'Editing'].includes(schedule.status)
+      !['Pending', 'Registered', 'ChangesRequested', 'Rejected', 'Approved', 'Editing'].includes(schedule.status)
     )) {
       throw new ApiError(403, 'Bạn không thể điều chỉnh lịch này.')
     }
@@ -1063,11 +1072,6 @@ export async function replaceSchedules(actor: RequestActor, raw: unknown) {
     const now = FieldValue.serverTimestamp()
     const weekStart = mondayFor(schedules[0].date)
     const batchKey = scheduleBatchKey(actor.uid, weekStart)
-    const requiresReapproval = oldData.some((schedule) =>
-      schedule.status === 'Approved' ||
-      schedule.editPreviousStatus === 'Approved' ||
-      schedule.requiresReapproval === true
-    )
     const revisionCount = Math.max(0, ...oldData.map((schedule) => Number(schedule.revisionCount || 0))) + 1
     const isVietnamSunday = new Intl.DateTimeFormat('en-US', {
       timeZone: 'Asia/Ho_Chi_Minh',
@@ -1082,17 +1086,23 @@ export async function replaceSchedules(actor: RequestActor, raw: unknown) {
         employeeId: actor.uid,
         date: Timestamp.fromDate(schedule.date),
         shift: schedule.shift,
-        status: 'Pending',
+        status: 'Approved',
         note: schedule.note,
         batchKey,
-        requiresReapproval,
+        requiresReapproval: false,
         revisionCount,
         weeklyShiftCount: revisedShiftCount,
         underMinimumWarning: revisedShiftCount < workflowPolicy.minimumWeeklyShifts,
+        autoApproved: true,
+        reviewNote: revisedShiftCount < workflowPolicy.minimumWeeklyShifts
+          ? `Tự động xác nhận · lịch có ${revisedShiftCount}/${workflowPolicy.minimumWeeklyShifts} ca.`
+          : `Tự động xác nhận · lịch đạt ${revisedShiftCount} ca.`,
+        reviewedBy: 'system:auto-schedule',
+        reviewedAt: now,
         penaltyId: penalizedRejectedResubmission && workflowPolicy.scheduleLatePenalty > 0 ? resubmissionPenaltyRef.id : null,
         createdAt: now,
         updatedAt: now,
-        lockedAt: null,
+        lockedAt: now,
       })
     })
     transaction.create(workflow, {
@@ -1119,9 +1129,11 @@ export async function replaceSchedules(actor: RequestActor, raw: unknown) {
     }
     transaction.set(adminDb.collection('notifications').doc(`schedule-status-${newRefs[0].id}`), {
       employeeId: actor.uid,
-      title: 'Đã gửi lại yêu cầu lịch',
-      message: 'Lịch đã cập nhật và gửi đến quản lý.',
-      type: 'warning',
+      title: 'Lịch tuần đã tự động cập nhật',
+      message: revisedShiftCount < workflowPolicy.minimumWeeklyShifts
+        ? `Bản mới có ${revisedShiftCount}/${workflowPolicy.minimumWeeklyShifts} ca và được đánh dấu cần lưu ý.`
+        : `Bản mới đã lưu và đạt ${revisedShiftCount} ca trong tuần.`,
+      type: revisedShiftCount < workflowPolicy.minimumWeeklyShifts ? 'warning' : 'success',
       isRead: false,
       createdAt: now,
     })
@@ -1130,10 +1142,9 @@ export async function replaceSchedules(actor: RequestActor, raw: unknown) {
         managerNotificationRef(managerId, `schedule-${batchKey}`),
         managerNotification(
           managerId,
-          requiresReapproval ? 'Lịch đã sửa, cần xác nhận lại' : 'Bảng lịch đã được điều chỉnh',
-          requiresReapproval
-            ? 'Nhân viên đã sửa bảng lịch từng được xác nhận. Vui lòng kiểm tra lại.'
-            : 'Nhân viên đã gửi lại bảng lịch sau khi điều chỉnh.'
+          revisedShiftCount < workflowPolicy.minimumWeeklyShifts ? 'Lịch tuần vừa sửa · cần lưu ý' : 'Lịch tuần vừa sửa · đạt yêu cầu',
+          `Bản lịch mới nhất đã tự động duyệt với ${revisedShiftCount} ca.${revisedShiftCount < workflowPolicy.minimumWeeklyShifts ? ` Dưới mức ${workflowPolicy.minimumWeeklyShifts} ca.` : ''}`,
+          revisedShiftCount < workflowPolicy.minimumWeeklyShifts ? 'warning' : 'info'
         )
       )
     })
@@ -1142,8 +1153,8 @@ export async function replaceSchedules(actor: RequestActor, raw: unknown) {
   await sendManagerPushes({
     managerIds,
     sourceKey: `schedule-revised-${newRefs[0].id}`,
-    title: 'Bảng lịch đã được điều chỉnh',
-    body: 'Nhân viên vừa gửi lại bảng lịch. Vui lòng kiểm tra và xác nhận.',
+    title: revisedShiftCount < workflowPolicy.minimumWeeklyShifts ? 'Lịch sửa lại cần lưu ý' : 'Lịch tuần vừa được cập nhật',
+    body: `Bản mới nhất đã tự động duyệt với ${revisedShiftCount} ca.`,
     link: '/notifications',
     source: 'workSchedules',
     sourceId: newRefs[0].id,
@@ -1178,7 +1189,7 @@ export async function setScheduleBatchEditing(actor: RequestActor, raw: unknown)
     const now = FieldValue.serverTimestamp()
     const batchKey = schedules[0].batchKey || scheduleBatchKey(actor.uid, weekStart)
     if (editing) {
-      if (schedules.some((schedule) => !['Pending', 'Registered', 'Rejected'].includes(schedule.status))) {
+      if (schedules.some((schedule) => !['Pending', 'Registered', 'Rejected', 'Approved'].includes(schedule.status))) {
         throw new ApiError(409, 'Bảng lịch hiện không thể chuyển sang chế độ chỉnh sửa.')
       }
       refs.forEach((ref, index) => transaction.set(ref, {

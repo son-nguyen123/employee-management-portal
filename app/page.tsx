@@ -90,7 +90,7 @@ export default function Page() {
           setAdminStats({
             confirmed: new Set(schedules.filter((item) => item.status === 'Approved' && inRegistrationWeek(new Date(item.date))).map((item) => item.employeeId)).size,
             total: employeeIds.size,
-            pending: new Set(schedules.filter((item) => ['Pending', 'Editing'].includes(item.status) && inRegistrationWeek(new Date(item.date))).map((item) => item.employeeId)).size,
+            pending: new Set(schedules.filter((item) => item.underMinimumWarning && inRegistrationWeek(new Date(item.date))).map((item) => item.employeeId)).size,
           })
           return
         }
@@ -103,7 +103,7 @@ export default function Page() {
         setAdminStats({
           confirmed: new Set(schedules.filter((item) => item.status !== 'Cancelled' && inRegistrationWeek(item.date)).map((item) => item.employeeId)).size,
           total: target.expectedEmployees || employees.filter((item) => item.status === 'active').length,
-          pending: new Set(schedules.filter((item) => ['Pending', 'Registered', 'Editing'].includes(item.status) && inRegistrationWeek(item.date)).map((item) => item.employeeId)).size,
+          pending: new Set(schedules.filter((item) => item.underMinimumWarning && inRegistrationWeek(item.date)).map((item) => item.employeeId)).size,
         })
       } catch {
         // The main dashboard still works if management statistics are unavailable.
@@ -239,12 +239,12 @@ export default function Page() {
                   {isAdmin ? `${adminStats.confirmed}/${adminStats.total} nhân viên` : '4 ca đã đăng ký'}
                 </p>
                 <p className="mt-1 text-sm text-indigo-100">
-                  {isAdmin ? 'nhân viên đã gửi bảng lịch' : 'Đang chờ quản lý xác nhận'}
+                  {isAdmin ? 'nhân viên đã xác nhận bảng lịch' : 'Tự động xác nhận · có thể sửa lại'}
                 </p>
               </div>
               <div className="rounded-2xl bg-white/15 px-3 py-2 text-center">
                 <span className="block text-xl font-black">{isAdmin ? String(adminStats.pending).padStart(2, '0') : '02'}</span>
-                <span className="text-[10px] font-semibold uppercase tracking-wider">{isAdmin ? 'Đang chờ' : 'Thông báo'}</span>
+                <span className="text-[10px] font-semibold uppercase tracking-wider">{isAdmin ? 'Cần lưu ý' : 'Thông báo'}</span>
               </div>
             </div>
             <Link href={isAdmin ? '/admin/dashboard#schedules' : '/schedule'} className="mt-5 flex min-h-11 items-center justify-between rounded-2xl bg-white px-4 text-sm font-bold text-indigo-700">

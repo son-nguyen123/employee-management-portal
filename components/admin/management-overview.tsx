@@ -44,6 +44,7 @@ export function ManagementOverview({ employees }: { employees: Employee[] }) {
       setSchedules(getPreviewSchedules().map((item) => ({
         ...item,
         date: new Date(item.date),
+        reviewedAt: item.reviewedAt ? new Date(item.reviewedAt) : undefined,
         createdAt: new Date(),
         updatedAt: new Date(),
       })))
@@ -63,8 +64,8 @@ export function ManagementOverview({ employees }: { employees: Employee[] }) {
     ),
     [schedules]
   )
-  const pending = new Set(nextWeekSchedules
-    .filter((item) => ['Pending', 'Registered'].includes(item.status))
+  const attention = new Set(nextWeekSchedules
+    .filter((item) => item.underMinimumWarning)
     .map((item) => item.employeeId)).size
   const submitted = new Set(nextWeekSchedules.map((item) => item.employeeId)).size
   const target = expectedEmployees || activeEmployees.length
@@ -94,7 +95,7 @@ export function ManagementOverview({ employees }: { employees: Employee[] }) {
       <div className="grid grid-cols-3 gap-2">
         {[
           { label: 'Đang hoạt động', value: activeEmployees.length, icon: UsersRound, color: 'bg-indigo-600' },
-          { label: 'Bảng chờ', value: pending, icon: CalendarCheck, color: 'bg-amber-500' },
+          { label: 'Lịch cần lưu ý', value: attention, icon: CalendarCheck, color: 'bg-amber-500' },
           { label: 'Đã gửi lịch', value: `${submitted}/${target}`, icon: Check, color: 'bg-emerald-600' },
         ].map(({ label, value, icon: Icon, color }) => (
           <article key={label} className="mobile-card p-3">
