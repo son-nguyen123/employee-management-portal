@@ -48,6 +48,8 @@ export interface WorkSchedule {
   batchKey?: string
   editPreviousStatus?: ScheduleStatus
   editingAt?: Timestamp | Date
+  firstSubmittedAt?: Timestamp | Date
+  editDeadlineAt?: Timestamp | Date
   requiresReapproval?: boolean
   allowSundayResubmissionWithoutPenalty?: boolean
   penaltyId?: string | null

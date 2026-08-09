@@ -29,7 +29,7 @@ export async function createWorkSchedule(scheduleData: Omit<WorkSchedule, 'id' |
 export async function submitWorkSchedules(
   schedules: Array<Omit<WorkSchedule, 'id' | 'createdAt' | 'updatedAt'>>,
   confirmUnderMinimum = false
-): Promise<{ ids: string[]; penalty: number }> {
+): Promise<{ ids: string[]; penalty: number; editDeadlineAt: string }> {
   return callWorkflowApi('submitSchedules', {
     requestId: newWorkflowRequestId(),
     confirmUnderMinimum,
@@ -46,7 +46,7 @@ export async function submitWorkSchedules(
 export async function replaceWorkSchedules(
   scheduleIds: string[],
   schedules: Array<Omit<WorkSchedule, 'id' | 'createdAt' | 'updatedAt'>>
-): Promise<{ ids: string[]; penalty: number }> {
+): Promise<{ ids: string[]; penalty: number; editDeadlineAt: string }> {
   return callWorkflowApi('replaceSchedules', {
     requestId: newWorkflowRequestId(),
     scheduleIds,

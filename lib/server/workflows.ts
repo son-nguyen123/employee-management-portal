@@ -613,16 +613,26 @@ function scheduleDeadline(firstShift: Date): Date {
   )
 }
 
+function scheduleEditDeadline(firstShift: Date, firstSubmittedAt: Date): Date {
+  const registrationDeadline = scheduleDeadline(firstShift)
+  if (firstSubmittedAt.getTime() < registrationDeadline.getTime()) {
+    return new Date(registrationDeadline.getTime() + 24 * 60 * 60 * 1000)
+  }
+
+  const submittedDateKey = vietnamDateKey(firstSubmittedAt)
+  const submittedMidnight = new Date(`${submittedDateKey}T00:00:00+07:00`)
+  return new Date(submittedMidnight.getTime() + 24 * 60 * 60 * 1000)
+}
+
+function firestoreDate(value: unknown): Date | null {
+  if (value instanceof Date) return value
+  if (value instanceof Timestamp) return value.toDate()
+  return null
+}
+
 function leaveNoticeDeadline(firstShift: Date): Date {
   const dateKey = vietnamDateKey(firstShift)
   const deadline = new Date(`${dateKey}T${String(workflowPolicy.leaveNoticeDeadlineHour).padStart(2, '0')}:00:00+07:00`)
-  deadline.setDate(deadline.getDate() - 1)
-  return deadline
-}
-
-function rejectedScheduleResubmissionDeadline(firstShift: Date): Date {
-  const mondayKey = vietnamDateKey(mondayFor(firstShift))
-  const deadline = new Date(`${mondayKey}T00:00:00+07:00`)
   deadline.setDate(deadline.getDate() - 1)
   return deadline
 }
@@ -653,7 +663,9 @@ export async function submitSchedules(actor: RequestActor, raw: unknown) {
   }
 
   const firstDate = schedules.reduce((min, row) => row.date < min ? row.date : min, schedules[0].date)
-  const isLate = new Date() > scheduleDeadline(firstDate)
+  const requestTime = new Date()
+  const isLate = requestTime.getTime() >= scheduleDeadline(firstDate).getTime()
+  const editDeadlineAt = scheduleEditDeadline(firstDate, requestTime)
   const weekStart = mondayFor(firstDate)
   const weekEnd = new Date(weekStart)
   weekEnd.setUTCDate(weekEnd.getUTCDate() + 6)
@@ -714,6 +726,8 @@ export async function submitSchedules(actor: RequestActor, raw: unknown) {
         reviewedBy: 'system:auto-schedule',
         reviewedAt: now,
         penaltyId: shouldPenalize && workflowPolicy.scheduleLatePenalty > 0 ? penaltyRef.id : null,
+        firstSubmittedAt: Timestamp.fromDate(requestTime),
+        editDeadlineAt: Timestamp.fromDate(editDeadlineAt),
         createdAt: now,
         updatedAt: now,
         lockedAt: now,
@@ -731,7 +745,9 @@ export async function submitSchedules(actor: RequestActor, raw: unknown) {
         sourceType: 'scheduleSubmission',
         sourceId: id,
         }),
-        status: 'Pending',
+        status: 'Active',
+        confirmedBy: 'system:auto-schedule',
+        confirmedAt: now,
       })
       transaction.create(notificationRef, warningNotification(
         actor.uid,
@@ -796,6 +812,7 @@ export async function submitSchedules(actor: RequestActor, raw: unknown) {
   return {
     ids: scheduleRefs.map((ref) => ref.id),
     penalty: shouldPenalize ? workflowPolicy.scheduleLatePenalty : 0,
+    editDeadlineAt: editDeadlineAt.toISOString(),
   }
 }
 
@@ -1044,8 +1061,8 @@ export async function replaceSchedules(actor: RequestActor, raw: unknown) {
   const newRefs = schedules.map(() => adminDb.collection('workSchedules').doc())
   const workflow = workflowRef(actor, id)
   const managerIds = await activeManagerIds()
-  const resubmissionPenaltyRef = adminDb.collection('penalties').doc(`schedule-resubmission-${actor.uid}-${id}`)
-  let penalizedRejectedResubmission = false
+  const requestTime = new Date()
+  let resultingEditDeadline = requestTime
 
   await adminDb.runTransaction(async (transaction) => {
     const [workflowSnapshot, ...oldSnapshots] = await Promise.all([
@@ -1069,17 +1086,26 @@ export async function replaceSchedules(actor: RequestActor, raw: unknown) {
       throw new ApiError(400, 'Các ca trong bản điều chỉnh phải thuộc cùng một tuần.')
     }
 
+    const oldWeekStart = mondayFor((oldData[0].date as Timestamp).toDate())
+    if (!newWeeks.has(oldWeekStart.toISOString())) {
+      throw new ApiError(409, 'Bản điều chỉnh phải giữ nguyên tuần làm việc ban đầu.')
+    }
+
+    const firstSubmittedAt = oldData
+      .map((schedule) => firestoreDate(schedule.firstSubmittedAt) || firestoreDate(schedule.createdAt))
+      .filter((value): value is Date => Boolean(value))
+      .sort((left, right) => left.getTime() - right.getTime())[0] || requestTime
+    const editDeadlineAt = scheduleEditDeadline((oldData[0].date as Timestamp).toDate(), firstSubmittedAt)
+    resultingEditDeadline = editDeadlineAt
+    if (requestTime.getTime() >= editDeadlineAt.getTime()) {
+      throw new ApiError(409, 'Bảng lịch đã hết hạn điều chỉnh và hiện đã được khóa.')
+    }
+    const retainedPenaltyId = oldData.map((schedule) => schedule.penaltyId).find(Boolean) || null
+
     const now = FieldValue.serverTimestamp()
     const weekStart = mondayFor(schedules[0].date)
     const batchKey = scheduleBatchKey(actor.uid, weekStart)
     const revisionCount = Math.max(0, ...oldData.map((schedule) => Number(schedule.revisionCount || 0))) + 1
-    const isVietnamSunday = new Intl.DateTimeFormat('en-US', {
-      timeZone: 'Asia/Ho_Chi_Minh',
-      weekday: 'short',
-    }).format(new Date()) === 'Sun'
-    penalizedRejectedResubmission = oldData.some((schedule) => schedule.status === 'Rejected') &&
-      Date.now() >= rejectedScheduleResubmissionDeadline(schedules[0].date).getTime() &&
-      !(isVietnamSunday && oldData.every((schedule) => schedule.allowSundayResubmissionWithoutPenalty === true))
     oldRefs.forEach((ref) => transaction.delete(ref))
     schedules.forEach((schedule, index) => {
       transaction.create(newRefs[index], {
@@ -1099,7 +1125,9 @@ export async function replaceSchedules(actor: RequestActor, raw: unknown) {
           : `Tự động xác nhận · lịch đạt ${revisedShiftCount} ca.`,
         reviewedBy: 'system:auto-schedule',
         reviewedAt: now,
-        penaltyId: penalizedRejectedResubmission && workflowPolicy.scheduleLatePenalty > 0 ? resubmissionPenaltyRef.id : null,
+        penaltyId: retainedPenaltyId,
+        firstSubmittedAt: Timestamp.fromDate(firstSubmittedAt),
+        editDeadlineAt: Timestamp.fromDate(editDeadlineAt),
         createdAt: now,
         updatedAt: now,
         lockedAt: now,
@@ -1110,23 +1138,9 @@ export async function replaceSchedules(actor: RequestActor, raw: unknown) {
       action: 'replaceSchedules',
       targetIds: newRefs.map((ref) => ref.id),
       replacedIds: scheduleIds,
-      penaltyId: penalizedRejectedResubmission ? resubmissionPenaltyRef.id : null,
+      penaltyId: retainedPenaltyId,
       createdAt: now,
     })
-    if (penalizedRejectedResubmission && workflowPolicy.scheduleLatePenalty > 0) {
-      transaction.create(resubmissionPenaltyRef, {
-        ...penaltyData({
-        employeeId: actor.uid,
-        title: 'Gửi lại lịch bị từ chối quá hạn',
-        description: 'Lịch bị từ chối nhưng được gửi lại từ Chủ Nhật hoặc sau khi tuần làm việc đã bắt đầu.',
-        category: 'Late',
-        amount: workflowPolicy.scheduleLatePenalty,
-        sourceType: 'scheduleResubmission',
-        sourceId: newRefs[0].id,
-        }),
-        status: 'Pending',
-      })
-    }
     transaction.set(adminDb.collection('notifications').doc(`schedule-status-${newRefs[0].id}`), {
       employeeId: actor.uid,
       title: 'Lịch tuần đã tự động cập nhật',
@@ -1160,7 +1174,7 @@ export async function replaceSchedules(actor: RequestActor, raw: unknown) {
     sourceId: newRefs[0].id,
   })
 
-  return { ids: newRefs.map((ref) => ref.id), penalty: penalizedRejectedResubmission ? workflowPolicy.scheduleLatePenalty : 0 }
+  return { ids: newRefs.map((ref) => ref.id), penalty: 0, editDeadlineAt: resultingEditDeadline.toISOString() }
 }
 
 export async function setScheduleBatchEditing(actor: RequestActor, raw: unknown) {
@@ -1192,6 +1206,14 @@ export async function setScheduleBatchEditing(actor: RequestActor, raw: unknown)
       if (schedules.some((schedule) => !['Pending', 'Registered', 'Rejected', 'Approved'].includes(schedule.status))) {
         throw new ApiError(409, 'Bảng lịch hiện không thể chuyển sang chế độ chỉnh sửa.')
       }
+      const firstSubmittedAt = schedules
+        .map((schedule) => firestoreDate(schedule.firstSubmittedAt) || firestoreDate(schedule.createdAt))
+        .filter((value): value is Date => Boolean(value))
+        .sort((left, right) => left.getTime() - right.getTime())[0] || new Date()
+      const editDeadlineAt = firestoreDate(schedules[0].editDeadlineAt) || scheduleEditDeadline((schedules[0].date as Timestamp).toDate(), firstSubmittedAt)
+      if (Date.now() >= editDeadlineAt.getTime()) {
+        throw new ApiError(409, 'Bảng lịch đã hết hạn điều chỉnh và hiện đã được khóa.')
+      }
       refs.forEach((ref, index) => transaction.set(ref, {
         status: 'Editing',
         editPreviousStatus: schedules[index].status,
@@ -1199,6 +1221,8 @@ export async function setScheduleBatchEditing(actor: RequestActor, raw: unknown)
         updatedAt: now,
         batchKey,
         lockedAt: null,
+        firstSubmittedAt: Timestamp.fromDate(firstSubmittedAt),
+        editDeadlineAt: Timestamp.fromDate(editDeadlineAt),
       }, { merge: true }))
       resultStatus = 'Editing'
       return
@@ -1213,6 +1237,7 @@ export async function setScheduleBatchEditing(actor: RequestActor, raw: unknown)
       editPreviousStatus: FieldValue.delete(),
       editingAt: FieldValue.delete(),
       updatedAt: now,
+      lockedAt: now,
     }, { merge: true }))
     resultStatus = restoredStatuses[0]
   })

@@ -180,6 +180,10 @@
   }
 }
 
+body.modal-layer-open [data-app-bottom-navigation] {
+  display: none;
+}
+
 @media (min-width: 1024px) {
   .home-hero {
     background-image:

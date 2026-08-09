@@ -9,6 +9,7 @@ import {
   ChevronDown,
   AlertTriangle,
   Clock3,
+  Download,
   Loader2,
   PartyPopper,
   RotateCcw,
@@ -89,6 +90,9 @@ const scheduleDate = (value: WorkSchedule['date']) =>
 const localDateKey = (date: Date) =>
   `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
 
+const valueDate = (value?: WorkSchedule['createdAt']) =>
+  value ? (value instanceof Date ? value : value.toDate()) : null
+
 export default function SchedulePage() {
   const { authUser, employee, isPreviewMode } = useAuth()
   const [managerFacebookUrl, setManagerFacebookUrl] = useState(process.env.NEXT_PUBLIC_MANAGER_FACEBOOK_URL?.trim() || '')
@@ -104,6 +108,7 @@ export default function SchedulePage() {
   const [dutyOverloadCandidate, setDutyOverloadCandidate] = useState<string | null>(null)
   const [submittedIds, setSubmittedIds] = useState<string[]>([])
   const [submittedStatus, setSubmittedStatus] = useState<string | null>(null)
+  const [submittedEditDeadline, setSubmittedEditDeadline] = useState<Date | null>(null)
   const [editing, setEditing] = useState(false)
   const [editingOriginStatus, setEditingOriginStatus] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
@@ -121,6 +126,7 @@ export default function SchedulePage() {
   const [editBaseline, setEditBaseline] = useState<EditBaseline | null>(null)
   const [hasExistingSchedules, setHasExistingSchedules] = useState<boolean | null>(null)
   const [referenceNow] = useState(() => Date.now())
+  const [clockNow, setClockNow] = useState(referenceNow)
   const [portalReady, setPortalReady] = useState(false)
   const [leaveMarks, setLeaveMarks] = useState<Record<string, { fullDay: boolean; shifts: string[]; status: 'Pending' | 'AwaitingEmployeeConsent' | 'Approved' }>>({})
 
@@ -159,6 +165,43 @@ export default function SchedulePage() {
   }, [authUser, isPreviewMode, originalScheduleIds])
 
   useEffect(() => setPortalReady(true), [])
+
+  useEffect(() => {
+    if (!submittedEditDeadline) return
+    const remaining = submittedEditDeadline.getTime() - referenceNow
+    if (remaining <= 0) {
+      setClockNow(submittedEditDeadline.getTime())
+      return
+    }
+    const timeout = window.setTimeout(() => setClockNow(submittedEditDeadline.getTime()), remaining)
+    return () => window.clearTimeout(timeout)
+  }, [referenceNow, submittedEditDeadline])
+
+  const modalLayerOpen = Boolean(confirmationOpen || dutyPickerOpen || dutyOverloadCandidate || customFor)
+  useEffect(() => {
+    if (!modalLayerOpen) return
+    const body = document.body
+    const scrollY = window.scrollY
+    const previous = {
+      position: body.style.position,
+      top: body.style.top,
+      width: body.style.width,
+      overflow: body.style.overflow,
+    }
+    body.classList.add('modal-layer-open')
+    body.style.position = 'fixed'
+    body.style.top = `-${scrollY}px`
+    body.style.width = '100%'
+    body.style.overflow = 'hidden'
+    return () => {
+      body.classList.remove('modal-layer-open')
+      body.style.position = previous.position
+      body.style.top = previous.top
+      body.style.width = previous.width
+      body.style.overflow = previous.overflow
+      window.scrollTo(0, scrollY)
+    }
+  }, [modalLayerOpen])
 
   useEffect(() => {
     const mode = new URLSearchParams(window.location.search).get('mode')
@@ -333,6 +376,7 @@ export default function SchedulePage() {
           })
           setSubmittedIds(available.map((item) => item.id!).filter(Boolean))
           setSubmittedStatus(current[0]?.status || 'Approved')
+          setSubmittedEditDeadline(valueDate(current[0]?.editDeadlineAt))
           if (current[0]?.status === 'Editing') {
             setEditingOriginStatus(current[0].editPreviousStatus || 'Pending')
             setEditing(true)
@@ -351,6 +395,7 @@ export default function SchedulePage() {
           setEditBaseline(null)
           setSubmittedIds([])
           setSubmittedStatus(null)
+          setSubmittedEditDeadline(null)
           setEditingOriginStatus(null)
           setEditing(false)
           const savedDraft = window.sessionStorage.getItem('schedule-draft')
@@ -560,6 +605,7 @@ export default function SchedulePage() {
     try {
       const rows = payload()
       let ids: string[]
+      let editDeadlineAt: Date | null = null
       if (isPreviewMode) {
         if (submittedIds.length) {
           const existing = getPreviewSchedules().filter((item) => !submittedIds.includes(item.id))
@@ -583,15 +629,18 @@ export default function SchedulePage() {
         }))
         addPreviewSchedules(previewRows)
         ids = previewRows.map((item) => item.id)
+        editDeadlineAt = new Date(referenceNow + 24 * 60 * 60 * 1000)
       } else {
         const result = submittedIds.length
           ? await replaceWorkSchedules(submittedIds, rows)
           : await submitWorkSchedules(rows, confirmed)
         ids = result.ids
+        editDeadlineAt = new Date(result.editDeadlineAt)
       }
       window.sessionStorage.removeItem('schedule-draft')
       setSubmittedIds(ids)
       setSubmittedStatus('Approved')
+      setSubmittedEditDeadline(editDeadlineAt)
       setOriginal(cloneSelection(selected))
       setEditBaseline({
         selected: cloneSelection(selected),
@@ -680,7 +729,50 @@ export default function SchedulePage() {
     total + originalShifts.filter((shift) => !selected[dayKey]?.includes(shift)).length, 0)
   const missingDays = days.filter((day) => !selected[day.key]?.length && dutyDay !== day.key)
   const compactMode = submittedIds.length > 0 && !editing && !overtimeMode && !changeMode
-  const canEdit = ['Pending', 'Rejected', 'Approved'].includes(submittedStatus || '')
+  const canEditStatus = ['Pending', 'Rejected', 'Approved'].includes(submittedStatus || '')
+  const editWindowOpen = !submittedEditDeadline || clockNow < submittedEditDeadline.getTime()
+  const canEdit = canEditStatus && editWindowOpen
+
+  const downloadSchedule = () => {
+    const escapeIcs = (value: string) => value.replace(/\\/g, '\\\\').replace(/;/g, '\\;').replace(/,/g, '\\,').replace(/\n/g, '\\n')
+    const stamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\.\d{3}Z$/, 'Z')
+    const events: string[] = []
+    const addEvent = (dayKey: string, start: string, end: string, title: string, suffix: string) => {
+      const date = dayKey.replace(/-/g, '')
+      events.push([
+        'BEGIN:VEVENT',
+        `UID:${authUser?.uid || 'employee'}-${dayKey}-${suffix}@tricandy`,
+        `DTSTAMP:${stamp}`,
+        `DTSTART;TZID=Asia/Ho_Chi_Minh:${date}T${start.replace(':', '')}00`,
+        `DTEND;TZID=Asia/Ho_Chi_Minh:${date}T${end.replace(':', '')}00`,
+        `SUMMARY:${escapeIcs(title)}`,
+        'END:VEVENT',
+      ].join('\r\n'))
+    }
+    Object.entries(selected).forEach(([dayKey, shifts]) => shifts.forEach((shift) => {
+      if (shift === 'Custom') {
+        const custom = customData[dayKey] || { start: '08:00', end: '17:00' }
+        addEvent(dayKey, custom.start, custom.end, 'Ca làm tùy chỉnh', `custom-${custom.start}`)
+        return
+      }
+      const fixed = shift === 'Morning'
+        ? { start: '07:30', end: '11:30', title: 'Ca sáng' }
+        : shift === 'Afternoon'
+          ? { start: '13:00', end: '17:00', title: 'Ca chiều' }
+          : { start: '18:00', end: '22:00', title: 'Ca tối' }
+      addEvent(dayKey, fixed.start, fixed.end, fixed.title, shift.toLowerCase())
+    }))
+    if (dutyDay) addEvent(dutyDay, '17:00', '17:30', 'Lịch trực', 'duty')
+    const calendar = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//Tri Candy//Lich lam//VI', 'CALSCALE:GREGORIAN', ...events, 'END:VCALENDAR', ''].join('\r\n')
+    const url = URL.createObjectURL(new Blob([calendar], { type: 'text/calendar;charset=utf-8' }))
+    const anchor = document.createElement('a')
+    anchor.href = url
+    anchor.download = `lich-lam-${days[0]?.key || localDateKey(new Date())}.ics`
+    document.body.appendChild(anchor)
+    anchor.click()
+    anchor.remove()
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000)
+  }
 
   if (loading) {
     return <main className="grid min-h-screen place-items-center"><Loader2 className="h-7 w-7 animate-spin text-indigo-600" /></main>
@@ -759,15 +851,20 @@ export default function SchedulePage() {
                   <p className="text-xs font-bold uppercase tracking-widest text-indigo-100">Bảng đăng ký tuần</p>
                   <h2 className="mt-1 text-lg font-extrabold">Lịch làm của bạn</h2>
                 </div>
-                <Badge variant={submittedStatus === 'Approved' ? 'success' : submittedStatus === 'Rejected' ? 'destructive' : submittedStatus === 'Cancelled' ? 'outline' : 'warning'}>
-                  {submittedStatus === 'Approved'
-                    ? 'Đã xác nhận'
-                    : submittedStatus === 'Rejected'
-                      ? 'Bị từ chối'
-                      : submittedStatus === 'Cancelled'
-                        ? 'Đã hủy'
-                        : 'Đang đồng bộ'}
-                </Badge>
+                <div className="flex items-center gap-2">
+                  <button type="button" onClick={downloadSchedule} aria-label="Tải lịch về máy" title="Tải lịch về máy" className="grid h-10 w-10 place-items-center rounded-xl bg-white/15 text-white transition hover:bg-white/25 active:scale-95">
+                    <Download className="h-4 w-4" />
+                  </button>
+                  <Badge variant={submittedStatus === 'Approved' ? 'success' : submittedStatus === 'Rejected' ? 'destructive' : submittedStatus === 'Cancelled' ? 'outline' : 'warning'}>
+                    {submittedStatus === 'Approved'
+                      ? 'Đã xác nhận'
+                      : submittedStatus === 'Rejected'
+                        ? 'Bị từ chối'
+                        : submittedStatus === 'Cancelled'
+                          ? 'Đã hủy'
+                          : 'Đang đồng bộ'}
+                  </Badge>
+                </div>
               </div>
             </div>
             <div className="border-b border-slate-100 dark:border-white/10">
@@ -821,6 +918,11 @@ export default function SchedulePage() {
                 <button type="button" onClick={() => void startEditing()} disabled={submitting} className="flex min-h-12 items-center justify-center gap-2 rounded-2xl border border-indigo-200 bg-indigo-50 font-bold text-indigo-700 disabled:opacity-60 dark:border-indigo-500/30 dark:bg-indigo-500/10 dark:text-indigo-200">
                   {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <SlidersHorizontal className="h-4 w-4" />} Điều chỉnh
                 </button>
+              </div>
+            )}
+            {canEditStatus && !editWindowOpen && (
+              <div className="mx-4 mt-3 rounded-2xl border border-slate-200 bg-slate-50 px-3 py-3 text-center text-xs font-bold text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300">
+                Lịch đã qua hạn điều chỉnh và được khóa.
               </div>
             )}
             <div className={`${canEdit ? 'mx-4 mb-4 -mt-1' : 'm-4'} border-t border-slate-100 pt-3 dark:border-white/10`}>
@@ -938,7 +1040,7 @@ export default function SchedulePage() {
         )}
       </div>
 
-      {!compactMode && !customFor && !dutyPickerOpen && portalReady && createPortal(
+      {!compactMode && !modalLayerOpen && portalReady && createPortal(
         <div className="fixed inset-x-0 bottom-[calc(4.5rem+env(safe-area-inset-bottom))] z-[55] border-t border-slate-200/70 bg-white/95 p-3 shadow-[0_-8px_24px_rgba(15,23,42,0.08)] backdrop-blur-xl dark:border-white/10 dark:bg-slate-950/95 md:bottom-0">
           <div className="mx-auto grid max-w-2xl grid-cols-[.8fr_1.2fr] gap-2">
             <button type="button" onClick={overtimeMode || changeMode ? () => { setSelected(cloneSelection(original)); setWeekNote('') } : editing ? () => void cancelEditing() : saveDraft} disabled={submitting} className="flex min-h-12 items-center justify-center gap-2 rounded-2xl border border-slate-200 font-bold disabled:opacity-60 dark:border-slate-700">

@@ -29,6 +29,7 @@ const BottomNav = React.forwardRef<HTMLDivElement, BottomNavProps>(
 
     return createPortal(
       <div
+        data-app-bottom-navigation
         ref={ref}
         className={`fixed inset-x-0 bottom-0 z-[60] [transform:translate3d(0,0,0)] border-t border-slate-200 bg-white pb-[env(safe-area-inset-bottom)] shadow-[0_-6px_20px_rgba(15,23,42,0.07)] [backface-visibility:hidden] dark:border-white/10 dark:bg-slate-950 md:inset-x-auto md:bottom-5 md:left-1/2 md:w-[min(40rem,calc(100vw-3rem))] md:-translate-x-1/2 md:rounded-[1.75rem] md:border md:bg-white/95 md:pb-0 md:shadow-[0_20px_55px_rgba(15,23,42,0.2)] md:backdrop-blur-xl md:dark:bg-slate-950/95 xl:inset-y-0 xl:left-0 xl:w-[15.5rem] xl:translate-x-0 xl:rounded-none xl:border-y-0 xl:border-l-0 xl:border-r xl:bg-white xl:shadow-[12px_0_40px_rgba(15,23,42,0.06)] xl:dark:bg-slate-950 ${className}`}
       >
