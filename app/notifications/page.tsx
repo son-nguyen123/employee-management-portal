@@ -651,6 +651,10 @@ export default function NotificationsPage() {
       } else {
         setPendingItems((current) => current.filter((row) => row.id !== item.id))
       }
+      // Remove the card immediately after the workflow write succeeds. The
+      // Firestore listener will confirm the same state, but should not be the
+      // only thing responsible for clearing an already completed request.
+      setPendingItems((current) => current.filter((row) => row.id !== item.id))
       setSelectedPending(null)
       setRejectIntentId(null)
     } catch {
@@ -898,7 +902,7 @@ export default function NotificationsPage() {
       )}
 
       {approvalConfirmationItem && (
-        <div className="fixed inset-0 z-[85] flex items-end justify-center bg-slate-950/55 p-3 backdrop-blur-sm sm:items-center" onClick={() => !processingId && setApprovalConfirmationItem(null)}>
+        <div className="fixed inset-0 z-[85] flex items-center justify-center bg-slate-950/55 p-3 backdrop-blur-sm" onClick={() => !processingId && setApprovalConfirmationItem(null)}>
           <section role="dialog" aria-modal="true" aria-labelledby="approval-confirmation-title" className="w-full max-w-md rounded-[2rem] bg-white p-5 shadow-2xl dark:bg-slate-900" onClick={(event) => event.stopPropagation()}>
             <div className="flex items-start gap-3">
               <div className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-emerald-50 text-emerald-600 dark:bg-emerald-500/10 dark:text-emerald-200"><Check className="h-5 w-5" /></div>

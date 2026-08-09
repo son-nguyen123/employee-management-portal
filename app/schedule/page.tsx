@@ -1256,9 +1256,8 @@ export default function SchedulePage() {
       )}
 
       {confirmationOpen && (
-        <div className="fixed inset-0 z-[75] flex items-end justify-center bg-slate-950/55 backdrop-blur-sm sm:items-center sm:p-4" onClick={() => setConfirmationOpen(false)}>
-          <section className="w-full max-w-lg rounded-t-[2rem] bg-white p-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] shadow-2xl dark:bg-slate-900 sm:rounded-[2rem]" onClick={(event) => event.stopPropagation()}>
-            <div className="mx-auto mb-4 h-1.5 w-12 rounded-full bg-slate-200 sm:hidden" />
+        <div className="fixed inset-0 z-[75] flex items-center justify-center bg-slate-950/55 p-3 backdrop-blur-sm sm:p-4" onClick={() => setConfirmationOpen(false)}>
+          <section className="max-h-[calc(100dvh-1.5rem)] w-full max-w-lg overflow-y-auto rounded-[2rem] bg-white p-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] shadow-2xl dark:bg-slate-900" onClick={(event) => event.stopPropagation()}>
             <h2 className="text-xl font-black">Xác nhận lịch tuần</h2>
             <p className="mt-2 text-sm leading-6 text-muted-foreground">
               {missingDays.length === 7

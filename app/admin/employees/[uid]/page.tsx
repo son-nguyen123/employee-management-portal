@@ -238,8 +238,8 @@ export default function EmployeeDetailPage() {
         </>}
       </PageContainer>
       {confirmingStatus && employee && (
-        <div className="fixed inset-0 z-[80] flex items-end justify-center bg-slate-950/55 backdrop-blur-sm sm:items-center sm:p-4" onClick={() => !changingStatus && setConfirmingStatus(null)}>
-          <section className="w-full max-w-md rounded-t-[2rem] bg-white p-5 shadow-2xl dark:bg-slate-900 sm:rounded-[2rem]" onClick={(event) => event.stopPropagation()}>
+        <div className="fixed inset-0 z-[80] flex items-center justify-center bg-slate-950/55 p-3 backdrop-blur-sm" onClick={() => !changingStatus && setConfirmingStatus(null)}>
+          <section className="w-full max-w-md rounded-[2rem] bg-white p-5 shadow-2xl dark:bg-slate-900" onClick={(event) => event.stopPropagation()}>
             <div className={`grid h-14 w-14 place-items-center rounded-2xl ${confirmingStatus === 'inactive' ? 'bg-rose-50 text-rose-600' : 'bg-emerald-50 text-emerald-600'}`}>
               {confirmingStatus === 'inactive' ? <ShieldX className="h-6 w-6" /> : <ShieldCheck className="h-6 w-6" />}
             </div>

@@ -251,7 +251,7 @@ export default function DecisionHistoryPage() {
       </PageContainer>
 
       {change && (
-        <div className="fixed inset-0 z-50 flex items-end bg-slate-950/50 p-3 backdrop-blur-sm sm:items-center sm:justify-center" onClick={() => !processing && setChange(null)}>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 p-3 backdrop-blur-sm" onClick={() => !processing && setChange(null)}>
           <section className="w-full max-w-md rounded-[2rem] bg-white p-5 shadow-2xl dark:bg-slate-900" onClick={(event) => event.stopPropagation()}>
             <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-indigo-600">Xác nhận sửa quyết định</p>
             <h2 className="mt-1 text-xl font-black">{change.status === 'Approved' ? 'Đổi thành Duyệt?' : 'Đổi thành Từ chối?'}</h2>

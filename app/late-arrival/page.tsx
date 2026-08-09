@@ -325,7 +325,7 @@ export default function LateArrivalPage() {
             </div>
           </form>
           {submitConfirmationOpen && (
-            <div className="fixed inset-0 z-[80] flex items-end justify-center bg-slate-950/55 p-3 backdrop-blur-sm sm:items-center" onClick={() => setSubmitConfirmationOpen(false)}>
+            <div className="fixed inset-0 z-[80] flex items-center justify-center bg-slate-950/55 p-3 backdrop-blur-sm" onClick={() => setSubmitConfirmationOpen(false)}>
               <section role="dialog" aria-modal="true" aria-labelledby="late-confirmation-title" className="w-full max-w-md rounded-[2rem] bg-white p-5 shadow-2xl dark:bg-slate-900" onClick={(event) => event.stopPropagation()}>
                 <div className="flex items-start gap-3">
                   <div className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-amber-50 text-amber-600 dark:bg-amber-500/10 dark:text-amber-200"><Clock3 className="h-5 w-5" /></div>

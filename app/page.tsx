@@ -32,6 +32,7 @@ import { getAllEmployees } from '@/lib/services/employeeService'
 import { getAllSchedules, getEmployeeSchedules, getSchedulesByDateRange } from '@/lib/services/scheduleService'
 import { getPreviewSchedules } from '@/lib/services/previewWorkflow'
 import { getWeeklyScheduleTarget } from '@/lib/services/managementSettingsService'
+import { subscribeToManagementPendingItems } from '@/lib/services/notificationService'
 import { SkeletonLoader } from '@/components/ui/skeleton-loader'
 import { profileImageUrl } from '@/lib/utils/profileImage'
 
@@ -50,7 +51,7 @@ export default function Page() {
   const { authUser, employee, isLoading, isPreviewMode, logout } = useAuth()
   const role = useUserRole()
   const { theme, setTheme } = useTheme()
-  const [adminStats, setAdminStats] = useState({ confirmed: 0, total: 0, pending: 0 })
+  const [adminStats, setAdminStats] = useState({ confirmed: 0, total: 0, pending: 0, actionable: 0, otherPending: 0 })
   const [schedulePrompt, setSchedulePrompt] = useState<{ visible: boolean; isNew: boolean; href: string }>({ visible: false, isNew: false, href: '/schedule' })
   const [employeeModeOpen, setEmployeeModeOpen] = useState(false)
 
@@ -70,6 +71,14 @@ export default function Page() {
 
   useEffect(() => {
     if (!authUser || (role !== 'admin' && role !== 'manager')) return
+    const unsubscribePending = isPreviewMode ? () => undefined : subscribeToManagementPendingItems((items) => {
+      const visible = items.filter((item) => item.type !== 'account' || role === 'admin')
+      setAdminStats((current) => ({
+        ...current,
+        actionable: visible.length,
+        otherPending: visible.filter((item) => item.type !== 'schedule').length,
+      }))
+    })
     const loadAdminStats = async () => {
       try {
         const now = new Date()
@@ -87,11 +96,13 @@ export default function Page() {
         if (isPreviewMode) {
           const schedules = getPreviewSchedules()
           const employeeIds = new Set(schedules.map((item) => item.employeeId))
-          setAdminStats({
+          setAdminStats((current) => ({
             confirmed: new Set(schedules.filter((item) => item.status === 'Approved' && inRegistrationWeek(new Date(item.date))).map((item) => item.employeeId)).size,
             total: employeeIds.size,
             pending: new Set(schedules.filter((item) => item.underMinimumWarning && inRegistrationWeek(new Date(item.date))).map((item) => item.employeeId)).size,
-          })
+            actionable: current.actionable,
+            otherPending: current.otherPending,
+          }))
           return
         }
         const weekKey = `${nextMonday.getFullYear()}-${String(nextMonday.getMonth() + 1).padStart(2, '0')}-${String(nextMonday.getDate()).padStart(2, '0')}`
@@ -108,16 +119,19 @@ export default function Page() {
         })
         const confirmed = new Set(schedules.filter((item) => item.status !== 'Cancelled' && inRegistrationWeek(item.date)).map((item) => item.employeeId))
         fixedForNextWeek.forEach((employee) => confirmed.add(employee.uid))
-        setAdminStats({
+        setAdminStats((current) => ({
           confirmed: confirmed.size,
           total: target.expectedEmployees || employees.filter((item) => item.status === 'active').length,
           pending: new Set(schedules.filter((item) => item.underMinimumWarning && inRegistrationWeek(item.date)).map((item) => item.employeeId)).size,
-        })
+          actionable: current.actionable,
+          otherPending: current.otherPending,
+        }))
       } catch {
         // The main dashboard still works if management statistics are unavailable.
       }
     }
     loadAdminStats()
+    return unsubscribePending
   }, [authUser, isPreviewMode, role])
 
   useEffect(() => {
@@ -206,7 +220,7 @@ export default function Page() {
   const avatarURL = profileImageUrl(employee?.photoURL || authUser.photoURL)
   const isAdmin = role === 'admin' || role === 'manager'
   const adminFeatures = [
-    { title: 'Điều hành', note: `${adminStats.pending} lịch chờ duyệt · yêu cầu khác`, href: '/admin/dashboard#schedules', icon: ShieldCheck },
+    { title: 'Điều hành', note: `${Math.max(0, adminStats.actionable - adminStats.otherPending)} lịch · ${adminStats.otherPending} yêu cầu khác`, href: '/admin/dashboard#schedules', icon: ShieldCheck },
     { title: 'Nhân sự tuần tới', note: 'Xem người làm theo từng ngày và ca', href: '/admin/next-week', icon: CalendarRange },
     { title: 'Quản lý phạt', note: 'Nhân viên · danh sách khoản phạt', href: '/admin/requests?view=penalties', icon: LayoutDashboard },
     { title: 'Danh sách ứng lương', note: 'Xem yêu cầu và tài khoản nhận tiền', href: '/admin/salary-advances', icon: CircleDollarSign },
@@ -307,7 +321,7 @@ export default function Page() {
                 <p className="text-xs font-bold uppercase tracking-[0.14em] text-indigo-600">Quản trị</p>
                 <h2 className="text-xl font-extrabold tracking-tight">Cần bạn xử lý</h2>
               </div>
-              <span className="rounded-full bg-amber-100 px-3 py-1 text-xs font-bold text-amber-700">{adminStats.pending} mục mới</span>
+                <span className="rounded-full bg-amber-100 px-3 py-1 text-xs font-bold text-amber-700">{adminStats.actionable} mục mới</span>
             </div>
             <div className="grid gap-3 md:grid-cols-2">
               {adminFeatures.map(({ title, note, href, icon: Icon }) => (

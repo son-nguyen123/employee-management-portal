@@ -579,7 +579,7 @@ export default function AdminRequestsPage() {
         </div>
       </PageContainer>
       {rejectingRow && (
-        <div className="fixed inset-0 z-50 flex items-end bg-slate-950/50 p-3 backdrop-blur-sm sm:items-center sm:justify-center" onClick={() => setRejectingRow(null)}>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 p-3 backdrop-blur-sm" onClick={() => setRejectingRow(null)}>
           <div className="w-full max-w-md rounded-[2rem] bg-white p-5 shadow-2xl dark:bg-slate-900" onClick={(event) => event.stopPropagation()}>
             <p className="text-xs font-bold uppercase tracking-wider text-rose-600">Từ chối yêu cầu</p>
             <h2 className="mt-1 text-xl font-black">{rejectingRow.title}</h2>
@@ -593,7 +593,7 @@ export default function AdminRequestsPage() {
         </div>
       )}
       {editingPenalty && (
-        <div className="fixed inset-0 z-50 flex items-end bg-slate-950/50 p-3 backdrop-blur-sm sm:items-center sm:justify-center" onClick={() => setEditingPenalty(null)}>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 p-3 backdrop-blur-sm" onClick={() => setEditingPenalty(null)}>
           <form onSubmit={submitPenaltyChange} className="w-full max-w-md rounded-[2rem] bg-white p-5 shadow-2xl dark:bg-slate-900" onClick={(event) => event.stopPropagation()}>
             <p className="text-xs font-bold uppercase tracking-wider text-rose-600">
               {editingPenalty.mode === 'adjust' ? 'Điều chỉnh khoản phạt' : 'Hủy khoản phạt'}

@@ -602,9 +602,8 @@ export default function AdminDashboardPage() {
       )}
 
       {rejectingBatch && (
-        <div className="fixed inset-0 z-50 flex items-end justify-center bg-slate-950/55 p-0 backdrop-blur-sm sm:items-center sm:p-4" onClick={() => !processingId && setRejectingBatch(null)}>
-          <section className="w-full max-w-lg rounded-t-[2rem] bg-white p-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] shadow-2xl dark:bg-slate-900 sm:rounded-[2rem]" onClick={(event) => event.stopPropagation()}>
-            <div className="mx-auto mb-5 h-1.5 w-12 rounded-full bg-slate-200 dark:bg-slate-700 sm:hidden" />
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/55 p-3 backdrop-blur-sm sm:p-4" onClick={() => !processingId && setRejectingBatch(null)}>
+          <section className="max-h-[calc(100dvh-1.5rem)] w-full max-w-lg overflow-y-auto rounded-[2rem] bg-white p-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] shadow-2xl dark:bg-slate-900" onClick={(event) => event.stopPropagation()}>
             <div className="flex items-start gap-3">
               <div className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-rose-100 text-rose-600 dark:bg-rose-500/15">
                 <MessageSquareText className="h-5 w-5" />
@@ -660,8 +659,8 @@ export default function AdminDashboardPage() {
       )}
 
       {newEmployeeApprovalBatch && (
-        <div className="fixed inset-0 z-[90] flex items-end justify-center bg-slate-950/60 p-0 backdrop-blur-sm sm:items-center sm:p-4" onClick={() => !processingId && setNewEmployeeApprovalBatch(null)}>
-          <section className="w-full max-w-md overflow-hidden rounded-t-[2rem] bg-white shadow-2xl dark:bg-slate-900 sm:rounded-[2rem]" onClick={(event) => event.stopPropagation()}>
+        <div className="fixed inset-0 z-[90] flex items-center justify-center bg-slate-950/60 p-3 backdrop-blur-sm sm:p-4" onClick={() => !processingId && setNewEmployeeApprovalBatch(null)}>
+          <section className="max-h-[calc(100dvh-1.5rem)] w-full max-w-md overflow-y-auto rounded-[2rem] bg-white shadow-2xl dark:bg-slate-900" onClick={(event) => event.stopPropagation()}>
             <div className="bg-gradient-to-br from-fuchsia-600 via-pink-500 to-violet-600 p-6 text-white">
               <div className="mx-auto grid h-16 w-16 place-items-center rounded-3xl bg-white/20 text-3xl">✨</div>
               <h2 className="mt-4 text-center text-2xl font-black">Nhân viên mới vào</h2>
