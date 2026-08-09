@@ -234,6 +234,15 @@ body.modal-layer-open [data-app-bottom-navigation] {
     }
   }
 
+  @keyframes penalty-pulse {
+    0%, 100% {
+      box-shadow: 0 0 0 0 rgba(244, 63, 94, 0.08), 0 10px 24px rgba(15, 23, 42, 0.05);
+    }
+    50% {
+      box-shadow: 0 0 0 4px rgba(244, 63, 94, 0.16), 0 10px 24px rgba(15, 23, 42, 0.05);
+    }
+  }
+
   .animate-shimmer {
     animation: shimmer 2s infinite;
   }
@@ -248,6 +257,16 @@ body.modal-layer-open [data-app-bottom-navigation] {
 
   .animate-bounce-light {
     animation: bounce-light 1s ease-in-out infinite;
+  }
+
+  .animate-penalty-pulse {
+    animation: penalty-pulse 2.4s ease-in-out infinite;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .animate-penalty-pulse {
+      animation: none;
+    }
   }
 
   .glass {

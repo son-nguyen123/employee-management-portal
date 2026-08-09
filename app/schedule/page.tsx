@@ -1024,14 +1024,14 @@ export default function SchedulePage() {
         )}
 
         {compactMode ? (
-          <section className={`schedule-summary overflow-hidden rounded-[1.75rem] border-2 bg-white shadow-lg shadow-indigo-950/5 dark:bg-slate-900 ${schedulePenaltyActive ? 'border-rose-500 ring-2 ring-rose-200 dark:border-rose-400 dark:ring-rose-500/20' : 'border-indigo-100 dark:border-indigo-500/20'}`}>
+          <section className={`schedule-summary overflow-hidden rounded-[1.75rem] border-2 bg-white shadow-lg shadow-indigo-950/5 dark:bg-slate-900 ${schedulePenaltyActive ? 'border-rose-500 animate-penalty-pulse dark:border-rose-400' : 'border-indigo-100 dark:border-indigo-500/20'}`}>
             <div className="bg-gradient-to-r from-indigo-600 to-violet-600 p-4 text-white">
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-xs font-bold uppercase tracking-widest text-indigo-100">Bảng đăng ký tuần</p>
                   <h2 className="mt-1 text-lg font-extrabold">Lịch làm của bạn</h2>
                 </div>
-                <div className="flex flex-col items-end gap-2">
+                <div className="flex items-center gap-2">
                   <button type="button" onClick={() => void downloadSchedule()} disabled={downloading} aria-label="Tải ảnh lịch về máy" title="Tải ảnh lịch về máy" className="grid h-10 w-10 place-items-center rounded-xl bg-white/15 text-white transition hover:bg-white/25 active:scale-95 disabled:cursor-wait disabled:opacity-70">
                     {downloading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
                   </button>
@@ -1044,7 +1044,6 @@ export default function SchedulePage() {
                           ? 'Đã hủy'
                           : 'Đang đồng bộ'}
                   </Badge>
-                  {schedulePenaltyActive && <span className="rounded-full bg-rose-100 px-2.5 py-1 text-[10px] font-black text-rose-700">Bị trừ {submittedPenaltyAmount.toLocaleString('vi-VN')}đ</span>}
                 </div>
               </div>
             </div>
@@ -1059,7 +1058,7 @@ export default function SchedulePage() {
                   </p>
                   <p className="mt-0.5 text-xs text-muted-foreground">
                     {selectedCount
-                      ? `${days.filter((day) => selected[day.key]?.length).length} ngày · ${selectedCount} ca${dutyDay ? ' · có lịch trực' : ''}`
+                      ? <>{days.filter((day) => selected[day.key]?.length).length} ngày · {selectedCount} ca{dutyDay ? ' · có lịch trực' : ''}{schedulePenaltyActive && <span className="ml-1 font-black text-rose-600">· Trừ {submittedPenaltyAmount.toLocaleString('vi-VN')}đ</span>}</>
                       : 'Không đăng ký ca làm nào trong tuần này'}
                   </p>
                 </div>
