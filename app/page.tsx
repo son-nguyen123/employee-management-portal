@@ -35,7 +35,7 @@ import { getUserFeatureSettings, getWeeklyScheduleTarget } from '@/lib/services/
 import { subscribeToManagementPendingItems } from '@/lib/services/notificationService'
 import { SkeletonLoader } from '@/components/ui/skeleton-loader'
 import { profileImageUrl } from '@/lib/utils/profileImage'
-import { defaultUserFeatureSettings, type UserFeatureKey } from '@/lib/models/userFeatureSettings'
+import { defaultUserFeatureSettings, type UserFeatureKey, type UserFeatureSettings } from '@/lib/models/userFeatureSettings'
 
 const staffFeatures = [
   { key: 'schedule', title: 'Đăng ký lịch làm', note: 'Chọn ca cho tuần tiếp theo', href: '/schedule', icon: CalendarDays, tone: 'bg-indigo-600' },
@@ -55,11 +55,11 @@ export default function Page() {
   const [adminStats, setAdminStats] = useState({ confirmed: 0, total: 0, pending: 0, actionable: 0, otherPending: 0 })
   const [schedulePrompt, setSchedulePrompt] = useState<{ visible: boolean; isNew: boolean; href: string }>({ visible: false, isNew: false, href: '/schedule' })
   const [employeeModeOpen, setEmployeeModeOpen] = useState(false)
-  const [enabledUserFeatures, setEnabledUserFeatures] = useState(defaultUserFeatureSettings)
+  const [enabledUserFeatures, setEnabledUserFeatures] = useState<UserFeatureSettings | null>(null)
 
   useEffect(() => {
     if (!authUser || isPreviewMode) {
-      setEnabledUserFeatures({ ...defaultUserFeatureSettings })
+      setEnabledUserFeatures(authUser ? { ...defaultUserFeatureSettings } : null)
       return
     }
     let active = true
@@ -251,8 +251,11 @@ export default function Page() {
   // Management accounts can use the same self-service utilities as staff.
   // Keep schedule registration here as the first card so managers do not
   // need to leave management mode to submit their own availability.
-  const isFeatureEnabled = (key: UserFeatureKey) => enabledUserFeatures[key]
-  const visibleStaffFeatures = staffFeatures.filter(({ key }) => isFeatureEnabled(key as UserFeatureKey))
+  const featuresReady = enabledUserFeatures !== null
+  const isFeatureEnabled = (key: UserFeatureKey) => enabledUserFeatures?.[key] === true
+  const visibleStaffFeatures = featuresReady
+    ? staffFeatures.filter(({ key }) => isFeatureEnabled(key as UserFeatureKey))
+    : []
   const collapsibleStaffFeatures = visibleStaffFeatures
 
   return (
@@ -317,7 +320,7 @@ export default function Page() {
       </section>
 
       <div className="mx-auto max-w-2xl px-3 py-5 sm:px-6 md:max-w-4xl md:py-7 lg:w-[calc(100%-2.5rem)] lg:max-w-6xl lg:px-0 lg:pb-12 lg:pt-7">
-        {schedulePrompt.visible && enabledUserFeatures.schedule && (
+        {schedulePrompt.visible && enabledUserFeatures?.schedule && (
           <Link
             href={schedulePrompt.href}
             className="mb-5 flex items-center gap-3 rounded-3xl border border-indigo-200 bg-indigo-50 p-4 text-indigo-950 shadow-sm transition active:scale-[0.99] dark:border-indigo-500/30 dark:bg-indigo-500/10 dark:text-indigo-100"
@@ -409,15 +412,21 @@ export default function Page() {
               <h2 className="shrink-0 text-lg font-black tracking-tight">Tiện ích của bạn</h2>
               <span className="h-px flex-1 bg-gradient-to-r from-fuchsia-300 via-indigo-200 to-transparent" />
             </div>
-            <div className="grid grid-cols-2 gap-3 md:grid-cols-2 md:gap-4 lg:grid-cols-4">
-              {visibleStaffFeatures.map(({ key, title, note, href, icon: Icon, tone }) => (
-                <Link key={key} href={href} className={`mobile-card group flex min-h-[148px] flex-col p-4 transition duration-200 hover:-translate-y-1 hover:border-indigo-200 hover:shadow-lg hover:shadow-indigo-950/5 active:scale-[0.98] md:min-h-[132px] md:p-5 lg:min-h-[136px] ${key === 'schedule' ? 'col-span-2 min-h-[118px] md:min-h-[132px] md:flex-row md:items-center md:gap-5 md:border-indigo-200/80 md:bg-gradient-to-r md:from-indigo-50 md:via-white md:to-fuchsia-50 dark:md:from-indigo-500/15 dark:md:via-slate-900 dark:md:to-fuchsia-500/10 lg:col-span-2 lg:min-h-[136px]' : ''}`}>
-                  <div className={`grid h-11 w-11 shrink-0 place-items-center rounded-2xl text-white shadow-sm ${tone} ${key === 'schedule' ? 'md:h-14 md:w-14' : ''}`}><Icon className="h-5 w-5" /></div>
-                  <div className={`mt-auto pt-4 ${key === 'schedule' ? 'md:mt-0 md:pt-0' : ''}`}><h3 className="font-extrabold leading-tight lg:text-[15px]">{title}</h3><p className="mt-1 line-clamp-2 text-xs leading-5 text-muted-foreground">{note}</p></div>
-                  <ChevronRight className="ml-auto hidden h-5 w-5 shrink-0 text-slate-300 transition group-hover:translate-x-0.5 group-hover:text-indigo-500 md:block" />
-                </Link>
-              ))}
-            </div>
+            {!featuresReady ? (
+              <div aria-label="Đang tải tiện ích" className="grid grid-cols-2 gap-3 md:grid-cols-2 md:gap-4 lg:grid-cols-4">
+                {Array.from({ length: 7 }).map((_, index) => <div key={index} className={`mobile-card min-h-[148px] animate-pulse bg-slate-100/80 p-4 dark:bg-slate-800/60 ${index === 0 ? 'col-span-2 min-h-[118px] md:min-h-[132px] lg:col-span-2' : ''}`} />)}
+              </div>
+            ) : (
+              <div className="grid grid-cols-2 gap-3 md:grid-cols-2 md:gap-4 lg:grid-cols-4">
+                {visibleStaffFeatures.map(({ key, title, note, href, icon: Icon, tone }) => (
+                  <Link key={key} href={href} className={`mobile-card group flex min-h-[148px] flex-col p-4 transition duration-200 hover:-translate-y-1 hover:border-indigo-200 hover:shadow-lg hover:shadow-indigo-950/5 active:scale-[0.98] md:min-h-[132px] md:p-5 lg:min-h-[136px] ${key === 'schedule' ? 'col-span-2 min-h-[118px] md:min-h-[132px] md:flex-row md:items-center md:gap-5 md:border-indigo-200/80 md:bg-gradient-to-r md:from-indigo-50 md:via-white md:to-fuchsia-50 dark:md:from-indigo-500/15 dark:md:via-slate-900 dark:md:to-fuchsia-500/10 lg:col-span-2 lg:min-h-[136px]' : ''}`}>
+                    <div className={`grid h-11 w-11 shrink-0 place-items-center rounded-2xl text-white shadow-sm ${tone} ${key === 'schedule' ? 'md:h-14 md:w-14' : ''}`}><Icon className="h-5 w-5" /></div>
+                    <div className={`mt-auto pt-4 ${key === 'schedule' ? 'md:mt-0 md:pt-0' : ''}`}><h3 className="font-extrabold leading-tight lg:text-[15px]">{title}</h3><p className="mt-1 line-clamp-2 text-xs leading-5 text-muted-foreground">{note}</p></div>
+                    <ChevronRight className="ml-auto hidden h-5 w-5 shrink-0 text-slate-300 transition group-hover:translate-x-0.5 group-hover:text-indigo-500 md:block" />
+                  </Link>
+                ))}
+              </div>
+            )}
           </section>
         )}
       </div>

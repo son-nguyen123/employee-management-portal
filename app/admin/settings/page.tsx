@@ -99,8 +99,10 @@ export default function AdminSettingsPage() {
 
   const toggleUserFeature = async (key: UserFeatureKey) => {
     const enabled = !userFeatures[key]
+    const previous = userFeatures
     setUserFeatureSaving(key)
     setMessage('')
+    setUserFeatures((current) => ({ ...current, [key]: enabled }))
     try {
       const next = isPreviewMode
         ? { ...userFeatures, [key]: enabled }
@@ -108,6 +110,7 @@ export default function AdminSettingsPage() {
       setUserFeatures(next)
       setMessage(enabled ? 'Đã bật lại tính năng cho user.' : 'Đã tắt tính năng cho user.')
     } catch (error) {
+      setUserFeatures(previous)
       setMessage(error instanceof Error ? error.message : 'Chưa thể lưu trạng thái tính năng.')
     } finally {
       setUserFeatureSaving(null)
