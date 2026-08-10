@@ -31,7 +31,7 @@ import { useAuth, useUserRole } from '@/lib/hooks/useAuth'
 import { getAllEmployees } from '@/lib/services/employeeService'
 import { getAllSchedules, getEmployeeSchedules, getSchedulesByDateRange } from '@/lib/services/scheduleService'
 import { getPreviewSchedules } from '@/lib/services/previewWorkflow'
-import { getUserFeatureSettings, getWeeklyScheduleTarget } from '@/lib/services/managementSettingsService'
+import { getCachedUserFeatureSettings, getUserFeatureSettings, getWeeklyScheduleTarget } from '@/lib/services/managementSettingsService'
 import { subscribeToManagementPendingItems } from '@/lib/services/notificationService'
 import { SkeletonLoader } from '@/components/ui/skeleton-loader'
 import { profileImageUrl } from '@/lib/utils/profileImage'
@@ -55,7 +55,7 @@ export default function Page() {
   const [adminStats, setAdminStats] = useState({ confirmed: 0, total: 0, pending: 0, actionable: 0, otherPending: 0 })
   const [schedulePrompt, setSchedulePrompt] = useState<{ visible: boolean; isNew: boolean; href: string }>({ visible: false, isNew: false, href: '/schedule' })
   const [employeeModeOpen, setEmployeeModeOpen] = useState(false)
-  const [enabledUserFeatures, setEnabledUserFeatures] = useState<UserFeatureSettings | null>(null)
+  const [enabledUserFeatures, setEnabledUserFeatures] = useState<UserFeatureSettings | null>(() => getCachedUserFeatureSettings())
 
   useEffect(() => {
     if (!authUser || isPreviewMode) {
@@ -63,7 +63,7 @@ export default function Page() {
       return
     }
     let active = true
-    void getUserFeatureSettings()
+    void getUserFeatureSettings({ force: true })
       .then((settings) => {
         if (active) setEnabledUserFeatures(settings)
       })
@@ -251,8 +251,11 @@ export default function Page() {
   // Management accounts can use the same self-service utilities as staff.
   // Keep schedule registration here as the first card so managers do not
   // need to leave management mode to submit their own availability.
-  const featuresReady = enabledUserFeatures !== null
-  const isFeatureEnabled = (key: UserFeatureKey) => enabledUserFeatures?.[key] === true
+  const featureSettings = authUser && !isPreviewMode
+    ? (enabledUserFeatures || getCachedUserFeatureSettings())
+    : null
+  const featuresReady = featureSettings !== null
+  const isFeatureEnabled = (key: UserFeatureKey) => featureSettings?.[key] === true
   const visibleStaffFeatures = featuresReady
     ? staffFeatures.filter(({ key }) => isFeatureEnabled(key as UserFeatureKey))
     : []
@@ -320,7 +323,7 @@ export default function Page() {
       </section>
 
       <div className="mx-auto max-w-2xl px-3 py-5 sm:px-6 md:max-w-4xl md:py-7 lg:w-[calc(100%-2.5rem)] lg:max-w-6xl lg:px-0 lg:pb-12 lg:pt-7">
-        {schedulePrompt.visible && enabledUserFeatures?.schedule && (
+        {schedulePrompt.visible && featureSettings?.schedule && (
           <Link
             href={schedulePrompt.href}
             className="mb-5 flex items-center gap-3 rounded-3xl border border-indigo-200 bg-indigo-50 p-4 text-indigo-950 shadow-sm transition active:scale-[0.99] dark:border-indigo-500/30 dark:bg-indigo-500/10 dark:text-indigo-100"

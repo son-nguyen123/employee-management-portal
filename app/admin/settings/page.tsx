@@ -55,7 +55,7 @@ export default function AdminSettingsPage() {
       setLoading(false)
       return
     }
-    void Promise.all([getAuditReceiptSettings(), getAccountRegistrationWindow(), getUserFeatureSettings()])
+      void Promise.all([getAuditReceiptSettings(), getAccountRegistrationWindow(), getUserFeatureSettings({ force: true })])
       .then(([receipt, accountWindow, features]) => { setSettings(receipt); setRegistration(accountWindow); setUserFeatures(features) })
       .catch(() => setMessage('Chưa tải được cài đặt email biên nhận.'))
       .finally(() => setLoading(false))

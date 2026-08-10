@@ -42,6 +42,20 @@ export interface AccountRegistrationWindow {
   closesAt: string | null
 }
 
+const USER_FEATURE_CACHE_TTL_MS = 60_000
+let userFeatureSettingsCache: { value: UserFeatureSettings; cachedAt: number } | null = null
+let userFeatureSettingsRequest: Promise<UserFeatureSettings> | null = null
+
+const cloneUserFeatureSettings = (value: UserFeatureSettings): UserFeatureSettings => ({ ...value })
+
+/**
+ * Returns the last known settings without waiting for the network. The home
+ * screen uses this to render immediately, then revalidates in the background.
+ */
+export function getCachedUserFeatureSettings(): UserFeatureSettings | null {
+  return userFeatureSettingsCache ? cloneUserFeatureSettings(userFeatureSettingsCache.value) : null
+}
+
 export function getAccountRegistrationWindow(): Promise<AccountRegistrationWindow> {
   return callWorkflowApi('getAccountRegistrationWindow', {})
 }
@@ -50,10 +64,27 @@ export function updateAccountRegistrationWindow(open: boolean): Promise<AccountR
   return callWorkflowApi('updateAccountRegistrationWindow', { open })
 }
 
-export function getUserFeatureSettings(): Promise<UserFeatureSettings> {
-  return callWorkflowApi('getUserFeatureSettings', {})
+export function getUserFeatureSettings(options: { force?: boolean } = {}): Promise<UserFeatureSettings> {
+  if (!options.force && userFeatureSettingsCache && Date.now() - userFeatureSettingsCache.cachedAt < USER_FEATURE_CACHE_TTL_MS) {
+    return Promise.resolve(cloneUserFeatureSettings(userFeatureSettingsCache.value))
+  }
+  if (userFeatureSettingsRequest) return userFeatureSettingsRequest.then(cloneUserFeatureSettings)
+
+  const request = callWorkflowApi<UserFeatureSettings>('getUserFeatureSettings', {}).then((settings) => {
+    userFeatureSettingsCache = { value: cloneUserFeatureSettings(settings), cachedAt: Date.now() }
+    return cloneUserFeatureSettings(settings)
+  })
+  userFeatureSettingsRequest = request
+  request.then(
+    () => { if (userFeatureSettingsRequest === request) userFeatureSettingsRequest = null },
+    () => { if (userFeatureSettingsRequest === request) userFeatureSettingsRequest = null },
+  )
+  return request.then(cloneUserFeatureSettings)
 }
 
 export function updateUserFeatureSetting(key: UserFeatureKey, enabled: boolean): Promise<UserFeatureSettings> {
-  return callWorkflowApi('updateUserFeatureSetting', { key, enabled })
+  return callWorkflowApi<UserFeatureSettings>('updateUserFeatureSetting', { key, enabled }).then((settings) => {
+    userFeatureSettingsCache = { value: cloneUserFeatureSettings(settings), cachedAt: Date.now() }
+    return cloneUserFeatureSettings(settings)
+  })
 }
