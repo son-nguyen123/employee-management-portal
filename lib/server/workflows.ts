@@ -2667,7 +2667,9 @@ export async function reviewRequest(actor: RequestActor, raw: unknown) {
           amount: 0,
           status: 'Cancelled',
           decisionStatus: status,
-          cancellationReason: requiresEmployeeConsent ? 'Tạm dừng chờ nhân viên đồng ý mức trừ mới.' : 'Quyết định hiện tại không phát sinh khấu trừ.',
+          ...(requiresEmployeeConsent
+            ? { cancellationReason: FieldValue.delete() }
+            : { cancellationReason: 'Quyết định hiện tại không phát sinh khấu trừ.' }),
           cancelledBy: actor.uid,
           cancelledAt: now,
           updatedAt: now,
@@ -2850,18 +2852,20 @@ export async function reviewRequest(actor: RequestActor, raw: unknown) {
       createdAt: now,
       updatedAt: now,
     })
-    managerIds.forEach((managerId) => {
-      transaction.set(
-        managerNotificationRef(managerId, `${resource}-${id}`),
-        managerNotification(
-          managerId,
-          requiresEmployeeConsent ? `${requestLabel} đang chờ nhân viên đồng ý mức trừ` : `${requestLabel} đã ${status === 'Approved' ? 'được duyệt' : 'bị từ chối'}`,
-          `Nhân viên: ${reviewedEmployee}.`,
-          'info',
-          true
+    if (!requiresEmployeeConsent) {
+      managerIds.forEach((managerId) => {
+        transaction.set(
+          managerNotificationRef(managerId, `${resource}-${id}`),
+          managerNotification(
+            managerId,
+            `${requestLabel} đã ${status === 'Approved' ? 'được duyệt' : 'bị từ chối'}`,
+            `Nhân viên: ${reviewedEmployee}.`,
+            'info',
+            true
+          )
         )
-      )
-    })
+      })
+    }
   })
 
   const push = await sendEmployeePush({

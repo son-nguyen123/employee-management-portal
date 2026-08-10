@@ -177,7 +177,7 @@ export default function SalaryAdvancePage() {
         {message && <div className={`mb-6 flex items-start gap-2 rounded-2xl border p-4 ${message.type === 'success' ? 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-900/20 dark:text-emerald-300' : 'border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-800 dark:bg-rose-900/20 dark:text-rose-300'}`}><AlertCircle className="mt-0.5 h-4 w-4 shrink-0" /><p className="text-sm font-semibold">{message.text}</p></div>}
 
         {(!hasPendingRequest || editingId) && <Card variant="elevated" className="mb-8 rounded-3xl border-sky-100 p-4 shadow-[0_14px_35px_-28px_rgba(14,116,144,0.8)] dark:border-sky-500/20 sm:p-6">
-          <div className="mb-5 flex items-center gap-3"><RequestIdentityAvatar name={employeeName} photoURL={employee?.photoURL} icon={CircleDollarSign} iconColor="bg-sky-500" /><div><p className="text-xs font-black uppercase tracking-wider text-sky-600">Yêu cầu mới</p><h2 className="text-xl font-black">Tạo yêu cầu ứng lương</h2><p className="text-xs font-semibold text-muted-foreground">Mã nhân viên · {employeeCode}</p></div></div>
+          <div className="mb-5 flex items-center gap-3"><RequestIdentityAvatar name={employeeName} photoURL={employee?.photoURL} icon={CircleDollarSign} iconColor="bg-sky-500" /><div><h2 className="text-xl font-black">Tạo yêu cầu ứng lương</h2><p className="text-xs font-semibold text-muted-foreground">Mã nhân viên · {employeeCode}</p></div></div>
           <form onSubmit={handleSubmit} className="space-y-5">
             <label className="block text-sm font-bold">Số tiền muốn ứng
               <div className="mt-2"><input type="text" inputMode="numeric" value={formData.amount} onChange={(event) => setFormData({ ...formData, amount: formatVietnameseCurrency(event.target.value) })} placeholder="Ví dụ: 2.000.000" className="mobile-field" disabled={submitting} /></div>
@@ -192,7 +192,7 @@ export default function SalaryAdvancePage() {
         {previousAdvances.length > 0 && <div>
           <div className="mb-3 flex items-center gap-3"><span className="h-px flex-1 bg-slate-200 dark:bg-slate-800" /><span className="text-xs font-black uppercase tracking-[0.16em] text-slate-400">Lịch sử ứng lương</span><span className="h-px flex-1 bg-slate-200 dark:bg-slate-800" /></div>
           <section className="space-y-3">
-            <div className="flex items-center justify-between gap-3"><div><p className="text-xs font-black uppercase tracking-wider text-sky-600">Cần chờ quản lý</p><h2 className="text-xl font-black">Chưa xử lý</h2></div><span className="rounded-full bg-sky-100 px-3 py-1 text-xs font-black text-sky-700 dark:bg-sky-500/10 dark:text-sky-300">{pendingAdvances.length}</span></div>
+            <div className="flex items-center justify-between gap-3"><h2 className="text-lg font-black text-sky-700 dark:text-sky-300">Chờ quản lý duyệt</h2><span className="rounded-full bg-sky-100 px-3 py-1 text-xs font-black text-sky-700 dark:bg-sky-500/10 dark:text-sky-300">{pendingAdvances.length}</span></div>
             {pendingAdvances.map((advance) => (
               <article key={advance.id} className="overflow-hidden rounded-3xl border border-sky-100 bg-white p-4 shadow-sm dark:border-sky-500/20 dark:bg-slate-900">
                 <div className="flex items-start gap-3"><RequestIdentityAvatar name={employeeName} photoURL={employee?.photoURL} icon={CircleDollarSign} iconColor="bg-sky-500" /><div className="min-w-0 flex-1"><h3 className="truncate font-black">{employeeName}</h3><p className="text-xs font-bold text-slate-500 dark:text-slate-400">Mã nhân viên · {employeeCode}</p></div><span className={`rounded-full px-2.5 py-1 text-[11px] font-black ring-1 ${statusClasses(advance.status)}`}>{statusLabel(advance.status)}</span></div>
@@ -200,7 +200,7 @@ export default function SalaryAdvancePage() {
                 <div className="mt-3 grid grid-cols-2 gap-2"><button type="button" onClick={() => editAdvance(advance)} className="flex min-h-11 items-center justify-center gap-2 rounded-2xl bg-indigo-50 text-xs font-black text-indigo-700 dark:bg-indigo-500/10 dark:text-indigo-200"><Pencil className="h-4 w-4" /> Điều chỉnh</button><button type="button" onClick={() => void cancelAdvance(advance.id)} className="flex min-h-11 items-center justify-center gap-2 rounded-2xl bg-rose-50 text-xs font-black text-rose-700 dark:bg-rose-500/10 dark:text-rose-200"><Trash2 className="h-4 w-4" /> Hủy yêu cầu</button></div>
               </article>
             ))}
-            {!pendingAdvances.length && <div className="rounded-3xl border border-dashed border-slate-300 p-6 text-center text-sm font-semibold text-slate-500 dark:border-slate-700">Không có yêu cầu đang chờ.</div>}
+            {!pendingAdvances.length && <div className="rounded-3xl border border-dashed border-slate-300 p-6 text-center text-sm font-semibold text-slate-500 dark:border-slate-700">Chưa có yêu cầu chờ duyệt.</div>}
           </section>
 
           <section className="mt-8"><div className="mb-3 flex items-center gap-3"><span className="h-px flex-1 bg-slate-200 dark:bg-slate-800" /><span className="text-xs font-black uppercase tracking-[0.16em] text-slate-400">Đã xử lý · {processedAdvances.length}</span><span className="h-px flex-1 bg-slate-200 dark:bg-slate-800" /></div><div className="space-y-2.5">

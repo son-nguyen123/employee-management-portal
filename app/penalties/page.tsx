@@ -100,9 +100,6 @@ export default function PenaltiesPage() {
                   {penalty.adjustmentReason && penalty.status !== 'Cancelled' && (
                     <p className="mt-3 rounded-xl bg-indigo-50 p-3 text-xs font-semibold text-indigo-800">Điều chỉnh: {penalty.adjustmentReason}</p>
                   )}
-                  {penalty.cancellationReason && (
-                    <p className="mt-3 rounded-xl bg-slate-100 p-3 text-xs font-semibold text-slate-700">Lý do hủy: {penalty.cancellationReason}</p>
-                  )}
                   <div className="mt-4 flex flex-wrap items-center gap-2 border-t border-slate-100 pt-3 text-xs dark:border-white/10">
                     <span className="flex items-center gap-1 text-muted-foreground">
                       <CalendarDays className="h-3.5 w-3.5" /> {rawDate.toLocaleDateString('vi-VN')}
