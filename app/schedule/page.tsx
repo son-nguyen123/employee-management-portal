@@ -802,13 +802,16 @@ export default function SchedulePage() {
     if (downloading) return
     setDownloading(true)
     try {
+      // Keep the exported bitmap compact enough for Messenger's preview width.
+      // A very wide canvas makes Messenger scale the whole schedule down,
+      // which makes otherwise readable shift labels look tiny.
       const scale = 2
-      const width = 900
+      const width = 640
       const visibleDays = days.filter((day) => selected[day.key]?.length || dutyDay === day.key)
-      const rowHeight = 132
-      const headerHeight = 170
-      const summaryHeight = 118
-      const footerHeight = 34
+      const rowHeight = 116
+      const headerHeight = 150
+      const summaryHeight = 110
+      const footerHeight = 48
       const height = Math.max(500, headerHeight + summaryHeight + Math.max(1, visibleDays.length) * rowHeight + footerHeight)
       const canvas = document.createElement('canvas')
       canvas.width = width * scale
@@ -856,46 +859,46 @@ export default function SchedulePage() {
       headerGradient.addColorStop(1, '#7c3aed')
       roundedRect(18, 18, width - 36, headerHeight, 34, headerGradient)
       context.fillStyle = headerGradient
-      context.fillRect(18, 52, width - 36, headerHeight - 34)
-      text('BẢNG ĐĂNG KÝ TUẦN', 54, 58, '700 20px -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif', '#c7d2fe')
-      text('Lịch làm của bạn', 54, 103, '800 34px -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif', '#ffffff')
+      context.fillRect(18, 52, width - 36, headerHeight - 52)
+      text('BẢNG ĐĂNG KÝ TUẦN', 44, 48, '700 16px -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif', '#c7d2fe')
+      text('Lịch làm của bạn', 44, 86, '800 30px -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif', '#ffffff')
       const statusText = submittedStatus === 'Approved' ? 'Đã xác nhận' : submittedStatus === 'Rejected' ? 'Bị từ chối' : submittedStatus === 'Cancelled' ? 'Đã hủy' : 'Đang đồng bộ'
-      context.font = '700 20px -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif'
-      const statusWidth = Math.max(150, context.measureText(statusText).width + 42)
-      roundedRect(width - statusWidth - 50, 67, statusWidth, 52, 26, '#d1fae5')
-      text(statusText, width - statusWidth / 2 - 50, 93, '700 20px -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif', '#047857', 'center')
+      context.font = '700 18px -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif'
+      const statusWidth = Math.max(132, context.measureText(statusText).width + 34)
+      roundedRect(width - statusWidth - 38, 50, statusWidth, 44, 22, '#d1fae5')
+      text(statusText, width - statusWidth / 2 - 38, 72, '700 18px -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif', '#047857', 'center')
       if (schedulePenaltyActive) {
         const penaltyText = `Trừ ${effectivePenaltyAmount.toLocaleString('vi-VN')}đ`
-        context.font = '800 17px -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif'
-        const penaltyWidth = Math.max(138, context.measureText(penaltyText).width + 34)
-        roundedRect(width - penaltyWidth - 50, 126, penaltyWidth, 32, 16, '#ffe4e6')
-        text(penaltyText, width - penaltyWidth / 2 - 50, 142, '800 17px -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif', '#be123c', 'center')
+        context.font = '800 15px -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif'
+        const penaltyWidth = Math.max(116, context.measureText(penaltyText).width + 28)
+        roundedRect(width - penaltyWidth - 38, 102, penaltyWidth, 28, 14, '#ffe4e6')
+        text(penaltyText, width - penaltyWidth / 2 - 38, 116, '800 15px -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif', '#be123c', 'center')
       }
 
-      const summaryY = headerHeight + 18
-      roundedRect(42, summaryY, width - 84, 92, 20, '#f8fafc')
+      const summaryY = headerHeight + 16
+      roundedRect(32, summaryY, width - 64, 86, 18, '#f8fafc')
       context.beginPath()
-      context.arc(80, summaryY + 46, 25, 0, Math.PI * 2)
+      context.arc(62, summaryY + 43, 23, 0, Math.PI * 2)
       context.fillStyle = '#e0e7ff'
       context.fill()
-      text('▦', 80, summaryY + 47, '700 30px sans-serif', '#4f46e5', 'center')
-      text(selectedCount ? 'Các ngày đã đăng ký' : 'Nghỉ cả tuần', 122, summaryY + 35, '800 22px -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif', '#0f172a')
-      text(selectedCount ? `${visibleDays.length} ngày · ${selectedCount} ca${dutyDay ? ' · có lịch trực' : ''}` : 'Không đăng ký ca nào trong tuần này', 122, summaryY + 66, '500 17px -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif', '#64748b')
+      text('▦', 62, summaryY + 44, '700 27px sans-serif', '#4f46e5', 'center')
+      text(selectedCount ? 'Các ngày đã đăng ký' : 'Nghỉ cả tuần', 98, summaryY + 33, '800 20px -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif', '#0f172a')
+      text(selectedCount ? `${visibleDays.length} ngày · ${selectedCount} ca${dutyDay ? ' · có lịch trực' : ''}` : 'Không đăng ký ca nào trong tuần này', 98, summaryY + 61, '500 15px -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif', '#64748b')
 
       let rowY = summaryY + summaryHeight
       if (!visibleDays.length) {
-        roundedRect(42, rowY + 12, width - 84, rowHeight - 24, 18, '#f8fafc')
-        text('Tuần này bạn không đăng ký ca nào', width / 2, rowY + 52, '700 19px -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif', '#334155', 'center')
+        roundedRect(32, rowY + 10, width - 64, rowHeight - 20, 16, '#f8fafc')
+        text('Tuần này bạn không đăng ký ca nào', width / 2, rowY + 48, '700 18px -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif', '#334155', 'center')
       } else {
         visibleDays.forEach((day) => {
           const dayShifts = selected[day.key] || []
           const dayLabel = `${day.name} (${day.date.getDate()}/${day.date.getMonth() + 1})`
           context.beginPath()
-          context.arc(82, rowY + rowHeight / 2, 29, 0, Math.PI * 2)
+          context.arc(62, rowY + rowHeight / 2, 25, 0, Math.PI * 2)
           context.fillStyle = '#eef2ff'
           context.fill()
-          text(day.shortName, 82, rowY + rowHeight / 2, '800 17px -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif', '#4f46e5', 'center')
-          text(dayLabel, 132, rowY + 42, '800 22px -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif', '#0f172a')
+          text(day.shortName, 62, rowY + rowHeight / 2, '800 16px -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif', '#4f46e5', 'center')
+          text(dayLabel, 108, rowY + 38, '800 25px -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif', '#0f172a')
           const labels = orderedShifts(dayShifts).map((shift) => ({
             label: shift === 'Custom'
               ? `tùy chỉnh ${customData[day.key]?.start || '08:00'}–${customData[day.key]?.end || '17:00'}`
@@ -904,33 +907,33 @@ export default function SchedulePage() {
           }))
           if (dutyDay === day.key) labels.push({ label: 'trực 17:00–17:30', color: '#e11d48' })
           if (!labels.length) labels.push({ label: 'Không đăng ký ca', color: '#64748b' })
-          let labelX = 132
-          let labelY = rowY + 82
+          let labelX = 108
+          let labelY = rowY + 76
           labels.forEach((item, index) => {
-            context.font = '600 18px -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif'
+            context.font = '600 21px -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif'
             const separator = index > 0 ? ' · ' : ''
             const segmentWidth = context.measureText(`${separator}${item.label}`).width
-            if (labelX > 132 && labelX + segmentWidth > width - 54) {
-              labelX = 132
-              labelY += 27
+            if (labelX > 108 && labelX + segmentWidth > width - 34) {
+              labelX = 108
+              labelY += 25
             }
             if (separator) {
-              text(separator, labelX, labelY, '500 18px -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif', '#cbd5e1')
+              text(separator, labelX, labelY, '500 21px -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif', '#cbd5e1')
               labelX += context.measureText(separator).width
             }
-            text(item.label, labelX, labelY, '600 18px -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif', item.color)
+            text(item.label, labelX, labelY, '600 21px -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif', item.color)
             labelX += context.measureText(item.label).width
           })
           context.strokeStyle = '#e2e8f0'
           context.lineWidth = 1
           context.beginPath()
-          context.moveTo(42, rowY + rowHeight - 1)
-          context.lineTo(width - 42, rowY + rowHeight - 1)
+          context.moveTo(32, rowY + rowHeight - 1)
+          context.lineTo(width - 32, rowY + rowHeight - 1)
           context.stroke()
           rowY += rowHeight
         })
       }
-      text(`Tri Candy · ${days[0]?.key || localDateKey(new Date())}`, 42, height - 34, '500 14px -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif', '#94a3b8')
+      text(`Tri Candy · ${days[0]?.key || localDateKey(new Date())}`, 32, height - 24, '500 12px -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif', '#94a3b8')
 
       const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/png'))
       if (!blob) throw new Error('Chưa thể tạo ảnh lịch.')
