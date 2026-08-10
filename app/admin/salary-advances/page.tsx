@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
-import { CircleDollarSign, CreditCard, Download, Landmark, Loader2, UserRound } from 'lucide-react'
+import { Check, CircleDollarSign, Copy, CreditCard, Download, Landmark, Loader2, UserRound } from 'lucide-react'
 import { Header } from '@/components/layout/header'
 import { PageContainer } from '@/components/layout/page-container'
 import { Badge } from '@/components/ui/badge'
@@ -20,10 +20,11 @@ export default function AdminSalaryAdvancesPage() {
   const [filter, setFilter] = useState<'all' | 'Pending' | 'Approved' | 'Rejected'>('all')
   const [message, setMessage] = useState('')
   const [exporting, setExporting] = useState(false)
+  const [copiedAccount, setCopiedAccount] = useState<string | null>(null)
 
-  const exportWord = async () => {
+  const exportExcel = async () => {
     if (isPreviewMode) {
-      setMessage('Chế độ xem thử không tạo file Word.')
+      setMessage('Chế độ xem thử không tạo file Excel.')
       return
     }
     setExporting(true)
@@ -34,18 +35,28 @@ export default function AdminSalaryAdvancesPage() {
       const response = await fetch('/api/exports/salary-advances', {
         headers: { authorization: `Bearer ${token}` },
       })
-      if (!response.ok) throw new Error('Chưa thể xuất lịch sử ứng lương.')
+      if (!response.ok) throw new Error('Chưa thể xuất file Excel ứng lương.')
       const blob = await response.blob()
       const url = URL.createObjectURL(blob)
       const anchor = document.createElement('a')
       anchor.href = url
-      anchor.download = `lich-su-ung-luong-${new Date().toISOString().slice(0, 10)}.docx`
+      anchor.download = `lich-su-ung-luong-${new Date().toISOString().slice(0, 10)}.xlsx`
       anchor.click()
       URL.revokeObjectURL(url)
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : 'Chưa thể xuất file Word.')
+      setMessage(error instanceof Error ? error.message : 'Chưa thể xuất file Excel.')
     } finally {
       setExporting(false)
+    }
+  }
+
+  const copyAccountNumber = async (requestId: string, accountNumber: string) => {
+    try {
+      await navigator.clipboard.writeText(accountNumber)
+      setCopiedAccount(requestId)
+      window.setTimeout(() => setCopiedAccount((current) => current === requestId ? null : current), 1800)
+    } catch {
+      setMessage('Không thể copy số tài khoản trên thiết bị này.')
     }
   }
 
@@ -84,9 +95,9 @@ export default function AdminSalaryAdvancesPage() {
     <main className="min-h-screen pb-8">
       <Header title="Danh sách ứng lương" subtitle="Yêu cầu và tài khoản nhận tiền của nhân viên" />
       <PageContainer maxWidth="2xl">
-        <button type="button" onClick={() => void exportWord()} disabled={exporting} className="mb-4 flex min-h-12 w-full items-center justify-center gap-2 rounded-2xl bg-slate-950 px-4 text-sm font-bold text-white disabled:opacity-60 dark:bg-white dark:text-slate-950">
+        <button type="button" onClick={() => void exportExcel()} disabled={exporting} className="mb-4 flex min-h-12 w-full items-center justify-center gap-2 rounded-2xl bg-slate-950 px-4 text-sm font-bold text-white disabled:opacity-60 dark:bg-white dark:text-slate-950">
           {exporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
-          {exporting ? 'Đang tạo file...' : 'Xuất toàn bộ lịch sử Word'}
+          {exporting ? 'Đang tạo file Excel...' : 'Xuất bảng Excel gửi ngân hàng'}
         </button>
         <section className="mb-4 grid grid-cols-2 gap-3">
           <div className="rounded-3xl bg-sky-600 p-4 text-white">
@@ -133,12 +144,26 @@ export default function AdminSalaryAdvancesPage() {
                   </div>
                   <p className="mt-4 text-2xl font-black text-sky-700">{Number(request.amount || 0).toLocaleString('vi-VN')}đ</p>
                   {request.reason && <p className="mt-1 text-sm text-muted-foreground">{request.reason}</p>}
-                  <div className="mt-4 rounded-2xl bg-slate-50 p-3">
-                    <div className="flex items-center gap-2 text-xs font-bold text-slate-500"><Landmark className="h-4 w-4" /> Tài khoản nhận tiền</div>
-                    {employee?.bankName && employee?.bankAccountNumber ? (
+                    <div className="mt-4 rounded-2xl bg-slate-50 p-3">
+                      <div className="flex items-center gap-2 text-xs font-bold text-slate-500"><Landmark className="h-4 w-4" /> Tài khoản nhận tiền</div>
+                      {employee?.bankName && employee?.bankAccountNumber ? (
                       <>
-                        <p className="mt-2 font-extrabold">{employee.bankName} · {employee.bankAccountNumber}</p>
-                        <p className="mt-1 text-xs uppercase text-muted-foreground">{employee.bankAccountName}</p>
+                        <div className="mt-2 flex items-center justify-between gap-3">
+                          <div className="min-w-0">
+                            <p className="font-extrabold">{employee.bankName}</p>
+                            <p className="mt-1 text-xs uppercase text-muted-foreground">{employee.bankAccountName || 'Chưa có tên chủ tài khoản'}</p>
+                            <p className="mt-1 font-mono text-sm font-bold tracking-wide text-slate-700 dark:text-slate-200">{employee.bankAccountNumber}</p>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => void copyAccountNumber(request.id || `${request.employeeId}-${request.createdAt}`, employee.bankAccountNumber ?? '')}
+                            className="flex h-10 shrink-0 items-center gap-1.5 rounded-xl border border-sky-200 bg-white px-3 text-xs font-bold text-sky-700 transition active:scale-[0.98] dark:border-sky-500/30 dark:bg-slate-900 dark:text-sky-300"
+                            aria-label={`Copy số tài khoản của ${employee.fullName || 'nhân viên'}`}
+                          >
+                            {copiedAccount === (request.id || `${request.employeeId}-${request.createdAt}`) ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
+                            {copiedAccount === (request.id || `${request.employeeId}-${request.createdAt}`) ? 'Đã copy' : 'Copy'}
+                          </button>
+                        </div>
                       </>
                     ) : <p className="mt-2 text-sm font-semibold text-amber-700">Nhân viên chưa cập nhật tài khoản ngân hàng.</p>}
                   </div>

@@ -36,10 +36,15 @@ function text(value: unknown, field: string, max: number, allowEmpty = false): s
 }
 
 function numberValue(value: unknown, field: string, min: number, max: number): number {
-  if (typeof value !== 'number' || !Number.isFinite(value) || value < min || value > max) {
+  const normalized = typeof value === 'number'
+    ? value
+    : typeof value === 'string' && /^\d[\d\s,.]*$/.test(value.trim())
+      ? Number(value.replace(/[\s,.]/g, ''))
+      : Number.NaN
+  if (!Number.isFinite(normalized) || !Number.isSafeInteger(normalized) || normalized < min || normalized > max) {
     throw new ApiError(400, `${field} không hợp lệ.`)
   }
-  return value
+  return normalized
 }
 
 function dateValue(value: unknown, field: string): Date {

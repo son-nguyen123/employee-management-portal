@@ -1,12 +1,14 @@
 import { NextResponse } from 'next/server'
-import { Packer, Paragraph } from 'docx'
+import { AlignmentType, Packer, Paragraph, TextRun } from 'docx'
 import { Timestamp } from 'firebase-admin/firestore'
 import { authenticateRequest } from '@/lib/server/api-auth'
 import { adminDb } from '@/lib/server/firebase-admin'
 import {
   landscapeReport,
   money,
+  reportDate,
   reportTable,
+  reportSectionHeading,
   reportTitle,
 } from '@/lib/server/word-report'
 
@@ -41,41 +43,66 @@ export async function GET(request: Request) {
       adminDb.collection('employees').get(),
     ])
     const employeeMap = new Map(employees.docs.map((snapshot) => [snapshot.id, snapshot.data()]))
-    const totals = new Map<string, number>()
+    const grouped = new Map<string, { name: string; code: string; penalties: Array<{ date: unknown; title: string; reason: string; amount: number }> }>()
     penalties.docs.forEach((snapshot) => {
       const penalty = snapshot.data()
       if (penalty.status === 'Cancelled') return
       const employeeId = String(penalty.employeeId || '')
-      totals.set(employeeId, (totals.get(employeeId) || 0) + Number(penalty.amount || 0))
+      const employee = employeeMap.get(employeeId) || {}
+      const group = grouped.get(employeeId) || {
+        name: String(employee.fullName || 'Nhân viên'),
+        code: String(employee.employeeCode || employeeId),
+        penalties: [],
+      }
+      group.penalties.push({
+        date: penalty.penaltyDate,
+        title: String(penalty.title || 'Khoản phạt'),
+        reason: String(penalty.description || 'Không có lý do'),
+        amount: Number(penalty.amount || 0),
+      })
+      grouped.set(employeeId, group)
     })
 
-    const rows = [...totals.entries()]
-      .map(([employeeId, total]) => {
-        const employee = employeeMap.get(employeeId) || {}
-        return {
-          name: String(employee.fullName || 'Nhân viên'),
-          code: String(employee.employeeCode || employeeId),
-          total,
-        }
-      })
+    const employeeGroups = [...grouped.values()]
       .sort((left, right) => left.name.localeCompare(right.name, 'vi'))
-      .map((row, index) => [String(index + 1), row.name, row.code, money(row.total)])
-    const grandTotal = [...totals.values()].reduce((sum, amount) => sum + amount, 0)
-    if (rows.length) rows.push(['', 'TỔNG CỘNG', '', money(grandTotal)])
 
     const children = [
       ...reportTitle(
         `BẢNG TỔNG HỢP PHẠT THÁNG ${month.slice(5)}/${month.slice(0, 4)}`,
-        'Chỉ gồm các khoản đang áp dụng; khoản đã hủy không tính vào tổng.'
+        'Tách riêng từng nhân viên · Chỉ gồm các khoản đang áp dụng; khoản đã hủy không tính.'
       ),
-      rows.length
-        ? reportTable(
-            ['STT', 'Họ và tên', 'Mã nhân viên', 'Tổng tiền phạt'],
-            rows,
-            [700, 5000, 2500, 5960],
-            [0, 2, 3]
-          )
-        : new Paragraph('Tháng này chưa có khoản phạt đang áp dụng.'),
+      ...(employeeGroups.length
+        ? employeeGroups.flatMap((group) => {
+            const rows = group.penalties
+              .sort((left, right) => String(left.date).localeCompare(String(right.date)))
+              .map((penalty, index) => [
+                String(index + 1),
+                reportDate(penalty.date),
+                penalty.title,
+                penalty.reason,
+                money(penalty.amount),
+              ])
+            const total = group.penalties.reduce((sum, penalty) => sum + penalty.amount, 0)
+            return [
+              reportSectionHeading(`${group.name} · ${group.code}`),
+              new Paragraph({
+                spacing: { after: 100 },
+                children: [new TextRun({ text: `${group.penalties.length} khoản phạt đang áp dụng`, bold: true, size: 18, color: '64748B', font: 'Arial' })],
+              }),
+              reportTable(
+                ['STT', 'Ngày phạt', 'Khoản phạt', 'Lý do', 'Số tiền'],
+                rows,
+                [700, 1500, 3000, 6400, 2560],
+                [0, 1, 4]
+              ),
+              new Paragraph({
+                alignment: AlignmentType.RIGHT,
+                spacing: { before: 100, after: 180 },
+                children: [new TextRun({ text: `Tổng của ${group.name}: ${money(total)}`, bold: true, size: 19, color: 'BE123C', font: 'Arial' })],
+              }),
+            ]
+          })
+        : [new Paragraph('Tháng này chưa có khoản phạt đang áp dụng.')]),
     ]
     const buffer = await Packer.toBuffer(landscapeReport(children))
     return new Response(buffer, {
