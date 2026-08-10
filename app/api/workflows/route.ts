@@ -23,6 +23,8 @@ import {
   ensureFixedSchedule,
   getAccountRegistrationWindow,
   updateAccountRegistrationWindow,
+  getUserFeatureSettings,
+  updateUserFeatureSetting,
   respondPenaltyConsent,
   replaceSchedules,
   reviseRequest,
@@ -70,6 +72,8 @@ const handlers = {
   ensureFixedSchedule,
   getAccountRegistrationWindow,
   updateAccountRegistrationWindow,
+  getUserFeatureSettings,
+  updateUserFeatureSetting,
   respondPenaltyConsent,
 } as const
 

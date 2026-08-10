@@ -31,6 +31,8 @@ type WorkflowAction =
   | 'ensureFixedSchedule'
   | 'getAccountRegistrationWindow'
   | 'updateAccountRegistrationWindow'
+  | 'getUserFeatureSettings'
+  | 'updateUserFeatureSetting'
   | 'respondPenaltyConsent'
 
 export async function callWorkflowApi<T>(

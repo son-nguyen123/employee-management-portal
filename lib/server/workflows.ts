@@ -6,6 +6,7 @@ import { ApiError, type RequestActor, requireManager, requireStaff } from '@/lib
 import { workflowPolicy } from '@/lib/server/workflow-policy'
 import { auditReceiptCapability } from '@/lib/server/audit-trail'
 import { cancelQueuedAuditEmails } from '@/lib/server/audit-email'
+import { defaultUserFeatureSettings, userFeatureKeys, type UserFeatureKey, type UserFeatureSettings } from '@/lib/models/userFeatureSettings'
 
 type Shift = 'Morning' | 'Afternoon' | 'Evening'
 type ReviewStatus = 'Approved' | 'Rejected' | 'ChangesRequested'
@@ -371,6 +372,40 @@ export async function updateAccountRegistrationWindow(actor: RequestActor, raw: 
     updatedAt: FieldValue.serverTimestamp(),
   }, { merge: true })
   return { isOpen: body.open, closesAt: closesAt.toISOString() }
+}
+
+function readUserFeatureSettings(data: FirebaseFirestore.DocumentData | undefined): UserFeatureSettings {
+  const raw = data?.enabled
+  return userFeatureKeys.reduce((settings, key) => {
+    settings[key] = raw && typeof raw[key] === 'boolean' ? raw[key] : defaultUserFeatureSettings[key]
+    return settings
+  }, { ...defaultUserFeatureSettings })
+}
+
+export async function getUserFeatureSettings(actor: RequestActor) {
+  requireStaff(actor)
+  const snapshot = await adminDb.collection('managementSettings').doc('userFeatures').get()
+  return readUserFeatureSettings(snapshot.data())
+}
+
+export async function updateUserFeatureSetting(actor: RequestActor, raw: unknown) {
+  requireManager(actor)
+  if (actor.role !== 'admin') throw new ApiError(403, 'Chá»‰ admin Ä‘Æ°á»£c thay Ä‘á»•i tÃ­nh nÄƒng user.')
+  const body = objectBody(raw)
+  const key = text(body.key, 'TÃ­nh nÄƒng', 40) as UserFeatureKey
+  if (!userFeatureKeys.includes(key)) throw new ApiError(400, 'TÃ­nh nÄƒng khÃ´ng há»£p lá»‡.')
+  if (typeof body.enabled !== 'boolean') throw new ApiError(400, 'Tráº¡ng thÃ¡i tÃ­nh nÄƒng khÃ´ng há»£p lá»‡.')
+
+  const ref = adminDb.collection('managementSettings').doc('userFeatures')
+  const snapshot = await ref.get()
+  const enabled = readUserFeatureSettings(snapshot.data())
+  enabled[key] = body.enabled
+  await ref.set({
+    enabled,
+    updatedBy: actor.uid,
+    updatedAt: FieldValue.serverTimestamp(),
+  }, { merge: true })
+  return enabled
 }
 
 export async function respondPenaltyConsent(actor: RequestActor, raw: unknown) {

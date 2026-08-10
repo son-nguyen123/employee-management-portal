@@ -1,4 +1,5 @@
 import { callWorkflowApi } from '@/lib/services/workflowApi'
+import type { UserFeatureKey, UserFeatureSettings } from '@/lib/models/userFeatureSettings'
 
 export interface WeeklyScheduleTarget {
   weekStart: string
@@ -47,4 +48,12 @@ export function getAccountRegistrationWindow(): Promise<AccountRegistrationWindo
 
 export function updateAccountRegistrationWindow(open: boolean): Promise<AccountRegistrationWindow> {
   return callWorkflowApi('updateAccountRegistrationWindow', { open })
+}
+
+export function getUserFeatureSettings(): Promise<UserFeatureSettings> {
+  return callWorkflowApi('getUserFeatureSettings', {})
+}
+
+export function updateUserFeatureSetting(key: UserFeatureKey, enabled: boolean): Promise<UserFeatureSettings> {
+  return callWorkflowApi('updateUserFeatureSetting', { key, enabled })
 }
