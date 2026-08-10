@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 import { CalendarDays, Camera, Check, CreditCard, Crop, IdCard, ImageUp, Landmark, Link as LinkIcon, Loader2, LogOut, Move, Phone, Save, UserRound, X } from 'lucide-react'
 import { useAuth } from '@/lib/hooks/useAuth'
 import { auth } from '@/lib/firebase'
-import { createEmployee, setEmployeeScheduleMode, updateEmployee } from '@/lib/services/employeeService'
+import { createEmployee, setInitialEmployeeScheduleMode, updateEmployee } from '@/lib/services/employeeService'
 import { updateUserProfile } from '@/lib/services/authService'
 import { profileImageUrl } from '@/lib/utils/profileImage'
 import type { EmployeeScheduleMode } from '@/lib/models/types'
@@ -30,8 +30,14 @@ export default function ProfileSetupPage() {
   const [pendingImage, setPendingImage] = useState<{ file: File; url: string; width: number; height: number } | null>(null)
   const [cropPosition, setCropPosition] = useState({ x: 50, y: 50 })
   const [cropZoom, setCropZoom] = useState(1)
+  const [now, setNow] = useState(() => Date.now())
   const cropDrag = useRef<{ pointerId: number; x: number; y: number; positionX: number; positionY: number } | null>(null)
   const [message, setMessage] = useState('')
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(Date.now()), 60_000)
+    return () => window.clearInterval(timer)
+  }, [])
 
   useEffect(() => {
     if (!isLoading && !authUser) router.replace('/auth/login')
@@ -161,9 +167,16 @@ export default function ProfileSetupPage() {
     try {
       if (employee) {
         const { scheduleMode, ...profileValues } = values
+        const initialDeadline = employee.scheduleModeInitialSelectionDeadlineAt instanceof Date
+          ? employee.scheduleModeInitialSelectionDeadlineAt
+          : employee.scheduleModeInitialSelectionDeadlineAt?.toDate()
+        const isInitialSelectionOpen = Boolean(initialDeadline && Date.now() < initialDeadline.getTime())
+        if (scheduleMode !== (employee.scheduleMode || 'rotating') && !isInitialSelectionOpen) {
+          throw new Error('Chế độ đã khóa. Vào Cá nhân để gửi yêu cầu quản lý.')
+        }
         await updateEmployee(authUser.uid, profileValues)
         if (scheduleMode !== (employee.scheduleMode || 'rotating')) {
-          await setEmployeeScheduleMode(scheduleMode)
+          await setInitialEmployeeScheduleMode(scheduleMode)
         }
       } else {
         await createEmployee(authUser.uid, {
@@ -214,6 +227,10 @@ export default function ProfileSetupPage() {
     'VietABank', 'Bac A Bank', 'BaoViet Bank', 'KienlongBank', 'PVcomBank',
     'NCB', 'PGBank', 'SaigonBank', 'GPBank', 'OceanBank', 'Shinhan Bank',
   ]
+  const initialDeadline = employee?.scheduleModeInitialSelectionDeadlineAt instanceof Date
+    ? employee.scheduleModeInitialSelectionDeadlineAt
+    : employee?.scheduleModeInitialSelectionDeadlineAt?.toDate()
+  const isInitialSelectionOpen = Boolean(initialDeadline && now < initialDeadline.getTime())
 
   return (
     <main className="min-h-screen bg-gradient-to-b from-indigo-50 via-background to-background px-3 py-7 dark:from-indigo-950/30">
@@ -301,12 +318,13 @@ export default function ProfileSetupPage() {
             </div>
             <div className="mt-3 grid grid-cols-2 gap-2 rounded-2xl bg-white/80 p-1 dark:bg-slate-900/70">
               {([['rotating', 'Xoay ca', 'Đăng ký từng tuần'], ['fixed', 'Làm cố định', 'Tự động lặp lại']] as const).map(([mode, label, description]) => (
-                <button key={mode} type="button" onClick={() => setForm((current) => ({ ...current, scheduleMode: mode }))} disabled={saving || signingOut} className={`rounded-xl px-2 py-3 text-left transition ${form.scheduleMode === mode ? 'bg-violet-600 text-white shadow-md' : 'text-slate-600 hover:bg-violet-50 dark:text-slate-300 dark:hover:bg-violet-500/10'}`}>
+                <button key={mode} type="button" onClick={() => setForm((current) => ({ ...current, scheduleMode: mode }))} disabled={saving || signingOut || Boolean(employee && !isInitialSelectionOpen)} className={`rounded-xl px-2 py-3 text-left transition ${form.scheduleMode === mode ? 'bg-violet-600 text-white shadow-md' : 'text-slate-600 hover:bg-violet-50 dark:text-slate-300 dark:hover:bg-violet-500/10'} disabled:cursor-not-allowed disabled:opacity-70`}>
                   <span className="block text-sm font-black">{label}</span><span className={`mt-1 block text-[10px] font-semibold ${form.scheduleMode === mode ? 'text-white/80' : 'text-muted-foreground'}`}>{description}</span>
                 </button>
               ))}
             </div>
-            {employee && form.scheduleMode !== (employee.scheduleMode || 'rotating') && <p className="mt-3 rounded-2xl bg-amber-50 px-3 py-2 text-xs font-bold leading-5 text-amber-800 dark:bg-amber-500/10 dark:text-amber-200">Chuyển chế độ chỉ được xác nhận vào Thứ Bảy. Chế độ mới áp dụng từ tuần kế tiếp.</p>}
+            {employee && !isInitialSelectionOpen && <p className="mt-3 rounded-2xl bg-amber-50 px-3 py-2 text-xs font-bold leading-5 text-amber-800 dark:bg-amber-500/10 dark:text-amber-200">Chế độ đã khóa. Vào mục Cá nhân để gửi yêu cầu quản lý; thay đổi chỉ áp dụng từ tuần kế tiếp.</p>}
+            {employee && isInitialSelectionOpen && initialDeadline && <p className="mt-3 rounded-2xl bg-white/75 px-3 py-2 text-xs font-bold leading-5 text-violet-800 dark:bg-slate-900/60 dark:text-violet-200">Bạn có thể chọn chế độ ban đầu đến {initialDeadline.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })} ngày {initialDeadline.toLocaleDateString('vi-VN')}.</p>}
           </section>
           <button type="submit" disabled={saving} className="mobile-primary-button mt-2">
             {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}

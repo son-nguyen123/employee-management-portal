@@ -22,7 +22,7 @@ type DetailSchedule = WorkSchedule & { id: string }
 type ActivityStatus = WorkSchedule['status'] | LeaveRequest['status'] | LateRequest['status'] | SalaryAdvance['status'] | StaffRequest['status']
 type Activity = {
   id: string
-  type: 'schedule' | 'leave' | 'late' | 'salary' | 'overtime' | 'note' | 'scheduleChange'
+  type: 'schedule' | 'leave' | 'late' | 'salary' | 'overtime' | 'note' | 'scheduleChange' | 'scheduleModeChange'
   title: string
   summary: string
   status: ActivityStatus
@@ -149,7 +149,7 @@ export default function EmployeeDetailPage() {
           ...leaves.map((item): Activity => ({ id: `leave-${item.id}`, type: 'leave', title: 'Yêu cầu xin nghỉ', summary: `${toDate(item.leaveDate).toLocaleDateString('vi-VN')}${item.endDate ? `–${toDate(item.endDate).toLocaleDateString('vi-VN')}` : ''}`, status: item.status, sortAt: toDate(item.updatedAt), note: item.reason, reviewNote: item.reviewNote })),
           ...lates.map((item): Activity => ({ id: `late-${item.id}`, type: 'late', title: 'Thông báo đi trễ', summary: `${toDate(item.date).toLocaleDateString('vi-VN')} · ${item.lateMinutes} phút${item.expectedArrival ? ` · đến lúc ${item.expectedArrival}` : ''}`, status: item.status, sortAt: toDate(item.updatedAt), note: item.reason, reviewNote: item.reviewNote })),
           ...salaries.map((item): Activity => ({ id: `salary-${item.id}`, type: 'salary', title: 'Yêu cầu ứng lương', summary: `${Number(item.amount).toLocaleString('vi-VN')}đ`, status: item.status, sortAt: toDate(item.updatedAt), note: item.reason, reviewNote: item.reviewNote })),
-          ...staffRequests.map((item): Activity => ({ id: `staff-${item.id}`, type: item.type, title: item.type === 'scheduleChange' ? 'Yêu cầu đổi / thêm ca' : item.type === 'overtime' ? 'Yêu cầu làm thêm' : 'Ghi chú cho quản lý', summary: item.type === 'scheduleChange' ? `${item.removedShifts?.length || 0} ca xin hủy · ${item.restoredShifts?.length || 0} ca đi làm lại · ${item.shifts?.length || 0} ca mới / ca thêm` : item.type === 'overtime' ? `${item.shifts?.length || 0} ca muốn làm thêm` : 'Lời nhắn riêng', status: item.status, sortAt: toDate(item.updatedAt), note: item.content, reviewNote: item.reviewNote })),
+          ...staffRequests.map((item): Activity => ({ id: `staff-${item.id}`, type: item.type, title: item.type === 'scheduleModeChange' ? 'Yêu cầu đổi chế độ làm việc' : item.type === 'scheduleChange' ? 'Yêu cầu đổi / thêm ca' : item.type === 'overtime' ? 'Yêu cầu làm thêm' : 'Ghi chú cho quản lý', summary: item.type === 'scheduleModeChange' ? `${item.previousScheduleMode === 'fixed' ? 'Cố định' : 'Xoay ca'} → ${item.requestedScheduleMode === 'fixed' ? 'Cố định' : 'Xoay ca'}` : item.type === 'scheduleChange' ? `${item.removedShifts?.length || 0} ca xin hủy · ${item.restoredShifts?.length || 0} ca đi làm lại · ${item.shifts?.length || 0} ca mới / ca thêm` : item.type === 'overtime' ? `${item.shifts?.length || 0} ca muốn làm thêm` : 'Lời nhắn riêng', status: item.status, sortAt: toDate(item.updatedAt), note: item.content, reviewNote: item.reviewNote })),
         ])
       } catch {
         setMessage('Không thể tải đầy đủ lịch sử hoạt động của nhân viên.')
@@ -193,6 +193,7 @@ export default function EmployeeDetailPage() {
     salary: { icon: CircleDollarSign, color: 'bg-sky-50 text-sky-600 dark:bg-sky-500/10' },
     overtime: { icon: CalendarPlus, color: 'bg-blue-50 text-blue-600 dark:bg-blue-500/10' },
     scheduleChange: { icon: CalendarPlus, color: 'bg-fuchsia-50 text-fuchsia-600 dark:bg-fuchsia-500/10' },
+    scheduleModeChange: { icon: CalendarPlus, color: 'bg-violet-50 text-violet-600 dark:bg-violet-500/10' },
     note: { icon: MessageSquareText, color: 'bg-cyan-50 text-cyan-600 dark:bg-cyan-500/10' },
   }
 

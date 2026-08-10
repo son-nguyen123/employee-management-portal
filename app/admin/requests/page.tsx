@@ -17,7 +17,7 @@ import { adjustPenalty, cancelPenalty, createManualPenalty, getAllPenalties } fr
 import { subscribeToPendingStaffRequests, updateStaffRequestStatus } from '@/lib/services/staffRequestService'
 import type { Employee, Penalty, StaffRequest } from '@/lib/models/types'
 
-type RequestType = 'leave' | 'late' | 'salary' | 'overtime' | 'note' | 'scheduleChange'
+type RequestType = 'leave' | 'late' | 'salary' | 'overtime' | 'note' | 'scheduleChange' | 'scheduleModeChange'
 type RequestRow = {
   id: string
   type: RequestType
@@ -82,8 +82,10 @@ function buildRequestRows(
       type: item.type,
       employeeId: item.employeeId,
       employeeName: employeeNames.get(item.employeeId) || fallbackName,
-      title: item.type === 'scheduleChange' ? 'Yêu cầu đổi / thêm ca' : item.type === 'overtime' ? 'Yêu cầu làm thêm' : 'Ghi chú từ nhân viên',
-      detail: item.type === 'scheduleChange'
+      title: item.type === 'scheduleModeChange' ? 'Yêu cầu đổi chế độ làm việc' : item.type === 'scheduleChange' ? 'Yêu cầu đổi / thêm ca' : item.type === 'overtime' ? 'Yêu cầu làm thêm' : 'Ghi chú từ nhân viên',
+      detail: item.type === 'scheduleModeChange'
+        ? `${item.previousScheduleMode === 'fixed' ? 'Cố định' : 'Xoay ca'} → ${item.requestedScheduleMode === 'fixed' ? 'Cố định' : 'Xoay ca'}${item.content ? ` · ${item.content}` : ''}`
+        : item.type === 'scheduleChange'
         ? `${item.removedShifts?.length || 0} ca xin hủy · ${item.restoredShifts?.length || 0} ca đi làm lại · ${item.shifts?.length || 0} ca mới / ca thêm${item.content ? ` · ${item.content}` : ''}`
         : item.type === 'overtime'
         ? `${item.shifts?.length || 0} ca muốn làm thêm${item.content ? ` · ${item.content}` : ''}`
@@ -219,7 +221,7 @@ export default function AdminRequestsPage() {
         if (row.type === 'leave') await updateLeaveStatus(row.id, status, authUser.uid, reviewNote)
         if (row.type === 'late') await updateLateStatus(row.id, status, authUser.uid, reviewNote)
         if (row.type === 'salary') await updateSalaryAdvanceStatus(row.id, status, authUser.uid, reviewNote)
-        if (row.type === 'overtime' || row.type === 'note' || row.type === 'scheduleChange') await updateStaffRequestStatus(row.id, status, reviewNote)
+        if (row.type === 'overtime' || row.type === 'note' || row.type === 'scheduleChange' || row.type === 'scheduleModeChange') await updateStaffRequestStatus(row.id, status, reviewNote)
       }
       setRows((prev) => prev.filter((item) => item.id !== row.id))
       setMessage(status === 'Approved' ? 'Đã duyệt yêu cầu.' : 'Đã từ chối yêu cầu.')
@@ -333,6 +335,7 @@ export default function AdminRequestsPage() {
     salary: { icon: CircleDollarSign, label: 'Ứng lương' },
     overtime: { icon: CalendarPlus, label: 'Làm thêm' },
     scheduleChange: { icon: CalendarPlus, label: 'Đổi / thêm ca' },
+    scheduleModeChange: { icon: CalendarPlus, label: 'Đổi chế độ' },
     note: { icon: MessageSquareText, label: 'Ghi chú' },
   }
   const filterItems: Array<{ value: 'all' | RequestType; label: string; count: number }> = [

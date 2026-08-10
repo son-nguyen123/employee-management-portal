@@ -321,7 +321,10 @@ export async function manageEmployeeStatus(actor: RequestActor, raw: unknown) {
         })
       : []
     releasedSchedules = schedulesToRelease.length
-    transaction.set(employeeRef, { status, statusChangedBy: actor.uid, statusChangedAt: now, updatedAt: now }, { merge: true })
+    const firstSelectionFields = status === 'active' && !employee.get('scheduleModeInitialSelectionDeadlineAt') && !employee.get('scheduleModeInitialSelectionCompletedAt')
+      ? { scheduleModeInitialSelectionDeadlineAt: Timestamp.fromDate(new Date(Date.now() + 24 * 60 * 60 * 1000)) }
+      : {}
+    transaction.set(employeeRef, { status, statusChangedBy: actor.uid, statusChangedAt: now, updatedAt: now, ...firstSelectionFields }, { merge: true })
     schedulesToRelease.forEach((schedule) => transaction.set(schedule.ref, {
       status: 'Cancelled',
       lockedAt: null,
@@ -685,56 +688,103 @@ function firestoreDate(value: unknown): Date | null {
   return null
 }
 
-export async function setEmployeeScheduleMode(actor: RequestActor, raw: unknown) {
+function parseScheduleMode(value: unknown): 'rotating' | 'fixed' | null {
+  return value === 'fixed' || value === 'rotating' ? value : null
+}
+
+export async function setInitialScheduleMode(actor: RequestActor, raw: unknown) {
   requireStaff(actor)
   const body = objectBody(raw)
-  const mode = body.mode === 'fixed' ? 'fixed' : body.mode === 'rotating' ? 'rotating' : null
+  const mode = parseScheduleMode(body.mode)
   if (!mode) throw new ApiError(400, 'Chế độ lịch làm không hợp lệ.')
 
+  const employeeRef = adminDb.collection('employees').doc(actor.uid)
+  const snapshot = await employeeRef.get()
+  if (!snapshot.exists) throw new ApiError(404, 'Chưa tìm thấy hồ sơ nhân viên.')
+  const deadline = firestoreDate(snapshot.get('scheduleModeInitialSelectionDeadlineAt'))
+  if (!deadline || new Date() >= deadline) {
+    throw new ApiError(409, 'Thời gian thiết lập chế độ ban đầu đã hết. Vui lòng gửi yêu cầu cho quản lý.')
+  }
+  await employeeRef.set({
+    scheduleMode: mode,
+    scheduleModeInitialSelectionCompletedAt: FieldValue.serverTimestamp(),
+    updatedAt: FieldValue.serverTimestamp(),
+  }, { merge: true })
+  return { mode }
+}
+
+export async function submitScheduleModeChangeRequest(actor: RequestActor, raw: unknown) {
+  requireStaff(actor)
+  const body = objectBody(raw)
+  const requestKey = requestId(body)
+  const requestedMode = parseScheduleMode(body.mode)
+  if (!requestedMode) throw new ApiError(400, 'Chế độ lịch làm không hợp lệ.')
+  const reason = text(body.reason, 'Lý do chuyển chế độ', 300)
   const employeeRef = adminDb.collection('employees').doc(actor.uid)
   const employeeSnapshot = await employeeRef.get()
   if (!employeeSnapshot.exists) throw new ApiError(404, 'Chưa tìm thấy hồ sơ nhân viên.')
   const employeeData = employeeSnapshot.data() as Record<string, unknown>
   const currentMode = employeeScheduleMode(employeeData)
-  if (currentMode === mode) {
-    return { mode, effectiveWeekStart: String(employeeData.scheduleModeEffectiveWeekStart || vietnamWeekStartKey(new Date())) }
+  if (currentMode === requestedMode) throw new ApiError(409, 'Bạn đang sử dụng chế độ này rồi.')
+  const initialDeadline = firestoreDate(employeeData.scheduleModeInitialSelectionDeadlineAt)
+  if (initialDeadline && new Date() < initialDeadline) {
+    throw new ApiError(409, 'Bạn vẫn đang trong thời gian thiết lập ban đầu. Hãy chọn trực tiếp trong hồ sơ.')
+  }
+  const weekday = new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Ho_Chi_Minh', weekday: 'short' }).format(new Date())
+  if (weekday !== 'Sat') throw new ApiError(409, 'Yêu cầu đổi chế độ chỉ mở vào Thứ Bảy.')
+  const cooldownUntil = firestoreDate(employeeData.scheduleModeChangeCooldownUntil)
+  if (cooldownUntil && cooldownUntil.getTime() > Date.now()) {
+    throw new ApiError(409, `Bạn chỉ có thể đổi lại sau ${cooldownUntil.toLocaleDateString('vi-VN')}.`)
+  }
+  const existingRequests = await adminDb.collection('staffRequests').where('employeeId', '==', actor.uid).get()
+  if (existingRequests.docs.some((item) => item.get('type') === 'scheduleModeChange' && item.get('status') === 'Pending')) {
+    throw new ApiError(409, 'Bạn đã có một yêu cầu đổi chế độ đang chờ quản lý xử lý.')
   }
 
-  const now = new Date()
-  const weekday = new Intl.DateTimeFormat('en-US', { timeZone: 'Asia/Ho_Chi_Minh', weekday: 'short' }).format(now)
-  if (weekday !== 'Sat') {
-    throw new ApiError(409, 'Chỉ được đổi giữa lịch cố định và xoay ca vào Thứ Bảy.')
-  }
-
-  const effectiveWeekStart = vietnamWeekStartKey(now, 1)
+  const effectiveWeekStart = vietnamWeekStartKey(new Date(), 1)
   const targetStart = new Date(`${effectiveWeekStart}T00:00:00+07:00`)
-  const targetEnd = new Date(targetStart.getTime() + 7 * 24 * 60 * 60 * 1000)
-  const futureSchedules = await adminDb.collection('workSchedules')
-    .where('employeeId', '==', actor.uid)
-    .where('date', '>=', Timestamp.fromDate(targetStart))
-    .where('date', '<', Timestamp.fromDate(targetEnd))
-    .get()
-  const batch = adminDb.batch()
-  const cancellationTime = FieldValue.serverTimestamp()
-  futureSchedules.docs.forEach((schedule) => {
-    if (schedule.get('status') === 'Cancelled') return
-    batch.update(schedule.ref, {
-      status: 'Cancelled',
-      cancellationReason: 'Đã đổi chế độ lịch; cần tạo lại lịch tuần kế tiếp.',
-      updatedAt: cancellationTime,
-      lockedAt: cancellationTime,
+  const requestRef = adminDb.collection('staffRequests').doc()
+  const workflow = workflowRef(actor, requestKey)
+  const managerIds = await activeManagerIds()
+  await adminDb.runTransaction(async (transaction) => {
+    if ((await transaction.get(workflow)).exists) throw new ApiError(409, 'Yêu cầu này đã được gửi trước đó.')
+    const now = FieldValue.serverTimestamp()
+    transaction.create(requestRef, {
+      employeeId: actor.uid,
+      type: 'scheduleModeChange',
+      content: reason,
+      previousScheduleMode: currentMode,
+      requestedScheduleMode: requestedMode,
+      weekStart: Timestamp.fromDate(targetStart),
+      status: 'Pending',
+      createdAt: now,
+      updatedAt: now,
+    })
+    transaction.create(
+      adminDb.collection('notifications').doc(`staff-request-status-${requestRef.id}`),
+      warningNotification(actor.uid, 'Đã gửi yêu cầu đổi chế độ', 'Yêu cầu đã gửi đến quản lý và đang chờ xử lý.')
+    )
+    managerIds.forEach((managerId) => transaction.set(
+      managerNotificationRef(managerId, `staff-${requestRef.id}`),
+      managerNotification(managerId, 'Yêu cầu đổi chế độ làm việc', 'Một nhân viên vừa gửi yêu cầu chuyển giữa xoay ca và cố định.', 'warning', false)
+    ))
+    transaction.create(workflow, {
+      employeeId: actor.uid,
+      action: 'submitScheduleModeChangeRequest',
+      targetIds: [requestRef.id],
+      createdAt: now,
     })
   })
-  const updates: Record<string, unknown> = {
-    scheduleMode: mode,
-    scheduleModeEffectiveWeekStart: effectiveWeekStart,
-    updatedAt: FieldValue.serverTimestamp(),
-  }
-  if (mode === 'fixed') updates.fixedScheduleNeedsSetupWeekStart = effectiveWeekStart
-  else updates.fixedScheduleNeedsSetupWeekStart = FieldValue.delete()
-  batch.set(employeeRef, updates, { merge: true })
-  await batch.commit()
-  return { mode, effectiveWeekStart }
+  await sendManagerPushes({
+    managerIds,
+    sourceKey: `staff-${requestRef.id}`,
+    title: 'Yêu cầu đổi chế độ làm việc',
+    body: 'Một nhân viên vừa gửi yêu cầu chuyển giữa xoay ca và cố định.',
+    link: '/notifications',
+    source: 'staffRequests',
+    sourceId: requestRef.id,
+  })
+  return { id: requestRef.id, requestedMode, effectiveWeekStart }
 }
 
 export async function ensureFixedSchedule(actor: RequestActor, raw: unknown) {
@@ -2458,19 +2508,64 @@ export async function reviewRequest(actor: RequestActor, raw: unknown) {
     }
     employeeId = data.employeeId
     const employeeSnapshot = await transaction.get(adminDb.collection('employees').doc(employeeId))
+    if (!employeeSnapshot.exists) throw new ApiError(404, 'Chưa tìm thấy hồ sơ nhân viên.')
     const employeeName = String(employeeSnapshot.get('fullName') || 'Nhân viên')
     const employeeCode = String(employeeSnapshot.get('employeeCode') || employeeId.slice(0, 8))
     reviewedEmployee = `${employeeName} · ${employeeCode}`
+    const now = FieldValue.serverTimestamp()
     const isLate = data.noticeClass === 'late'
     const suggestedAmount = status === 'Approved'
       ? Number(data.penaltyIfApproved ?? (isLate ? workflowPolicy.leaveLateApprovedPenalty : 0))
       : Number(data.penaltyIfRejected ?? (isLate ? workflowPolicy.leaveLateRejectedPenalty : workflowPolicy.leaveOnTimeRejectedPenalty))
     appliedPenaltyAmount = resource === 'leave' || resource === 'late' ? managerPenaltyAmount ?? suggestedAmount : 0
     requiresEmployeeConsent = resource === 'leave' && status === 'Approved' && appliedPenaltyAmount > 0
+    if (resource === 'staff' && data.type === 'scheduleModeChange') {
+      const requestedMode = parseScheduleMode(data.requestedScheduleMode)
+      const previousMode = parseScheduleMode(data.previousScheduleMode)
+      if (!requestedMode || !previousMode || requestedMode === previousMode) {
+        throw new ApiError(409, 'Yêu cầu đổi chế độ không còn hợp lệ.')
+      }
+      if (status === 'Approved') {
+        const currentMode = employeeScheduleMode(employeeSnapshot.data() as Record<string, unknown>)
+        if (currentMode !== previousMode) {
+          throw new ApiError(409, 'Chế độ hiện tại của nhân viên đã thay đổi. Vui lòng tải lại yêu cầu.')
+        }
+        const requestedWeekStart = firestoreDate(data.weekStart)
+        const requestedWeekKey = requestedWeekStart ? vietnamWeekStartKey(requestedWeekStart) : ''
+        const currentWeekKey = vietnamWeekStartKey(new Date())
+        const effectiveWeekStart = requestedWeekKey > currentWeekKey
+          ? requestedWeekKey
+          : vietnamWeekStartKey(new Date(), 1)
+        const targetStart = new Date(`${effectiveWeekStart}T00:00:00+07:00`)
+        const targetEnd = new Date(targetStart.getTime() + 7 * 24 * 60 * 60 * 1000)
+        const futureSchedules = await transaction.get(adminDb.collection('workSchedules')
+          .where('employeeId', '==', employeeId)
+          .where('date', '>=', Timestamp.fromDate(targetStart))
+          .where('date', '<', Timestamp.fromDate(targetEnd)))
+        futureSchedules.docs.forEach((schedule) => {
+          if (schedule.get('status') === 'Cancelled') return
+          transaction.set(schedule.ref, {
+            status: 'Cancelled',
+            cancellationReason: 'Đã đổi chế độ lịch; cần tạo lại lịch tuần kế tiếp.',
+            updatedAt: now,
+            lockedAt: now,
+          }, { merge: true })
+        })
+        transaction.set(employeeSnapshot.ref, {
+          scheduleMode: requestedMode,
+          scheduleModeEffectiveWeekStart: effectiveWeekStart,
+          scheduleModeChangeCooldownUntil: Timestamp.fromDate(new Date(Date.now() + 30 * 24 * 60 * 60 * 1000)),
+          ...(requestedMode === 'fixed'
+            ? { fixedScheduleNeedsSetupWeekStart: effectiveWeekStart }
+            : { fixedScheduleNeedsSetupWeekStart: FieldValue.delete() }),
+          updatedAt: now,
+        }, { merge: true })
+        transaction.set(targetRef, { weekStart: Timestamp.fromDate(targetStart) }, { merge: true })
+      }
+    }
     const longLeaveSchedules = resource === 'leave' && status === 'Approved' && !requiresEmployeeConsent && data.duration === 'long'
       ? await transaction.get(adminDb.collection('workSchedules').where('employeeId', '==', employeeId))
       : null
-    const now = FieldValue.serverTimestamp()
     if ((resource === 'leave' || resource === 'late') && decisionPenaltyRef) {
       const amount = appliedPenaltyAmount
       if (amount > 0 && !requiresEmployeeConsent) {
@@ -2655,13 +2750,20 @@ export async function reviewRequest(actor: RequestActor, raw: unknown) {
     }
     transaction.set(targetRef, updates, { merge: true })
     const requestLabel = resource === 'staff'
-      ? data.type === 'scheduleChange' ? 'Yêu cầu đổi / thêm ca' : data.type === 'overtime' ? 'Yêu cầu làm thêm' : 'Ghi chú'
+      ? data.type === 'scheduleModeChange'
+        ? 'Yêu cầu đổi chế độ làm việc'
+        : data.type === 'scheduleChange' ? 'Yêu cầu đổi / thêm ca' : data.type === 'overtime' ? 'Yêu cầu làm thêm' : 'Ghi chú'
       : config.label
     reviewedLabel = requestLabel
-    reviewedLink = resource === 'staff' && data.type === 'note' ? '/staff-note' : config.link
+    reviewedLink = resource === 'staff'
+      ? data.type === 'note' ? '/staff-note' : data.type === 'scheduleModeChange' ? '/profile' : config.link
+      : config.link
+    const notificationTitle = resource === 'staff' && data.type === 'scheduleModeChange'
+      ? 'Yêu cầu đổi chế độ đã được xử lý'
+      : config.title
     transaction.set(notificationRef, {
       employeeId,
-      title: config.title,
+      title: notificationTitle,
       message: requiresEmployeeConsent
         ? `${requestLabel} được quản lý đồng ý với mức trừ ${appliedPenaltyAmount.toLocaleString('vi-VN')}đ. Vui lòng mở mục Xin nghỉ để chấp nhận hoặc từ chối.`
         : `${requestLabel} của bạn ${statusText(status)}.${appliedPenaltyAmount > 0 ? ` Mức trừ được quản lý xác nhận: ${appliedPenaltyAmount.toLocaleString('vi-VN')}đ.` : ''}${note ? ` Phản hồi: ${note}` : ''}`,
@@ -2695,7 +2797,9 @@ export async function reviewRequest(actor: RequestActor, raw: unknown) {
   const push = await sendEmployeePush({
     employeeId,
     dispatchId: dispatchRef.id,
-    title: config.title,
+    title: resource === 'staff' && reviewedLabel === 'Yêu cầu đổi chế độ làm việc'
+      ? 'Yêu cầu đổi chế độ đã được xử lý'
+      : config.title,
     body: requiresEmployeeConsent ? `${reviewedLabel} đang chờ bạn đồng ý mức trừ ${appliedPenaltyAmount.toLocaleString('vi-VN')}đ.` : `${reviewedLabel} của bạn ${statusText(status)}.`,
     link: reviewedLink,
     source: config.collection,

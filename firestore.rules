@@ -146,6 +146,7 @@ service cloud.firestore {
           'photoURL', 'facebookUrl', 'bankName', 'bankAccountName', 'bankAccountNumber',
           'role', 'status', 'joinDate', 'createdAt', 'updatedAt',
           'scheduleMode', 'scheduleModeEffectiveWeekStart', 'fixedScheduleNeedsSetupWeekStart', 'fixedScheduleTemplateWeekStart',
+          'scheduleModeInitialSelectionDeadlineAt', 'scheduleModeInitialSelectionCompletedAt', 'scheduleModeChangeCooldownUntil',
           'statusChangedBy', 'statusChangedAt'
         ]) &&
         validString(data.uid, 1, 128) &&
@@ -162,6 +163,9 @@ service cloud.firestore {
         (!('scheduleModeEffectiveWeekStart' in data) || validString(data.scheduleModeEffectiveWeekStart, 10, 10)) &&
         (!('fixedScheduleNeedsSetupWeekStart' in data) || validString(data.fixedScheduleNeedsSetupWeekStart, 10, 10)) &&
         (!('fixedScheduleTemplateWeekStart' in data) || validString(data.fixedScheduleTemplateWeekStart, 10, 10)) &&
+        (!('scheduleModeInitialSelectionDeadlineAt' in data) || data.scheduleModeInitialSelectionDeadlineAt is timestamp) &&
+        (!('scheduleModeInitialSelectionCompletedAt' in data) || data.scheduleModeInitialSelectionCompletedAt is timestamp) &&
+        (!('scheduleModeChangeCooldownUntil' in data) || data.scheduleModeChangeCooldownUntil is timestamp) &&
         (!('statusChangedBy' in data) || validString(data.statusChangedBy, 1, 128)) &&
         (!('statusChangedAt' in data) || data.statusChangedAt is timestamp) &&
         data.joinDate is timestamp &&

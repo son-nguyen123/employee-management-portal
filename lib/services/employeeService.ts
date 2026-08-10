@@ -13,7 +13,7 @@ import {
 import { db } from '@/lib/firebase'
 import { auth } from '@/lib/firebase'
 import { Employee, EmployeeScheduleMode } from '@/lib/models/types'
-import { callWorkflowApi } from '@/lib/services/workflowApi'
+import { callWorkflowApi, newWorkflowRequestId } from '@/lib/services/workflowApi'
 
 const EMPLOYEES_COLLECTION = 'employees'
 const EMPLOYEE_CACHE_PREFIX = 'tricandy:employee-cache:'
@@ -200,6 +200,14 @@ export async function setEmployeeAccountStatus(employeeId: string, status: 'acti
   return callWorkflowApi('manageEmployeeStatus', { employeeId, status })
 }
 
-export async function setEmployeeScheduleMode(mode: EmployeeScheduleMode): Promise<{ mode: EmployeeScheduleMode; effectiveWeekStart: string }> {
-  return callWorkflowApi('setEmployeeScheduleMode', { mode })
+export async function setInitialEmployeeScheduleMode(mode: EmployeeScheduleMode): Promise<{ mode: EmployeeScheduleMode }> {
+  return callWorkflowApi('setInitialScheduleMode', { mode })
+}
+
+export async function requestEmployeeScheduleModeChange(mode: EmployeeScheduleMode, reason: string): Promise<{ id: string; requestedMode: EmployeeScheduleMode; effectiveWeekStart: string }> {
+  return callWorkflowApi('submitScheduleModeChangeRequest', {
+    requestId: newWorkflowRequestId(),
+    mode,
+    reason,
+  })
 }

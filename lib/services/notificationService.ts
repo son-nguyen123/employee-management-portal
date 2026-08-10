@@ -102,6 +102,43 @@ function asShiftList(value: unknown, includeScheduleId = false): ManagementShift
   })
 }
 
+function repairMojibake(value: unknown): string {
+  if (typeof value !== 'string') return ''
+  // A few notifications created by an older deployment were written after a
+  // UTF-8/Windows-1252 conversion. Decode those values at the display edge so
+  // the existing records remain readable without a destructive data migration.
+  if (!/[ÃÂÄÅÆÐÑáº»¿�]/.test(value)) return value
+  try {
+    const bytes = Uint8Array.from(value, (character) => character.charCodeAt(0) & 0xff)
+    const decoded = new TextDecoder('utf-8').decode(bytes)
+    return decoded.includes('\uFFFD') ? value : decoded
+  } catch {
+    return value
+  }
+}
+
+function normalizeNotification(id: string, data: DocumentData): Notification {
+  let title = repairMojibake(data.title)
+  let message = repairMojibake(data.message)
+  if (id.startsWith('schedule-penalty-')) {
+    const combined = `${title} ${message}`
+    const amount = combined.match(/\d[\d.]*\s*[đd]/i)?.[0]?.replace(/d$/i, 'đ')
+    const week = combined.match(/\d{2}\/\d{2}\s*[-–]\s*\d{2}\/\d{2}/)?.[0]
+    title = 'Phát sinh khoản phạt đăng ký lịch trễ'
+    message = amount
+      ? `Khoản phạt ${amount} đã được ghi nhận${week ? ` cho lịch tuần ${week}` : ''}.`
+      : 'Khoản phạt đăng ký lịch trễ đã được ghi nhận. Mở Khoản phạt để xem chi tiết.'
+  } else if (id.startsWith('schedule-change-penalty-')) {
+    const combined = `${title} ${message}`
+    const amount = combined.match(/\d[\d.]*\s*[đd]/i)?.[0]?.replace(/d$/i, 'đ')
+    title = 'Phát sinh khoản phạt đổi lịch trong ngày'
+    message = amount
+      ? `Khoản phạt ${amount} đã được ghi nhận.`
+      : 'Khoản phạt đổi lịch trong ngày đã được ghi nhận. Mở Khoản phạt để xem chi tiết.'
+  }
+  return { id, ...data, title, message } as Notification
+}
+
 /**
  * Get all notifications for an employee
  */
@@ -114,10 +151,7 @@ export async function getEmployeeNotifications(employeeId: string): Promise<Noti
     )
 
     const querySnapshot = await getDocs(q)
-    return querySnapshot.docs.map((doc) => ({
-      id: doc.id,
-      ...doc.data(),
-    } as Notification))
+    return querySnapshot.docs.map((item) => normalizeNotification(item.id, item.data()))
   } catch (error) {
     console.error('Error fetching employee notifications:', error)
     throw error
@@ -137,10 +171,7 @@ export async function getUnreadNotifications(employeeId: string): Promise<Notifi
     )
 
     const querySnapshot = await getDocs(q)
-    return querySnapshot.docs.map((doc) => ({
-      id: doc.id,
-      ...doc.data(),
-    } as Notification))
+    return querySnapshot.docs.map((item) => normalizeNotification(item.id, item.data()))
   } catch (error) {
     console.error('Error fetching unread notifications:', error)
     throw error
@@ -204,10 +235,7 @@ export function subscribeToEmployeeNotifications(
   )
 
   const unsubscribe = onSnapshot(q, (querySnapshot) => {
-    const notifications = querySnapshot.docs.map((doc) => ({
-      id: doc.id,
-      ...doc.data(),
-    } as Notification))
+    const notifications = querySnapshot.docs.map((item) => normalizeNotification(item.id, item.data()))
     callback(notifications)
   })
 
@@ -441,7 +469,7 @@ export function subscribeToManagementPendingItems(
     state.staffRequests.forEach(({ id, data }) => {
       const employeeId = String(data.employeeId || '')
       const employee = identity(employeeId)
-      const requestType = data.type === 'overtime' || data.type === 'scheduleChange' || data.type === 'note'
+      const requestType = data.type === 'overtime' || data.type === 'scheduleChange' || data.type === 'scheduleModeChange' || data.type === 'note'
         ? data.type
         : 'note'
       const shifts = asShiftList(data.shifts)
@@ -451,9 +479,13 @@ export function subscribeToManagementPendingItems(
         ? 'Yêu cầu làm thêm'
         : requestType === 'scheduleChange'
           ? 'Yêu cầu đổi / thêm ca'
+          : requestType === 'scheduleModeChange'
+            ? 'Yêu cầu đổi chế độ làm việc'
           : 'Ghi chú từ nhân viên'
       const detail = requestType === 'scheduleChange'
         ? `${removedShifts.length} ca muốn hủy · ${restoredShifts.length} ca xin đi làm lại · ${shifts.length} ca muốn thêm`
+        : requestType === 'scheduleModeChange'
+          ? `${data.previousScheduleMode === 'fixed' ? 'Cố định' : 'Xoay ca'} → ${data.requestedScheduleMode === 'fixed' ? 'Cố định' : 'Xoay ca'} · áp dụng từ tuần ${shortDate(data.weekStart)}`
         : requestType === 'overtime'
           ? `${shifts.length} ca muốn làm thêm`
           : 'Nội dung cần quản lý xem xét'

@@ -23,6 +23,9 @@ export interface Employee {
   scheduleModeEffectiveWeekStart?: string
   fixedScheduleNeedsSetupWeekStart?: string
   fixedScheduleTemplateWeekStart?: string
+  scheduleModeInitialSelectionDeadlineAt?: Timestamp | Date
+  scheduleModeInitialSelectionCompletedAt?: Timestamp | Date
+  scheduleModeChangeCooldownUntil?: Timestamp | Date
 }
 
 // Work Schedule Document
@@ -69,7 +72,7 @@ export interface WorkSchedule {
   updatedAt: Timestamp | Date
 }
 
-export type StaffRequestType = 'overtime' | 'note' | 'scheduleChange'
+export type StaffRequestType = 'overtime' | 'note' | 'scheduleChange' | 'scheduleModeChange'
 export type StaffRequestStatus = 'Pending' | 'Approved' | 'Rejected'
 
 export interface StaffRequestShift {
@@ -86,6 +89,8 @@ export interface StaffRequest {
   shifts?: StaffRequestShift[]
   removedShifts?: Array<StaffRequestShift & { scheduleId: string }>
   restoredShifts?: Array<StaffRequestShift & { scheduleId: string; leaveRequestId?: string }>
+  previousScheduleMode?: EmployeeScheduleMode
+  requestedScheduleMode?: EmployeeScheduleMode
   status: StaffRequestStatus
   reviewNote?: string
   reviewedBy?: string

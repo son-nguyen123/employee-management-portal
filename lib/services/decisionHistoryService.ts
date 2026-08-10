@@ -127,8 +127,12 @@ function buildRows(data: Record<DecisionResource, SnapshotRow[]>, penaltyRows: S
     ids: [item.id],
     resource: 'staff',
     employeeId: String(item.employeeId || ''),
-    title: item.type === 'scheduleChange' ? 'Yêu cầu đổi / thêm ca' : item.type === 'overtime' ? 'Yêu cầu làm thêm' : 'Ghi chú cho quản lý',
-    detail: item.type === 'overtime'
+    title: item.type === 'scheduleModeChange'
+      ? 'Yêu cầu đổi chế độ làm việc'
+      : item.type === 'scheduleChange' ? 'Yêu cầu đổi / thêm ca' : item.type === 'overtime' ? 'Yêu cầu làm thêm' : 'Ghi chú cho quản lý',
+    detail: item.type === 'scheduleModeChange'
+      ? `${item.previousScheduleMode === 'fixed' ? 'Cố định' : 'Xoay ca'} → ${item.requestedScheduleMode === 'fixed' ? 'Cố định' : 'Xoay ca'} · ${String(item.content || 'Không có ghi chú')}`
+      : item.type === 'overtime'
       ? `${Array.isArray(item.shifts) ? item.shifts.length : 0} ca · ${String(item.content || 'Không có ghi chú')}`
       : String(item.content || 'Không có nội dung'),
     status: item.status,
