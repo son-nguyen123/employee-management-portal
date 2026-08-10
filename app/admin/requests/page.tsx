@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { AlertTriangle, CalendarPlus, Check, ChevronDown, ChevronLeft, ChevronRight, CircleDollarSign, Clock3, Download, ExternalLink, FileText, Loader2, MessageSquareText, Phone, Plus, UsersRound, X } from 'lucide-react'
 import { useAuth } from '@/lib/hooks/useAuth'
@@ -130,6 +130,8 @@ export default function AdminRequestsPage() {
   const [penaltyNote, setPenaltyNote] = useState('')
   const [penaltyFormError, setPenaltyFormError] = useState('')
   const [employeePickerOpen, setEmployeePickerOpen] = useState(false)
+  const manualPenaltyFormRef = useRef<HTMLFormElement | null>(null)
+  const employeePickerButtonRef = useRef<HTMLButtonElement | null>(null)
   const [penaltySubmitting, setPenaltySubmitting] = useState(false)
   const [penalties, setPenalties] = useState<Penalty[]>([])
   const [editingPenalty, setEditingPenalty] = useState<{ penalty: Penalty; mode: 'adjust' | 'cancel' } | null>(null)
@@ -233,6 +235,15 @@ export default function AdminRequestsPage() {
     return () => unsubscribers.forEach((unsubscribe) => unsubscribe())
   }, [authUser, isPreviewMode])
 
+  useEffect(() => {
+    if (!manualPenaltyOpen) return
+
+    const frame = window.requestAnimationFrame(() => {
+      manualPenaltyFormRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    })
+    return () => window.cancelAnimationFrame(frame)
+  }, [manualPenaltyOpen])
+
   const process = async (row: RequestRow, status: 'Approved' | 'Rejected', suppliedNote = '') => {
     if (!authUser) return
     const reviewNote = status === 'Rejected' ? suppliedNote.trim() : ''
@@ -251,6 +262,23 @@ export default function AdminRequestsPage() {
     } catch {
       setMessage('Không thể xử lý. Kiểm tra quyền admin của tài khoản.')
     }
+  }
+
+  const toggleManualPenalty = () => {
+    setManualPenaltyOpen((current) => !current)
+    setEmployeePickerOpen(false)
+  }
+
+  const closeManualPenalty = () => {
+    setManualPenaltyOpen(false)
+    setEmployeePickerOpen(false)
+  }
+
+  const selectPenaltyEmployee = (employeeId: string) => {
+    setPenaltyEmployeeId(employeeId)
+    setEmployeePickerOpen(false)
+    setPenaltyFormError('')
+    window.requestAnimationFrame(() => employeePickerButtonRef.current?.focus())
   }
 
   const addManualPenalty = async (event: React.FormEvent) => {
@@ -404,7 +432,7 @@ export default function AdminRequestsPage() {
               <button type="button" onClick={() => setPenaltyTab('list')} className={`min-h-11 rounded-xl text-sm font-bold ${penaltyTab === 'list' ? 'bg-white text-rose-600 shadow-sm dark:bg-slate-950' : 'text-muted-foreground'}`}>Từng khoản phạt</button>
             </div>
             <div className="grid grid-cols-2 gap-2">
-              <button type="button" onClick={() => setManualPenaltyOpen((current) => !current)} className="flex min-h-12 items-center justify-center gap-2 rounded-2xl bg-rose-600 px-3 text-sm font-bold text-white"><Plus className="h-4 w-4" /> Ghi phạt</button>
+              <button type="button" onClick={toggleManualPenalty} className="flex min-h-12 items-center justify-center gap-2 rounded-2xl bg-rose-600 px-3 text-sm font-bold text-white"><Plus className="h-4 w-4" /> Ghi phạt</button>
               <button type="button" onClick={() => void exportPenalties()} disabled={exportingPenalties} className="flex min-h-12 items-center justify-center gap-2 rounded-2xl border border-rose-200 bg-white px-3 text-sm font-bold text-rose-700 disabled:opacity-50 dark:bg-slate-900"><Download className="h-4 w-4" /> {exportingPenalties ? 'Đang xuất...' : 'Xuất phạt'}</button>
             </div>
             <div className="flex items-center justify-between rounded-2xl border border-slate-200 bg-white p-1.5 shadow-sm dark:border-slate-700 dark:bg-slate-900">
@@ -450,16 +478,17 @@ export default function AdminRequestsPage() {
             {!penalizedEmployees.length && <div className="mobile-card p-8 text-center text-sm font-semibold text-muted-foreground">Chưa có nhân viên bị phạt.</div>}
           </section>
         )}
-        <form onSubmit={addManualPenalty} className={`${pageMode === 'penalties' && manualPenaltyOpen ? 'order-2' : 'hidden'} mb-5 overflow-hidden rounded-3xl border border-rose-200 bg-white shadow-sm dark:border-rose-500/20 dark:bg-slate-900`}>
+        <form ref={manualPenaltyFormRef} onSubmit={addManualPenalty} className={`${pageMode === 'penalties' && manualPenaltyOpen ? 'order-2' : 'hidden'} mb-5 scroll-mt-6 overflow-hidden rounded-3xl border border-rose-200 bg-white shadow-sm dark:border-rose-500/20 dark:bg-slate-900`}>
           <div className="flex items-center gap-3 bg-gradient-to-r from-rose-600 to-fuchsia-600 p-4 text-white">
             <div className="grid h-11 w-11 place-items-center rounded-2xl bg-white/15"><AlertTriangle className="h-5 w-5" /></div>
             <div className="min-w-0 flex-1"><p className="text-xs font-bold uppercase tracking-wider text-rose-100">Quản lý tự ghi nhận</p><h2 className="font-black">Thêm khoản phạt</h2></div>
-            <button type="button" onClick={() => setManualPenaltyOpen(false)} aria-label="Đóng form ghi phạt" className="grid h-10 w-10 place-items-center rounded-xl bg-white/15"><X className="h-4 w-4" /></button>
+            <button type="button" onClick={closeManualPenalty} aria-label="Đóng form ghi phạt" className="grid h-10 w-10 place-items-center rounded-xl bg-white/15"><X className="h-4 w-4" /></button>
           </div>
           <div className="grid gap-3 p-4 sm:grid-cols-2">
             <label className="relative block text-sm font-bold sm:col-span-2">Nhân viên
               <button
                 type="button"
+                ref={employeePickerButtonRef}
                 onClick={() => setEmployeePickerOpen((current) => !current)}
                 aria-expanded={employeePickerOpen}
                 aria-haspopup="listbox"
@@ -480,7 +509,8 @@ export default function AdminRequestsPage() {
                       type="button"
                       role="option"
                       aria-selected={penaltyEmployeeId === employee.uid}
-                      onClick={() => { setPenaltyEmployeeId(employee.uid); setEmployeePickerOpen(false); setPenaltyFormError('') }}
+                      onPointerDown={(event) => { event.preventDefault(); selectPenaltyEmployee(employee.uid) }}
+                      onClick={() => selectPenaltyEmployee(employee.uid)}
                       className={`flex w-full items-center gap-3 rounded-xl px-2.5 py-2.5 text-left transition ${penaltyEmployeeId === employee.uid ? 'bg-rose-50 dark:bg-rose-500/10' : 'hover:bg-slate-50 dark:hover:bg-slate-900'}`}
                     >
                       <EmployeeAvatar employee={employee} className="h-10 w-10" />
