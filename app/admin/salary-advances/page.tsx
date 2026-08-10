@@ -177,22 +177,24 @@ export default function AdminSalaryAdvancesPage() {
     <main className="min-h-screen bg-slate-50/70 pb-28 dark:bg-slate-950 md:pb-32">
       <Header title="Quản lý ứng lương" subtitle="Duyệt nhanh, theo dõi rõ và gửi đúng danh sách đã duyệt" />
       <PageContainer maxWidth="2xl">
-        <div className="mb-4 flex items-center justify-between gap-3 rounded-2xl border border-slate-200/90 bg-white/90 px-3 py-2.5 shadow-sm shadow-slate-950/5 dark:border-white/10 dark:bg-slate-900/90">
-          <div className="flex min-w-0 items-center gap-3">
-            <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-sky-50 text-sky-600 dark:bg-sky-500/10 dark:text-sky-300"><CircleDollarSign className="h-4 w-4" /></span>
-            <div className="min-w-0">
-              <p className="text-[10px] font-black uppercase tracking-[0.14em] text-slate-400">Tổng quan ứng lương</p>
-              <p className="truncate text-sm font-black text-slate-900 dark:text-white">Chờ {pendingCount} · Đã duyệt {approvedCount}</p>
-              <p className="truncate text-[11px] font-semibold text-slate-500 dark:text-slate-400">{formatAmount(pendingTotal)} đang chờ · {formatAmount(approvedTotal)} đã duyệt</p>
+        <div className="mb-4 rounded-2xl border border-sky-500/20 bg-gradient-to-r from-sky-600 to-blue-700 p-3 text-white shadow-md shadow-sky-950/10">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex min-w-0 items-center gap-3">
+              <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-white/15 text-white"><CircleDollarSign className="h-5 w-5" /></span>
+              <div className="min-w-0">
+                <p className="text-[10px] font-black uppercase tracking-[0.14em] text-sky-100">Tổng quan ứng lương</p>
+                <p className="text-sm font-black">Chờ {pendingCount} · Đã duyệt {approvedCount}</p>
+                <p className="break-words text-[11px] font-semibold leading-5 text-sky-100">{formatAmount(pendingTotal)} đang chờ · {formatAmount(approvedTotal)} đã duyệt</p>
+              </div>
             </div>
+            <button type="button" onClick={() => void exportExcel()} disabled={exporting} className="flex min-h-11 w-full shrink-0 items-center justify-center gap-2 rounded-xl bg-white px-4 text-sm font-black text-sky-700 transition active:scale-[0.98] disabled:opacity-60 sm:w-auto sm:min-w-48">
+              {exporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+              <span>{exporting ? 'Đang tạo Excel...' : 'Xuất Excel đã duyệt'}</span>
+            </button>
           </div>
-          <button type="button" onClick={() => void exportExcel()} disabled={exporting} className="flex min-h-10 shrink-0 items-center justify-center gap-1.5 rounded-xl bg-slate-950 px-3 text-xs font-black text-white transition active:scale-[0.98] disabled:opacity-60 dark:bg-white dark:text-slate-950">
-            {exporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
-            <span>{exporting ? 'Đang tạo...' : 'Xuất Excel'}</span>
-          </button>
         </div>
 
-        <div className="mb-5 flex gap-2 overflow-x-auto rounded-2xl bg-slate-100 p-1 [scrollbar-width:none] dark:bg-slate-800">
+        <div className="mb-5 flex gap-2 overflow-x-auto rounded-2xl border border-sky-100 bg-sky-50 p-1 [scrollbar-width:none] dark:border-sky-500/20 dark:bg-sky-500/10">
           {([
             ['all', 'Tất cả'],
             ['Pending', 'Chờ xử lý'],
@@ -200,7 +202,7 @@ export default function AdminSalaryAdvancesPage() {
             ['Rejected', 'Từ chối'],
             ['Cancelled', 'Đã hủy'],
           ] as const).map(([value, label]) => (
-            <button key={value} type="button" onClick={() => setFilter(value)} className={`min-h-10 shrink-0 rounded-xl px-4 text-xs font-bold ${filter === value ? 'bg-white text-sky-700 shadow-sm dark:bg-slate-950' : 'text-muted-foreground'}`}>{label}</button>
+            <button key={value} type="button" onClick={() => setFilter(value)} className={`min-h-10 shrink-0 rounded-xl px-4 text-xs font-bold ${filter === value ? 'bg-sky-600 text-white shadow-sm dark:bg-sky-500' : 'text-slate-600 dark:text-slate-300'}`}>{label}</button>
           ))}
         </div>
 

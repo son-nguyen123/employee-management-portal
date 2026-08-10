@@ -36,6 +36,21 @@ function repairMojibake(value: unknown, fallback: string) {
   }
 }
 
+function normalizeLegacyPenaltyText(value: unknown, fallback: string) {
+  const repaired = repairMojibake(value, fallback)
+  const compact = repaired.replace(/\s+/g, ' ').trim().toLocaleLowerCase('vi')
+
+  // A previous client stored these automatic schedule-penalty strings with
+  // question marks in place of Vietnamese characters. Keep old exports readable
+  // without changing the original Firestore records in the request itself.
+  if (/^dang k\s+l\?ch tr\? h?n$/.test(compact)) return 'Đăng ký lịch trễ hạn'
+  if (compact.startsWith('l?ch tu?n du?c g?i sau h?n dang k')) {
+    return 'Lịch tuần được gửi sau hạn đăng ký. Khoản phạt được bổ sung theo lịch sử đăng ký.'
+  }
+
+  return repaired
+}
+
 type PenaltyRow = {
   employeeId: string
   employeeName: string
@@ -112,11 +127,11 @@ export async function GET(request: Request) {
       const employee = employeeMap.get(employeeId) || {}
       penaltyRows.push({
         employeeId,
-        employeeName: repairMojibake(employee.fullName, 'Nhân viên'),
-        employeeCode: repairMojibake(employee.employeeCode, employeeId),
+        employeeName: normalizeLegacyPenaltyText(employee.fullName, 'Nhân viên'),
+        employeeCode: normalizeLegacyPenaltyText(employee.employeeCode, employeeId),
         date: toDate(penalty.penaltyDate),
-        title: repairMojibake(penalty.title, 'Khoản phạt'),
-        reason: repairMojibake(penalty.description, 'Không có lý do'),
+        title: normalizeLegacyPenaltyText(penalty.title, 'Khoản phạt'),
+        reason: normalizeLegacyPenaltyText(penalty.description, 'Không có lý do'),
         amount: Number(penalty.amount || 0),
       })
     })
