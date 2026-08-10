@@ -9,6 +9,7 @@ type WorkflowAction =
   | 'submitStaffRequest'
   | 'reviseRequest'
   | 'cancelRequest'
+  | 'reopenRequest'
   | 'cancelScheduleBatch'
   | 'adminCancelSchedules'
   | 'setScheduleBatchEditing'

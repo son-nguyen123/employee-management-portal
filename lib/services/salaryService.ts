@@ -87,6 +87,10 @@ export async function updateSalaryAdvanceStatus(
   })
 }
 
+export async function reopenSalaryAdvance(id: string, note = ''): Promise<void> {
+  await callWorkflowApi('reopenRequest', { resource: 'salary', id, note })
+}
+
 /**
  * Get all salary advances (admin only)
  */

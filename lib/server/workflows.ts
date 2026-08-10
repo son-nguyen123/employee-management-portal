@@ -1975,6 +1975,71 @@ export async function cancelRequest(actor: RequestActor, raw: unknown) {
   return { id, status: 'Cancelled' }
 }
 
+export async function reopenRequest(actor: RequestActor, raw: unknown) {
+  requireManager(actor)
+  const body = objectBody(raw)
+  const resource = text(body.resource, 'Loại yêu cầu', 20)
+  if (resource !== 'salary') throw new ApiError(400, 'Chỉ hỗ trợ mở lại yêu cầu ứng lương.')
+  const id = text(body.id, 'Mã yêu cầu', 128)
+  const note = text(body.note ?? '', 'Lý do mở lại', 1000, true)
+  const targetRef = adminDb.collection('salaryAdvances').doc(id)
+  const notificationRef = adminDb.collection('notifications').doc(`salary-reopened-${id}`)
+  const dispatchRef = adminDb.collection('pushDispatches').doc(`salary-reopened-${id}`)
+  let employeeId = ''
+
+  await adminDb.runTransaction(async (transaction) => {
+    const target = await transaction.get(targetRef)
+    if (!target.exists) throw new ApiError(404, 'Không tìm thấy yêu cầu ứng lương.')
+    const data = target.data()!
+    if (!['Approved', 'Rejected'].includes(String(data.status))) {
+      throw new ApiError(409, 'Chỉ có thể mở lại yêu cầu đã được duyệt hoặc từ chối.')
+    }
+    employeeId = String(data.employeeId || '')
+    if (!employeeId) throw new ApiError(409, 'Yêu cầu chưa có nhân viên hợp lệ.')
+
+    const now = FieldValue.serverTimestamp()
+    transaction.set(targetRef, {
+      status: 'Pending',
+      reviewNote: note || 'Quản lý đã mở lại yêu cầu để nhân viên điều chỉnh.',
+      reopenedBy: actor.uid,
+      reopenedAt: now,
+      updatedAt: now,
+      approvedBy: FieldValue.delete(),
+      reviewedBy: FieldValue.delete(),
+      reviewedAt: FieldValue.delete(),
+    }, { merge: true })
+    transaction.set(notificationRef, {
+      employeeId,
+      title: 'Yêu cầu ứng lương được mở lại',
+      message: note || 'Quản lý đã mở lại yêu cầu. Bạn có thể điều chỉnh hoặc gửi lại yêu cầu.',
+      type: 'info',
+      isRead: false,
+      createdAt: now,
+    })
+    transaction.set(dispatchRef, {
+      source: 'salaryAdvances',
+      sourceId: id,
+      employeeId,
+      status: 'Pending',
+      state: 'queued',
+      createdAt: now,
+      updatedAt: now,
+    })
+  })
+
+  const push = await sendEmployeePush({
+    employeeId,
+    dispatchId: dispatchRef.id,
+    title: 'Yêu cầu ứng lương được mở lại',
+    body: note || 'Quản lý đã mở lại yêu cầu để bạn điều chỉnh hoặc gửi lại.',
+    link: '/salary-advance',
+    source: 'salaryAdvances',
+    sourceId: id,
+    status: 'Pending',
+  })
+  return { id, status: 'Pending', push }
+}
+
 export async function cancelScheduleBatch(actor: RequestActor, raw: unknown) {
   requireStaff(actor)
   const body = objectBody(raw)
