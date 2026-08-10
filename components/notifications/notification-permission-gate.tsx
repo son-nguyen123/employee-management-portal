@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { usePathname } from 'next/navigation'
 import {
   BellRing,
@@ -9,7 +9,6 @@ import {
   RotateCw,
   Settings,
   Smartphone,
-  X,
 } from 'lucide-react'
 import { useAuth } from '@/lib/hooks/useAuth'
 import {
@@ -63,47 +62,75 @@ export function NotificationPermissionGate({ children }: { children: React.React
   const [permission, setPermission] = useState<GateState>('checking')
   const [registered, setRegistered] = useState(false)
   const [working, setWorking] = useState(false)
-  const [dismissed, setDismissed] = useState(false)
   const [message, setMessage] = useState('')
+  const [checkedKey, setCheckedKey] = useState<string | null>(null)
+  const checkId = useRef(0)
   const exempt = pathname.startsWith('/auth/') || pathname === '/profile/setup'
   const shouldCheck = !isLoading && !!authUser && !!employee && !isPreviewMode && !exempt
+  const gateKey = shouldCheck && authUser ? authUser.uid : null
 
   const refreshState = useCallback(async (syncDevice = true) => {
     if (!authUser || isPreviewMode) return
+    const currentCheckId = ++checkId.current
+
+    // Keep the gate in a single loading state until both browser permission and
+    // Firebase device registration are known. This prevents a prompt from
+    // flashing while a previously granted device is still being verified.
+    setPermission('checking')
+    setCheckedKey(null)
+    setMessage('')
+
     try {
       const nextPermission = await getPushPermissionState()
-      setPermission(nextPermission)
+      if (currentCheckId !== checkId.current) return
+
       if (nextPermission !== 'granted') {
         setRegistered(false)
+        setPermission(nextPermission)
+        setCheckedKey(gateKey)
         return
       }
 
       let deviceRegistered = await isPushDeviceRegistered(authUser.uid)
+      if (currentCheckId !== checkId.current) return
+
       if (!deviceRegistered && syncDevice) {
         deviceRegistered = !!(await syncPushDeviceRegistration(authUser.uid))
       }
+      if (currentCheckId !== checkId.current) return
+
       setRegistered(deviceRegistered)
+      setPermission(nextPermission)
+      setCheckedKey(gateKey)
       if (!deviceRegistered) {
         setMessage('Quyền đã bật nhưng thiết bị chưa đăng ký xong. Hãy nhấn thử lại; ứng dụng vẫn dùng được bình thường.')
       } else {
         setMessage('')
       }
     } catch (error) {
+      if (currentCheckId !== checkId.current) return
       setRegistered(false)
       setMessage(error instanceof Error ? error.message : 'Chưa thể kiểm tra trạng thái thông báo.')
+      let fallbackPermission: PushPermissionState = 'unavailable'
+      try {
+        fallbackPermission = await getPushPermissionState()
+      } catch {
+        // Keep the unavailable state when the browser check itself fails.
+      }
+      setPermission(fallbackPermission)
+      setCheckedKey(gateKey)
     }
-  }, [authUser, isPreviewMode])
+  }, [authUser, gateKey, isPreviewMode])
 
   useEffect(() => {
-    if (!shouldCheck) return
-    const timer = window.setTimeout(() => {
-      setDismissed(sessionStorage.getItem(`push-prompt-dismissed:${authUser.uid}`) === '1')
-      setPermission('checking')
-      setMessage('')
-      void refreshState()
-    }, 0)
+    if (!shouldCheck) {
+      checkId.current += 1
+      return
+    }
+
+    const timer = window.setTimeout(() => void refreshState(), 0)
     return () => window.clearTimeout(timer)
-  }, [authUser, refreshState, shouldCheck])
+  }, [refreshState, shouldCheck])
 
   useEffect(() => {
     if (!shouldCheck) return
@@ -118,30 +145,23 @@ export function NotificationPermissionGate({ children }: { children: React.React
     }
   }, [refreshState, shouldCheck])
 
-  const dismiss = () => {
-    setDismissed(true)
-    if (authUser) sessionStorage.setItem(`push-prompt-dismissed:${authUser.uid}`, '1')
-  }
-
   const enable = async () => {
-    if (!authUser) return
+    if (!authUser || working) return
     setWorking(true)
     setMessage('')
     try {
       if (permission === 'default' || permission === 'granted') {
         await enablePushNotifications(authUser.uid)
       } else {
-        await refreshState()
+        // A browser that has been denied cannot be re-prompted by JavaScript.
+        // The user must change the site/app setting first, then check again.
+        await refreshState(false)
+        return
       }
+      await refreshState(false)
+    } catch (error) {
       const nextPermission = await getPushPermissionState()
       setPermission(nextPermission)
-      if (nextPermission === 'granted') {
-        const deviceRegistered = await isPushDeviceRegistered(authUser.uid)
-        setRegistered(deviceRegistered)
-        if (deviceRegistered) setDismissed(true)
-      }
-    } catch (error) {
-      setPermission(await getPushPermissionState())
       setRegistered(false)
       setMessage(error instanceof Error ? error.message : 'Không thể bật thông báo trên thiết bị này.')
     } finally {
@@ -151,7 +171,7 @@ export function NotificationPermissionGate({ children }: { children: React.React
 
   const unavailable = permission === 'unsupported' || permission === 'unavailable'
   const denied = permission === 'denied'
-  const showPrompt = shouldCheck && !dismissed && permission !== 'checking' && !(permission === 'granted' && registered)
+  const showPrompt = shouldCheck && checkedKey === gateKey && permission !== 'checking' && !(permission === 'granted' && registered)
 
   return (
     <>
@@ -177,9 +197,6 @@ export function NotificationPermissionGate({ children }: { children: React.React
                     : 'Nhận ngay kết quả lịch làm và yêu cầu mới, kể cả khi Trí Candy đang chạy nền.'}
               </p>
             </div>
-            <button type="button" onClick={dismiss} aria-label="Để sau" className="grid h-9 w-9 shrink-0 place-items-center rounded-xl text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800">
-              <X className="h-4 w-4" />
-            </button>
           </div>
 
           {message && (
@@ -197,9 +214,6 @@ export function NotificationPermissionGate({ children }: { children: React.React
             >
               {working ? <LoaderCircle className="h-4 w-4 animate-spin" /> : unavailable || denied ? <RotateCw className="h-4 w-4" /> : <BellRing className="h-4 w-4" />}
               {working ? 'Đang kiểm tra…' : unavailable || denied ? 'Kiểm tra lại' : permission === 'granted' ? 'Đăng ký lại thiết bị' : 'Cho phép thông báo'}
-            </button>
-            <button type="button" onClick={dismiss} className="min-h-11 rounded-xl px-4 text-sm font-bold text-slate-600 hover:bg-slate-100 dark:text-slate-300 dark:hover:bg-slate-800">
-              Tiếp tục
             </button>
           </div>
 

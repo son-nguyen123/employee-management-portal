@@ -25,6 +25,7 @@ const SERVICE_WORKER_PATH = '/firebase-messaging-sw.js'
 let messagingInstance: Messaging | null = null
 let registrationObserver: Unsubscribe | null = null
 let unregistrationObserver: Unsubscribe | null = null
+const registrationInFlight = new Map<string, Promise<PushRegistrationResult>>()
 
 export type PushPermissionState =
   | NotificationPermission
@@ -151,6 +152,20 @@ async function registerPushDevice(
   }
 }
 
+function registerPushDeviceOnce(
+  employeeId: string,
+  permission: NotificationPermission
+): Promise<PushRegistrationResult> {
+  const existingRequest = registrationInFlight.get(employeeId)
+  if (existingRequest) return existingRequest
+
+  const request = registerPushDevice(employeeId, permission).finally(() => {
+    registrationInFlight.delete(employeeId)
+  })
+  registrationInFlight.set(employeeId, request)
+  return request
+}
+
 export async function getPushPermissionState(): Promise<PushPermissionState> {
   if (
     typeof window === 'undefined' ||
@@ -197,7 +212,7 @@ export async function enablePushNotifications(
     )
   }
 
-  return registerPushDevice(employeeId, permission)
+  return registerPushDeviceOnce(employeeId, permission)
 }
 
 export async function syncPushDeviceRegistration(
@@ -206,7 +221,7 @@ export async function syncPushDeviceRegistration(
   assertBrowser()
   const permission = await getPushPermissionState()
   if (permission !== 'granted') return null
-  return registerPushDevice(employeeId, permission)
+  return registerPushDeviceOnce(employeeId, permission)
 }
 
 export async function disablePushNotifications(employeeId: string): Promise<void> {
@@ -234,7 +249,7 @@ export async function repairPushDeviceRegistration(
   }
 
   await disablePushNotifications(employeeId)
-  return registerPushDevice(employeeId, permission)
+  return registerPushDeviceOnce(employeeId, permission)
 }
 
 export async function subscribeToForegroundMessages(
