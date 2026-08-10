@@ -3,7 +3,7 @@
 import React, { createContext, useCallback, useContext, useEffect, useState, ReactNode } from 'react'
 import { User } from 'firebase/auth'
 import { subscribeToAuthState, convertFirebaseUserToAuthUser, logOut } from '@/lib/services/authService'
-import { getEmployeeByUID, subscribeToEmployeeByUID } from '@/lib/services/employeeService'
+import { getCachedEmployee, getEmployeeByUID, subscribeToEmployeeByUID } from '@/lib/services/employeeService'
 import { AuthUser, Employee } from '@/lib/models/types'
 import {
   DEMO_MODE,
@@ -72,7 +72,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       if (firebaseUser) {
         const authUserData = convertFirebaseUserToAuthUser(firebaseUser)
+        const cachedEmployee = getCachedEmployee(firebaseUser.uid)
         setAuthUser(authUserData)
+        if (cachedEmployee) {
+          // Render the last known shell immediately while Firestore refreshes it.
+          // The live snapshot below remains the source of truth for role/status.
+          setEmployee(cachedEmployee)
+          setIsLoading(false)
+        }
         unsubscribeEmployee = subscribeToEmployeeByUID(
           firebaseUser.uid,
           (employeeData) => {
@@ -81,7 +88,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           },
           (error) => {
             console.error('Error subscribing to employee data:', error)
-            setEmployee(null)
+            if (!cachedEmployee) setEmployee(null)
             setIsLoading(false)
           }
         )

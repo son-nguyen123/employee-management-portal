@@ -18,7 +18,38 @@ self.addEventListener('install', () => {
 });
 
 self.addEventListener('activate', (event) => {
-  event.waitUntil(self.clients.claim());
+  event.waitUntil(
+    caches.keys().then((keys) => Promise.all(
+      keys
+        .filter((key) => key.startsWith('tricandy-static-') && key !== 'tricandy-static-v2')
+        .map((key) => caches.delete(key))
+    )).then(() => self.clients.claim())
+  );
+});
+
+// Cache immutable Next.js assets after the first visit so launching the
+// installed PWA does not need to redownload its JavaScript/CSS bundle.
+// Dynamic HTML, APIs, Firebase, and user images remain network controlled.
+self.addEventListener('fetch', (event) => {
+  const request = event.request;
+  if (request.method !== 'GET') return;
+  const url = new URL(request.url);
+  if (url.origin !== self.location.origin) return;
+  if (!['script', 'style', 'font', 'image'].includes(request.destination)) return;
+
+  event.respondWith(
+    caches.open('tricandy-static-v2').then(async (cache) => {
+      const cached = await cache.match(request);
+      if (cached) return cached;
+      try {
+        const response = await fetch(request);
+        if (response.ok) await cache.put(request, response.clone());
+        return response;
+      } catch {
+        return cached || Response.error();
+      }
+    })
+  );
 });
 
 importScripts('https://www.gstatic.com/firebasejs/12.16.0/firebase-app-compat.js');
