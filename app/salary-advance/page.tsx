@@ -180,7 +180,7 @@ export default function SalaryAdvancePage() {
           <div className="mb-5 flex items-center gap-3"><RequestIdentityAvatar name={employeeName} photoURL={employee?.photoURL} icon={CircleDollarSign} iconColor="bg-sky-500" /><div><p className="text-xs font-black uppercase tracking-wider text-sky-600">Yêu cầu mới</p><h2 className="text-xl font-black">Tạo yêu cầu ứng lương</h2><p className="text-xs font-semibold text-muted-foreground">Mã nhân viên · {employeeCode}</p></div></div>
           <form onSubmit={handleSubmit} className="space-y-5">
             <label className="block text-sm font-bold">Số tiền muốn ứng
-              <div className="relative mt-2"><DollarSign className="absolute left-4 top-4 h-5 w-5 text-sky-500" /><input type="text" inputMode="numeric" value={formData.amount} onChange={(event) => setFormData({ ...formData, amount: formatVietnameseCurrency(event.target.value) })} placeholder="Ví dụ: 2.000.000" className="mobile-field pl-11" disabled={submitting} /></div>
+              <div className="mt-2"><input type="text" inputMode="numeric" value={formData.amount} onChange={(event) => setFormData({ ...formData, amount: formatVietnameseCurrency(event.target.value) })} placeholder="Ví dụ: 2.000.000" className="mobile-field" disabled={submitting} /></div>
             </label>
             <label className="block text-sm font-bold">Ghi chú <span className="font-normal text-muted-foreground">(không bắt buộc)</span>
               <textarea value={formData.reason} onChange={(event) => setFormData({ ...formData, reason: event.target.value })} placeholder="Bạn có thể ghi thêm để quản lý dễ xem xét..." rows={4} className="mobile-field mt-2 resize-none py-3" disabled={submitting} />
