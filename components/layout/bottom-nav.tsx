@@ -1,9 +1,9 @@
 'use client'
 
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import Link from 'next/link'
-import { usePathname } from 'next/navigation'
+import { usePathname, useRouter } from 'next/navigation'
 import { Badge } from '../ui/badge'
 
 interface NavItem {
@@ -21,14 +21,54 @@ interface BottomNavProps {
 const BottomNav = React.forwardRef<HTMLDivElement, BottomNavProps>(
   ({ items, className = '' }, ref) => {
     const pathname = usePathname()
+    const router = useRouter()
+    const hrefKey = items.map((item) => item.href).join('|')
     const [mounted, setMounted] = useState(false)
+    const [navigating, setNavigating] = useState(false)
+    const navigationTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
     useEffect(() => setMounted(true), [])
+
+    useEffect(() => () => {
+      if (navigationTimer.current) clearTimeout(navigationTimer.current)
+    }, [])
+
+    useEffect(() => {
+      setNavigating(false)
+      if (navigationTimer.current) {
+        clearTimeout(navigationTimer.current)
+        navigationTimer.current = null
+      }
+    }, [pathname])
+
+    useEffect(() => {
+      if (!mounted) return
+      const hrefs = hrefKey.split('|').filter(Boolean)
+      const prefetch = () => hrefs.forEach((href) => router.prefetch(href))
+      const idle = window.setTimeout(prefetch, 500)
+      return () => window.clearTimeout(idle)
+    }, [hrefKey, mounted, router])
+
+    const startNavigation = (href: string) => {
+      if (href === pathname || href.startsWith(`${pathname}/`)) return
+      setNavigating(true)
+      if (navigationTimer.current) clearTimeout(navigationTimer.current)
+      navigationTimer.current = setTimeout(() => {
+        setNavigating(false)
+        navigationTimer.current = null
+      }, 10000)
+    }
 
     if (!mounted) return null
 
     return createPortal(
-      <div
+      <>
+        {navigating && (
+          <div className="pointer-events-none fixed inset-x-0 top-0 z-[100] h-0.5 overflow-hidden bg-indigo-100/70 dark:bg-indigo-950/70" role="status" aria-label="Đang mở trang">
+            <span className="block h-full w-1/3 animate-[nav-progress_1.1s_ease-in-out_infinite] rounded-full bg-gradient-to-r from-fuchsia-500 via-indigo-600 to-sky-500" />
+          </div>
+        )}
+        <div
         data-app-bottom-navigation
         ref={ref}
         className={`fixed inset-x-0 bottom-0 z-[60] [transform:translate3d(0,0,0)] border-t border-slate-200 bg-white pb-[env(safe-area-inset-bottom)] shadow-[0_-6px_20px_rgba(15,23,42,0.07)] [backface-visibility:hidden] dark:border-white/10 dark:bg-slate-950 md:inset-x-auto md:bottom-5 md:left-1/2 md:w-[min(40rem,calc(100vw-3rem))] md:-translate-x-1/2 md:rounded-[1.75rem] md:border md:bg-white/95 md:pb-0 md:shadow-[0_20px_55px_rgba(15,23,42,0.2)] md:backdrop-blur-xl md:dark:bg-slate-950/95 xl:inset-y-0 xl:left-0 xl:w-[15.5rem] xl:translate-x-0 xl:rounded-none xl:border-y-0 xl:border-l-0 xl:border-r xl:bg-white xl:shadow-[12px_0_40px_rgba(15,23,42,0.06)] xl:dark:bg-slate-950 ${className}`}
@@ -47,6 +87,10 @@ const BottomNav = React.forwardRef<HTMLDivElement, BottomNavProps>(
               <Link
                 key={item.href}
                 href={item.href}
+                prefetch
+                onPointerEnter={() => router.prefetch(item.href)}
+                onFocus={() => router.prefetch(item.href)}
+                onClick={() => startNavigation(item.href)}
                 className={`group relative flex min-w-0 flex-col items-center justify-center gap-1 rounded-2xl px-1 py-2 transition-all duration-200 md:flex-row md:gap-2.5 md:px-4 xl:justify-start xl:rounded-xl xl:px-3 ${
                   isActive
                     ? 'text-indigo-600 dark:text-indigo-300 md:bg-indigo-50 md:shadow-inner md:dark:bg-indigo-500/15'
@@ -74,7 +118,8 @@ const BottomNav = React.forwardRef<HTMLDivElement, BottomNavProps>(
           <div className="flex items-center gap-2 text-xs font-bold"><span className="h-2 w-2 rounded-full bg-emerald-500" /> Hệ thống hoạt động</div>
           <p className="mt-1 text-[11px] leading-4 text-muted-foreground">Lịch làm và yêu cầu được đồng bộ tự động.</p>
         </div>
-      </div>,
+        </div>
+      </>,
       document.body
     )
   }

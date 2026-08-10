@@ -288,7 +288,7 @@ export default function SchedulePage() {
       date.setDate(monday.getDate() + index)
       return { key: localDateKey(date), name, shortName: shortNames[index], date }
     })
-  }, [changeMode, currentWeekMode, isNewEmployee, overtimeMode])
+  }, [changeMode, currentWeekMode, overtimeMode])
 
   const targetIsCurrentWeek = useMemo(() => {
     if (!days.length) return false
@@ -359,7 +359,7 @@ export default function SchedulePage() {
   }
 
   useEffect(() => {
-    if (!authUser || hasExistingSchedules === null) return
+    if (!authUser) return
     const hydrateSchedules = (schedules: WorkSchedule[]) => {
         const current = schedules.filter((item) => (overtimeMode || changeMode)
           ? item.status === 'Approved'
@@ -474,7 +474,7 @@ export default function SchedulePage() {
         setLoading(false)
       }
     )
-  }, [authUser, days, hasExistingSchedules, isPreviewMode, overtimeMode, changeMode])
+  }, [authUser, days, isPreviewMode, overtimeMode, changeMode])
 
   const chooseShift = (dayKey: string, shift: Shift) => {
     if (overtimeMode && original[dayKey]?.includes(shift)) return
