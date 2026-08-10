@@ -114,11 +114,11 @@ export async function GET(request: Request) {
     const summaryRow = Math.max(rows.length + 6, 6)
     sheet.mergeCells(`A${summaryRow}:I${summaryRow}`)
     sheet.getCell(`A${summaryRow}`).value = `Tổng người được duyệt: ${rows.length}   |   Tổng tiền đã duyệt: ${rows.reduce((sum, row) => sum + Number(row[3] || 0), 0).toLocaleString('vi-VN')} đ`
-    sheet.getCell(`A${summaryRow}`).font = { name: 'Arial', size: 11, bold: true, color: { argb: 'FF0F766E' } }
-    sheet.getCell(`A${summaryRow}`).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE6FFFB' } }
+    sheet.getCell(`A${summaryRow}`).font = { name: 'Arial', size: 10, bold: true, color: { argb: 'FF475569' } }
+    sheet.getCell(`A${summaryRow}`).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF8FAFC' } }
     sheet.getCell(`A${summaryRow}`).alignment = { horizontal: 'center', vertical: 'middle' }
-    sheet.getCell(`A${summaryRow}`).border = { top: { style: 'medium', color: { argb: 'FF0F766E' } } }
-    sheet.getRow(summaryRow).height = 26
+    sheet.getCell(`A${summaryRow}`).border = { bottom: { style: 'hair', color: { argb: 'FFE2E8F0' } } }
+    sheet.getRow(summaryRow).height = 22
 
     const buffer = await workbook.xlsx.writeBuffer()
     const date = new Date().toISOString().slice(0, 10)

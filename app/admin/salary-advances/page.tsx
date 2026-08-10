@@ -117,6 +117,8 @@ export default function AdminSalaryAdvancesPage() {
   )
   const pendingRequests = filteredRequests.filter((request) => request.status === 'Pending')
   const processedRequests = filteredRequests.filter((request) => request.status !== 'Pending')
+  const pendingCount = requests.filter((request) => request.status === 'Pending').length
+  const approvedCount = requests.filter((request) => request.status === 'Approved').length
   const pendingTotal = requests
     .filter((request) => request.status === 'Pending')
     .reduce((sum, request) => sum + Number(request.amount || 0), 0)
@@ -172,23 +174,21 @@ export default function AdminSalaryAdvancesPage() {
   if ((!role || !['admin', 'manager'].includes(role)) && !isPreviewMode) return null
 
   return (
-    <main className="min-h-screen bg-slate-50/70 pb-8 dark:bg-slate-950">
+    <main className="min-h-screen bg-slate-50/70 pb-28 dark:bg-slate-950 md:pb-32">
       <Header title="Quản lý ứng lương" subtitle="Duyệt nhanh, theo dõi rõ và gửi đúng danh sách đã duyệt" />
       <PageContainer maxWidth="2xl">
-        <div className="mb-4 grid gap-3 sm:grid-cols-3">
-          <div className="rounded-3xl bg-gradient-to-br from-sky-500 to-indigo-600 p-4 text-white shadow-lg shadow-sky-500/15">
-            <p className="text-xs font-bold uppercase tracking-wider text-sky-100">Chờ xử lý</p>
-            <p className="mt-3 text-2xl font-black">{requests.filter((item) => item.status === 'Pending').length} yêu cầu</p>
-            <p className="mt-1 text-sm font-semibold text-sky-100">{formatAmount(pendingTotal)}</p>
+        <div className="mb-4 flex items-center justify-between gap-3 rounded-2xl border border-slate-200/90 bg-white/90 px-3 py-2.5 shadow-sm shadow-slate-950/5 dark:border-white/10 dark:bg-slate-900/90">
+          <div className="flex min-w-0 items-center gap-3">
+            <span className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-sky-50 text-sky-600 dark:bg-sky-500/10 dark:text-sky-300"><CircleDollarSign className="h-4 w-4" /></span>
+            <div className="min-w-0">
+              <p className="text-[10px] font-black uppercase tracking-[0.14em] text-slate-400">Tổng quan ứng lương</p>
+              <p className="truncate text-sm font-black text-slate-900 dark:text-white">Chờ {pendingCount} · Đã duyệt {approvedCount}</p>
+              <p className="truncate text-[11px] font-semibold text-slate-500 dark:text-slate-400">{formatAmount(pendingTotal)} đang chờ · {formatAmount(approvedTotal)} đã duyệt</p>
+            </div>
           </div>
-          <div className="rounded-3xl border border-emerald-100 bg-white p-4 shadow-sm dark:border-emerald-500/20 dark:bg-slate-900">
-            <p className="text-xs font-bold uppercase tracking-wider text-emerald-600">Đã duyệt</p>
-            <p className="mt-3 text-2xl font-black text-slate-900 dark:text-white">{requests.filter((item) => item.status === 'Approved').length} yêu cầu</p>
-            <p className="mt-1 text-sm font-semibold text-emerald-600">{formatAmount(approvedTotal)}</p>
-          </div>
-          <button type="button" onClick={() => void exportExcel()} disabled={exporting} className="flex min-h-28 items-center justify-center gap-2 rounded-3xl bg-slate-950 px-4 text-sm font-bold text-white shadow-lg shadow-slate-950/10 transition active:scale-[0.99] disabled:opacity-60 dark:bg-white dark:text-slate-950">
-            {exporting ? <Loader2 className="h-5 w-5 animate-spin" /> : <Download className="h-5 w-5" />}
-            <span>{exporting ? 'Đang tạo Excel...' : 'Xuất Excel đã duyệt'}</span>
+          <button type="button" onClick={() => void exportExcel()} disabled={exporting} className="flex min-h-10 shrink-0 items-center justify-center gap-1.5 rounded-xl bg-slate-950 px-3 text-xs font-black text-white transition active:scale-[0.98] disabled:opacity-60 dark:bg-white dark:text-slate-950">
+            {exporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+            <span>{exporting ? 'Đang tạo...' : 'Xuất Excel'}</span>
           </button>
         </div>
 

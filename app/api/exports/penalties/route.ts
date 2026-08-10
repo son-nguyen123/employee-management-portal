@@ -24,6 +24,18 @@ function toDate(value: unknown): Date | null {
   return Number.isNaN(parsed.getTime()) ? null : parsed
 }
 
+function repairMojibake(value: unknown, fallback: string) {
+  const text = String(value ?? '').trim()
+  if (!text) return fallback
+  if (!/(?:Ã.|Â.|Ä.|Æ.|Ð.|Ø.|á(?:º|»|¼|½|¾|¿)|â[\u0080-\u009f]|ðŸ)/.test(text)) return text
+  try {
+    const repaired = Buffer.from(text, 'latin1').toString('utf8')
+    return repaired.includes('�') ? text : repaired
+  } catch {
+    return text
+  }
+}
+
 type PenaltyRow = {
   employeeId: string
   employeeName: string
@@ -44,7 +56,7 @@ function styleHeader(cell: ExcelJS.Cell) {
   cell.font = { name: 'Arial', size: 10, bold: true, color: { argb: 'FFFFFFFF' } }
   cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1E3A5F' } }
   cell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true }
-  cell.border = { bottom: { style: 'medium', color: { argb: 'FF0F766E' } } }
+  cell.border = { bottom: { style: 'hair', color: { argb: 'FFD7E0EA' } } }
 }
 
 function styleBody(cell: ExcelJS.Cell, columnNumber: number, stripe: boolean) {
@@ -100,11 +112,11 @@ export async function GET(request: Request) {
       const employee = employeeMap.get(employeeId) || {}
       penaltyRows.push({
         employeeId,
-        employeeName: String(employee.fullName || 'Nhân viên'),
-        employeeCode: String(employee.employeeCode || employeeId),
+        employeeName: repairMojibake(employee.fullName, 'Nhân viên'),
+        employeeCode: repairMojibake(employee.employeeCode, employeeId),
         date: toDate(penalty.penaltyDate),
-        title: String(penalty.title || 'Khoản phạt'),
-        reason: String(penalty.description || 'Không có lý do'),
+        title: repairMojibake(penalty.title, 'Khoản phạt'),
+        reason: repairMojibake(penalty.description, 'Không có lý do'),
         amount: Number(penalty.amount || 0),
       })
     })

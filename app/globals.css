@@ -190,6 +190,13 @@ body.modal-layer-open [data-app-bottom-navigation] {
   display: none;
 }
 
+/* Keep the app navigation outside the document's scroll flow on mobile WebKit. */
+[data-app-bottom-navigation] {
+  position: fixed !important;
+  isolation: isolate;
+  touch-action: manipulation;
+}
+
 @media (min-width: 1024px) {
   .home-hero {
     background-image:
