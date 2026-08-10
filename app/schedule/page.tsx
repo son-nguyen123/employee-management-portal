@@ -65,6 +65,8 @@ const shiftDisplayOrder: Shift[] = ['Morning', 'Afternoon', 'Custom', 'Evening']
 
 const orderedShifts = (shifts: Shift[]) => [...shifts].sort((left, right) => shiftDisplayOrder.indexOf(left) - shiftDisplayOrder.indexOf(right))
 
+const customShiftLabel = (shift?: CustomShift) => `Ca ${shift?.start || '08:00'}–${shift?.end || '17:00'}`
+
 const shiftTextClass = (shift: Shift) => shift === 'Morning'
   ? 'font-bold text-emerald-600 dark:text-emerald-400'
   : shift === 'Afternoon'
@@ -848,7 +850,7 @@ export default function SchedulePage() {
         context.textAlign = align
         context.fillText(value, x, y)
       }
-      const shiftLabel = (shift: Shift) => shift === 'Morning' ? 'sáng' : shift === 'Afternoon' ? 'chiều' : shift === 'Evening' ? 'tối' : 'tùy chỉnh'
+      const shiftLabel = (shift: Shift) => shift === 'Morning' ? 'sáng' : shift === 'Afternoon' ? 'chiều' : shift === 'Evening' ? 'tối' : 'ca riêng'
       const shiftTextColor = (shift: Shift) => shift === 'Morning' ? '#059669' : shift === 'Afternoon' ? '#f97316' : shift === 'Evening' ? '#e11d48' : '#7c3aed'
 
       context.fillStyle = '#eef2ff'
@@ -901,7 +903,7 @@ export default function SchedulePage() {
           text(dayLabel, 108, rowY + 38, '800 25px -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif', '#0f172a')
           const labels = orderedShifts(dayShifts).map((shift) => ({
             label: shift === 'Custom'
-              ? `tùy chỉnh ${customData[day.key]?.start || '08:00'}–${customData[day.key]?.end || '17:00'}`
+              ? customShiftLabel(customData[day.key])
               : shiftLabel(shift),
             color: shiftTextColor(shift),
           }))
@@ -1097,7 +1099,7 @@ export default function SchedulePage() {
                         {orderedShifts(selected[day.key] || []).map((shift, index) => (
                           <Fragment key={shift}>
                             {index > 0 && <span className="mx-1 text-slate-300">·</span>}
-                            <span className={shiftTextClass(shift)}>{shift === 'Custom' ? `tùy chỉnh ${customData[day.key]?.start || '08:00'}–${customData[day.key]?.end || '17:00'}` : shiftOptions.find((item) => item.value === shift)?.shortLabel}</span>
+                            <span className={shiftTextClass(shift)}>{shift === 'Custom' ? customShiftLabel(customData[day.key]) : shiftOptions.find((item) => item.value === shift)?.shortLabel}</span>
                           </Fragment>
                         ))}
                         {dutyDay === day.key && <span className="font-bold text-rose-600">{selected[day.key]?.length ? <span className="mx-1 text-slate-300">·</span> : ''}trực 17:00–17:30</span>}

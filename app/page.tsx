@@ -33,7 +33,7 @@ import { getAllSchedules, getEmployeeSchedules, getSchedulesByDateRange } from '
 import { getPreviewSchedules } from '@/lib/services/previewWorkflow'
 import { getCachedUserFeatureSettings, getUserFeatureSettings, getWeeklyScheduleTarget } from '@/lib/services/managementSettingsService'
 import { subscribeToManagementPendingItems } from '@/lib/services/notificationService'
-import { SkeletonLoader } from '@/components/ui/skeleton-loader'
+import { AppLoadingScreen } from '@/components/ui/app-loading-screen'
 import { profileImageUrl } from '@/lib/utils/profileImage'
 import { defaultUserFeatureSettings, type UserFeatureKey, type UserFeatureSettings } from '@/lib/models/userFeatureSettings'
 
@@ -218,7 +218,7 @@ export default function Page() {
   }, [authUser, employee, isPreviewMode])
 
   if (isLoading) {
-    return <div className="mx-auto min-h-screen max-w-2xl p-4"><SkeletonLoader variant="card" count={6} /></div>
+    return <AppLoadingScreen />
   }
   if (!authUser) return null
 
