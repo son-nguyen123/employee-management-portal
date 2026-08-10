@@ -197,6 +197,20 @@ body.modal-layer-open [data-app-bottom-navigation] {
   touch-action: manipulation;
 }
 
+/* iOS can preserve a stale containing block while the document is being
+   rubber-band scrolled. Explicitly pin the mobile bar to the viewport. */
+@media (max-width: 767px) {
+  [data-app-bottom-navigation] {
+    inset-inline: 0 !important;
+    inset-block-start: auto !important;
+    inset-block-end: 0 !important;
+    width: 100% !important;
+    max-width: none !important;
+    margin: 0 !important;
+    transform: none !important;
+  }
+}
+
 @media (min-width: 1024px) {
   .home-hero {
     background-image:
