@@ -277,7 +277,7 @@ export async function GET(request: Request) {
       row.eachCell((cell, columnNumber) => {
         cell.font = { name: 'Arial', size: 10, color: { argb: 'FF0F172A' } }
         cell.alignment = { horizontal: columnNumber <= 3 ? (columnNumber === 3 ? 'left' : 'center') : 'center', vertical: 'middle', wrapText: false }
-        cell.border = { top: { style: 'hair', color: { argb: 'FFE2E8F0' } }, bottom: { style: 'medium', color: { argb: 'FF111827' } }, left: { style: 'hair', color: { argb: 'FFE2E8F0' } }, right: { style: 'hair', color: { argb: 'FFE2E8F0' } } }
+        cell.border = { bottom: { style: 'thin', color: { argb: 'FF64748B' } }, left: { style: 'hair', color: { argb: 'FFE2E8F0' } }, right: { style: 'hair', color: { argb: 'FFE2E8F0' } } }
       })
       row.getCell(3).font = { name: 'Arial', size: 10, bold: true, color: { argb: 'FF0F172A' } }
       row.getCell(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF8FAFC' } }
