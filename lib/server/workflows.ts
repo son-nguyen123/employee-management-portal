@@ -6,6 +6,7 @@ import { ApiError, type RequestActor, requireManager, requireStaff } from '@/lib
 import { workflowPolicy } from '@/lib/server/workflow-policy'
 import { auditReceiptCapability } from '@/lib/server/audit-trail'
 import { cancelQueuedAuditEmails } from '@/lib/server/audit-email'
+import { deleteAllProfileImages } from '@/lib/server/google-drive-archive'
 import { defaultUserFeatureSettings, userFeatureKeys, type UserFeatureKey, type UserFeatureSettings } from '@/lib/models/userFeatureSettings'
 
 type Shift = 'Morning' | 'Afternoon' | 'Evening'
@@ -350,8 +351,34 @@ export async function manageEmployeeStatus(actor: RequestActor, raw: unknown) {
       createdAt: now,
     })
   })
-  if (status === 'inactive') await adminAuth.revokeRefreshTokens(employeeId)
-  return { employeeId, status, releasedSchedules }
+  let deletedProfileImages = 0
+  let profileCleanupPending = false
+  if (status === 'inactive') {
+    await adminAuth.revokeRefreshTokens(employeeId)
+    await adminAuth.updateUser(employeeId, { photoURL: null }).catch(() => undefined)
+    const devices = await employeeRef.collection('notificationDevices').limit(500).get()
+    if (!devices.empty) {
+      const batch = adminDb.batch()
+      devices.docs.forEach((device) => batch.delete(device.ref))
+      await batch.commit()
+    }
+    await employeeRef.set({
+      photoURL: FieldValue.delete(),
+      profileImageCleanupPending: true,
+      updatedAt: FieldValue.serverTimestamp(),
+    }, { merge: true })
+    try {
+      deletedProfileImages = await deleteAllProfileImages(employeeId)
+      await employeeRef.set({
+        profileImageCleanupPending: FieldValue.delete(),
+        profileImageCleanedAt: FieldValue.serverTimestamp(),
+      }, { merge: true })
+    } catch (error) {
+      profileCleanupPending = true
+      console.error(`Profile image cleanup failed for ${employeeId}:`, error)
+    }
+  }
+  return { employeeId, status, releasedSchedules, deletedProfileImages, profileCleanupPending }
 }
 
 export async function getAccountRegistrationWindow(actor: RequestActor) {

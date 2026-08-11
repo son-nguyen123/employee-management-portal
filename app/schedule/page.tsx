@@ -37,6 +37,7 @@ import { Header } from '@/components/layout/header'
 import { Badge } from '@/components/ui/badge'
 import { getManagementContact } from '@/lib/services/managementSettingsService'
 import { toMessengerUrl } from '@/lib/utils/messenger'
+import { scheduleShareText } from '@/lib/archive/retention'
 import { submitStaffRequest } from '@/lib/services/staffRequestService'
 import { subscribeToEmployeeLeaves } from '@/lib/services/leaveService'
 import { subscribeToEmployeePenalties } from '@/lib/services/penaltyService'
@@ -941,15 +942,21 @@ export default function SchedulePage() {
       if (!blob) throw new Error('Chưa thể tạo ảnh lịch.')
       const filename = `lich-lam-${days[0]?.key || localDateKey(new Date())}.png`
       const file = new File([blob], filename, { type: 'image/png' })
+      const shareText = scheduleShareText({
+        fullName: employee?.fullName,
+        employeeCode: employee?.employeeCode,
+        weekStart: days[0]?.date || new Date(),
+        weekEnd: days.at(-1)?.date || days[0]?.date || new Date(),
+      })
       const shareNavigator = navigator as Navigator & {
         canShare?: (data?: { files?: File[] }) => boolean
-        share?: (data: { files?: File[]; title?: string }) => Promise<void>
+        share?: (data: { files?: File[]; title?: string; text?: string }) => Promise<void>
       }
-      const isAppleTouchDevice = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)
-      if (isAppleTouchDevice && shareNavigator.share && shareNavigator.canShare?.({ files: [file] })) {
-        await shareNavigator.share({ files: [file], title: 'Lịch làm của bạn' })
-        setMessage('Đã mở bảng chia sẻ. Chọn “Lưu hình ảnh” để lưu lịch vào Ảnh.')
+      if (shareNavigator.share && shareNavigator.canShare?.({ files: [file] })) {
+        await shareNavigator.share({ files: [file], title: 'Lịch làm của bạn', text: shareText })
+        setMessage('Đã mở bảng chia sẻ cùng lời giới thiệu tên và mã nhân viên.')
       } else {
+        await navigator.clipboard?.writeText(shareText).catch(() => undefined)
         const url = URL.createObjectURL(blob)
         const anchor = document.createElement('a')
         anchor.href = url
@@ -958,7 +965,7 @@ export default function SchedulePage() {
         anchor.click()
         anchor.remove()
         window.setTimeout(() => URL.revokeObjectURL(url), 1500)
-        setMessage('Đã tải ảnh lịch về máy.')
+        setMessage('Đã tải ảnh lịch và sao chép lời giới thiệu để bạn dán khi gửi.')
       }
     } catch (error) {
       if (error instanceof DOMException && error.name === 'AbortError') return

@@ -1,10 +1,9 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { AlertTriangle, CalendarDays, CircleDollarSign, Info, Loader2 } from 'lucide-react'
+import { AlertTriangle, CalendarDays, CircleDollarSign, Loader2 } from 'lucide-react'
 import { Header } from '@/components/layout/header'
 import { PageContainer } from '@/components/layout/page-container'
-import { StaffBanner } from '@/components/staff/staff-banner'
 import { useAuth } from '@/lib/hooks/useAuth'
 import { subscribeToEmployeePenalties } from '@/lib/services/penaltyService'
 import type { Penalty } from '@/lib/models/types'
@@ -56,26 +55,18 @@ export default function PenaltiesPage() {
 
   return (
     <main className="min-h-screen">
-      <Header title="Khoản phạt của tôi" subtitle="Theo dõi lý do và nguồn phát sinh" />
+      <Header title="Khoản phạt" subtitle="Các khoản đã ghi nhận trong tháng" />
       <PageContainer>
-        <StaffBanner icon={AlertTriangle} tone="rose" eyebrow="Khoản phạt" title="Theo dõi rõ từng khoản trừ" description="Kiểm tra lý do, thời điểm và trạng thái của từng khoản phạt trong lịch sử làm việc." note="Khoản đã hủy sẽ không bị khấu trừ. Nếu thấy chưa đúng, hãy liên hệ quản lý để được kiểm tra." />
-        <section className="mb-4 grid grid-cols-2 gap-3">
-          <div className="rounded-3xl bg-rose-600 p-3 text-white">
-            <CircleDollarSign className="h-5 w-5 text-rose-200" />
-            <p className="mt-3 text-xs font-semibold text-rose-100">Tổng khấu trừ</p>
-            <p className="mt-1 text-lg font-black">{total.toLocaleString('vi-VN')}đ</p>
+        <section className="mb-4 rounded-3xl bg-gradient-to-r from-rose-600 to-fuchsia-700 p-4 text-white shadow-lg shadow-rose-950/10">
+          <div className="flex items-center gap-3">
+            <div className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-white/15"><AlertTriangle className="h-5 w-5" /></div>
+            <div className="min-w-0 flex-1">
+              <p className="text-xs font-bold uppercase tracking-wider text-rose-100">Tổng khoản phạt</p>
+              <p className="mt-0.5 text-xl font-black">{total.toLocaleString('vi-VN')}đ <span className="text-sm font-bold text-rose-100">· {activeCount} lần</span></p>
+            </div>
           </div>
-          <div className="mobile-card p-3">
-            <AlertTriangle className="h-5 w-5 text-amber-500" />
-            <p className="mt-3 text-xs font-semibold text-muted-foreground">Số lần phát sinh</p>
-            <p className="mt-1 text-lg font-black">{activeCount} lần</p>
-          </div>
+          <p className="mt-3 border-t border-white/20 pt-3 text-xs leading-5 text-rose-50">Lịch trễ 1.000đ; báo đi trễ muộn 500đ. Khoản đã hủy không bị trừ.</p>
         </section>
-
-        <details className="group mb-4 overflow-hidden rounded-2xl border border-amber-200 bg-amber-50/80 text-amber-900 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-100">
-          <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-2 px-4 text-sm font-bold"><span>Xem quy tắc khấu trừ</span><Info className="h-4 w-4" /></summary>
-          <p className="border-t border-amber-200/70 px-4 py-3 text-xs leading-5 dark:border-amber-500/20">Mỗi vi phạm được khấu trừ một khoản cố định vào tiền công của 1 giờ làm: đăng ký lịch trễ 1.000đ, báo đi trễ muộn 500đ.</p>
-        </details>
 
         {message && <p className="mb-4 rounded-2xl bg-rose-50 p-3 text-sm font-semibold text-rose-700">{message}</p>}
         {loading ? (

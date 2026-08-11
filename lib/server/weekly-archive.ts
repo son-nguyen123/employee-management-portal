@@ -1,32 +1,16 @@
 import 'server-only'
 
 import { createHash } from 'node:crypto'
-import {
-  FieldValue,
-  Timestamp,
-  type DocumentData,
-  type DocumentSnapshot,
-} from 'firebase-admin/firestore'
+import { FieldValue, Timestamp, type DocumentData, type DocumentSnapshot } from 'firebase-admin/firestore'
+import { previousVietnamWeek, vietnamWeekContaining, type ArchiveWindow } from '@/lib/archive/retention'
 import { adminDb } from '@/lib/server/firebase-admin'
 import { storeWeeklyArchive } from '@/lib/server/google-drive-archive'
 
-const VIETNAM_OFFSET_MS = 7 * 60 * 60 * 1000
-const WEEK_MS = 7 * 24 * 60 * 60 * 1000
 const MAX_ARCHIVE_DOCUMENTS = 4_000
 const FINAL_SCHEDULE_STATUSES = new Set(['Approved', 'Rejected', 'Cancelled'])
 const FINAL_REQUEST_STATUSES = new Set(['Approved', 'Rejected', 'Cancelled'])
 
-interface ArchivedDocument {
-  path: string
-  id: string
-  data: unknown
-}
-
-interface ArchiveWindow {
-  key: string
-  start: Date
-  end: Date
-}
+interface ArchivedDocument { path: string; id: string; data: unknown }
 
 export interface WeeklyArchiveResult {
   state: 'already-completed' | 'verified' | 'completed' | 'empty'
@@ -38,49 +22,8 @@ export interface WeeklyArchiveResult {
   driveFileName?: string
   driveFileSize?: number
   deleted: boolean
-}
-
-function formatVietnamDate(date: Date): string {
-  const shifted = new Date(date.getTime() + VIETNAM_OFFSET_MS)
-  return [
-    shifted.getUTCFullYear(),
-    String(shifted.getUTCMonth() + 1).padStart(2, '0'),
-    String(shifted.getUTCDate()).padStart(2, '0'),
-  ].join('-')
-}
-
-function previousVietnamWeek(now: Date): ArchiveWindow {
-  const shifted = new Date(now.getTime() + VIETNAM_OFFSET_MS)
-  const weekday = shifted.getUTCDay() || 7
-  const currentMondayShifted = Date.UTC(
-    shifted.getUTCFullYear(),
-    shifted.getUTCMonth(),
-    shifted.getUTCDate() - weekday + 1,
-  )
-  const currentMonday = new Date(currentMondayShifted - VIETNAM_OFFSET_MS)
-  const previousMonday = new Date(currentMonday.getTime() - WEEK_MS)
-
-  return {
-    key: formatVietnamDate(previousMonday),
-    start: previousMonday,
-    end: currentMonday,
-  }
-}
-
-function vietnamWeekContaining(now: Date): ArchiveWindow {
-  const shifted = new Date(now.getTime() + VIETNAM_OFFSET_MS)
-  const weekday = shifted.getUTCDay() || 7
-  const mondayShifted = Date.UTC(
-    shifted.getUTCFullYear(),
-    shifted.getUTCMonth(),
-    shifted.getUTCDate() - weekday + 1,
-  )
-  const start = new Date(mondayShifted - VIETNAM_OFFSET_MS)
-  return {
-    key: formatVietnamDate(start),
-    start,
-    end: new Date(start.getTime() + WEEK_MS),
-  }
+  purgedArchiveKey?: string
+  purgedDocumentCount?: number
 }
 
 function normalizeForJson(value: unknown): unknown {
@@ -90,31 +33,18 @@ function normalizeForJson(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(normalizeForJson)
   if (typeof value === 'object') {
     const candidate = value as { toDate?: () => Date }
-    if (typeof candidate.toDate === 'function') {
-      return candidate.toDate().toISOString()
-    }
-    return Object.fromEntries(
-      Object.entries(value as Record<string, unknown>)
-        .map(([key, nested]) => [key, normalizeForJson(nested)]),
-    )
+    if (typeof candidate.toDate === 'function') return candidate.toDate().toISOString()
+    return Object.fromEntries(Object.entries(value as Record<string, unknown>).map(([key, nested]) => [key, normalizeForJson(nested)]))
   }
   return value
 }
 
 function archiveDocument(snapshot: DocumentSnapshot<DocumentData>): ArchivedDocument {
-  return {
-    path: snapshot.ref.path,
-    id: snapshot.id,
-    data: normalizeForJson(snapshot.data()),
-  }
+  return { path: snapshot.ref.path, id: snapshot.id, data: normalizeForJson(snapshot.data()) }
 }
 
 function timestampWithin(value: unknown, window: ArchiveWindow): boolean {
-  const date = value instanceof Timestamp
-    ? value.toDate()
-    : value instanceof Date
-      ? value
-      : null
+  const date = value instanceof Timestamp ? value.toDate() : value instanceof Date ? value : null
   return Boolean(date && date >= window.start && date < window.end)
 }
 
@@ -122,184 +52,75 @@ function requestActivityWithin(snapshot: DocumentSnapshot<DocumentData>, window:
   return ['reviewedAt', 'updatedAt', 'createdAt'].some((field) => timestampWithin(snapshot.get(field), window))
 }
 
-async function collectDocuments(window: ArchiveWindow): Promise<{
-  records: Record<string, ArchivedDocument[]>
-  paths: string[]
-  counts: Record<string, number>
-}> {
+async function collectDocuments(window: ArchiveWindow) {
   const start = Timestamp.fromDate(window.start)
   const end = Timestamp.fromDate(window.end)
-  const [schedules, leaveCandidates, lateRequests, salaryAdvances, staffRequests, penalties, auditEvents] = await Promise.all([
-    adminDb.collection('workSchedules')
-      .where('date', '>=', start)
-      .where('date', '<', end)
-      .get(),
-    adminDb.collection('leaveRequests')
-      .where('leaveDate', '<', end)
-      .get(),
-    adminDb.collection('lateRequests')
-      .where('date', '>=', start)
-      .where('date', '<', end)
-      .get(),
-    adminDb.collection('salaryAdvances')
-      .where('createdAt', '<', end)
-      .get(),
-    adminDb.collection('staffRequests')
-      .where('createdAt', '<', end)
-      .get(),
-    adminDb.collection('penalties')
-      .where('penaltyDate', '>=', start)
-      .where('penaltyDate', '<', end)
-      .get(),
-    adminDb.collection('auditEvents')
-      .where('occurredAt', '>=', start)
-      .where('occurredAt', '<', end)
-      .get(),
+  const [schedules, leaveCandidates, lateRequests, staffRequests, auditEvents] = await Promise.all([
+    adminDb.collection('workSchedules').where('date', '>=', start).where('date', '<', end).get(),
+    adminDb.collection('leaveRequests').where('leaveDate', '<', end).get(),
+    adminDb.collection('lateRequests').where('date', '>=', start).where('date', '<', end).get(),
+    adminDb.collection('staffRequests').where('createdAt', '<', end).get(),
+    adminDb.collection('auditEvents').where('occurredAt', '>=', start).where('occurredAt', '<', end).get(),
   ])
-
   const domainRecords = {
     workSchedules: schedules.docs.map(archiveDocument),
-    leaveRequests: leaveCandidates.docs
-      .filter((doc) => {
-        return timestampWithin(doc.get('endDate') ?? doc.get('leaveDate'), window)
-      })
-      .map(archiveDocument),
+    leaveRequests: leaveCandidates.docs.filter((doc) => timestampWithin(doc.get('endDate') ?? doc.get('leaveDate'), window)).map(archiveDocument),
     lateRequests: lateRequests.docs.map(archiveDocument),
-    salaryAdvances: salaryAdvances.docs
-      .filter((doc) => requestActivityWithin(doc, window))
-      .map(archiveDocument),
-    staffRequests: staffRequests.docs
-      .filter((doc) => requestActivityWithin(doc, window))
-      .map(archiveDocument),
-    penalties: penalties.docs.map(archiveDocument),
+    staffRequests: staffRequests.docs.filter((doc) => requestActivityWithin(doc, window)).map(archiveDocument),
     auditEvents: auditEvents.docs.map(archiveDocument),
   }
   const employeeIds = new Set<string>()
-  for (const documents of Object.values(domainRecords)) {
-    for (const document of documents) {
-      const data = document.data as Record<string, unknown>
-      if (typeof data.employeeId === 'string') employeeIds.add(data.employeeId)
-    }
-  }
-  const employeeSnapshots = await Promise.all(
-    Array.from(employeeIds).map((uid) => adminDb.collection('employees').doc(uid).get()),
-  )
-  const records = {
-    ...domainRecords,
-    employeeProfiles: employeeSnapshots.filter((snapshot) => snapshot.exists).map(archiveDocument),
-  }
-  const counts = Object.fromEntries(
-    Object.entries(records).map(([collection, documents]) => [collection, documents.length]),
-  )
-  // Employee profiles are copied only to make the archive human-readable;
-  // they remain active in Firestore and must never be deleted by this job.
-  // Audit events remain in Firestore as the tamper-evident chain. They are
-  // copied to the weekly archive but are never part of the reset/delete list.
-  const deletableCollections = new Set(['workSchedules', 'leaveRequests', 'lateRequests', 'salaryAdvances', 'staffRequests', 'penalties'])
-  const paths = Object.entries(domainRecords)
-    .filter(([collection]) => deletableCollections.has(collection))
-    .flatMap(([collection, documents]) => documents
-      .filter((record) => collection === 'penalties' || (collection === 'workSchedules' ? FINAL_SCHEDULE_STATUSES : FINAL_REQUEST_STATUSES).has(String((record.data as Record<string, unknown>).status)))
-      .map((record) => record.path))
-
-  const archivedDocumentCount = Object.values(records).flat().length
-  if (archivedDocumentCount > MAX_ARCHIVE_DOCUMENTS) {
-    throw new Error(
-      `Archive contains ${archivedDocumentCount} documents; maximum safe batch is ${MAX_ARCHIVE_DOCUMENTS}.`,
-    )
-  }
-  return { records, paths, counts }
+  Object.values(domainRecords).flat().forEach((record) => {
+    const employeeId = (record.data as Record<string, unknown>).employeeId
+    if (typeof employeeId === 'string') employeeIds.add(employeeId)
+  })
+  const employeeSnapshots = await Promise.all(Array.from(employeeIds).map((uid) => adminDb.collection('employees').doc(uid).get()))
+  const records = { ...domainRecords, employeeProfiles: employeeSnapshots.filter((snapshot) => snapshot.exists).map(archiveDocument) }
+  const counts = Object.fromEntries(Object.entries(records).map(([collection, documents]) => [collection, documents.length]))
+  const paths = Object.entries(domainRecords).flatMap(([collection, documents]) => {
+    if (collection === 'auditEvents') return []
+    return documents.filter((record) => {
+      const status = String((record.data as Record<string, unknown>).status)
+      return (collection === 'workSchedules' ? FINAL_SCHEDULE_STATUSES : FINAL_REQUEST_STATUSES).has(status)
+    }).map((record) => record.path)
+  })
+  const documentCount = Object.values(records).flat().length
+  if (documentCount > MAX_ARCHIVE_DOCUMENTS) throw new Error(`Archive contains ${documentCount} documents; maximum safe batch is ${MAX_ARCHIVE_DOCUMENTS}.`)
+  return { records, paths, counts, documentCount }
 }
 
 async function deleteArchivedDocuments(paths: string[]): Promise<void> {
   for (let offset = 0; offset < paths.length; offset += 450) {
     const batch = adminDb.batch()
-    for (const path of paths.slice(offset, offset + 450)) {
-      batch.delete(adminDb.doc(path))
-    }
+    paths.slice(offset, offset + 450).forEach((path) => batch.delete(adminDb.doc(path)))
     await batch.commit()
   }
 }
 
-export async function runWeeklyArchive(now = new Date()): Promise<WeeklyArchiveResult> {
-  const window = previousVietnamWeek(now)
-  const manifestRef = adminDb.collection('archiveRuns').doc(window.key)
-  const deleteEnabled = process.env.WEEKLY_ARCHIVE_DELETE_ENABLED === 'true'
+function manifestId(window: ArchiveWindow) { return `weekly-${window.key}` }
+
+async function ensureWeekArchived(window: ArchiveWindow, now: Date): Promise<WeeklyArchiveResult> {
+  const manifestRef = adminDb.collection('archiveRuns').doc(manifestId(window))
   const existing = await manifestRef.get()
-
-  if (existing.get('state') === 'completed') {
+  if (['verified', 'completed'].includes(String(existing.get('state')))) {
     return {
-      state: 'already-completed',
+      state: existing.get('state') === 'completed' ? 'already-completed' : 'verified',
       archiveKey: window.key,
       documentCount: Number(existing.get('documentCount') ?? 0),
       counts: existing.get('counts') ?? {},
       driveFileId: existing.get('driveFileId'),
       driveWebViewLink: existing.get('driveWebViewLink'),
-      deleted: true,
+      deleted: existing.get('state') === 'completed',
     }
   }
 
-  if (existing.get('state') === 'verified' && !deleteEnabled) {
-    return {
-      state: 'verified',
-      archiveKey: window.key,
-      documentCount: Number(existing.get('documentCount') ?? 0),
-      counts: existing.get('counts') ?? {},
-      driveFileId: existing.get('driveFileId'),
-      driveWebViewLink: existing.get('driveWebViewLink'),
-      deleted: false,
-    }
-  }
-
-  if (existing.get('state') === 'verified' && deleteEnabled) {
-    const savedPaths = existing.get('documentPaths')
-    if (!Array.isArray(savedPaths) || savedPaths.some((path) => typeof path !== 'string')) {
-      throw new Error('Verified archive manifest has invalid document paths.')
-    }
-    await deleteArchivedDocuments(savedPaths)
-    await manifestRef.set({
-      state: 'completed',
-      deletedAt: FieldValue.serverTimestamp(),
-      updatedAt: FieldValue.serverTimestamp(),
-    }, { merge: true })
-    return {
-      state: 'completed',
-      archiveKey: window.key,
-      documentCount: Number(existing.get('documentCount') ?? 0),
-      counts: existing.get('counts') ?? {},
-      driveFileId: existing.get('driveFileId'),
-      driveWebViewLink: existing.get('driveWebViewLink'),
-      deleted: true,
-    }
-  }
-
-  const { records, paths, counts } = await collectDocuments(window)
-  const archivedDocumentCount = Object.values(records).flat().length
-  if (archivedDocumentCount === 0) {
-    await manifestRef.set({
-      state: 'completed',
-      archiveKey: window.key,
-      weekStart: Timestamp.fromDate(window.start),
-      weekEndExclusive: Timestamp.fromDate(window.end),
-      documentCount: 0,
-      counts,
-      createdAt: FieldValue.serverTimestamp(),
-      updatedAt: FieldValue.serverTimestamp(),
-    }, { merge: true })
-    return {
-      state: 'empty',
-      archiveKey: window.key,
-      documentCount: 0,
-      counts,
-      deleted: false,
-    }
-  }
-
+  const { records, paths, counts, documentCount } = await collectDocuments(window)
   const payload = {
-    schemaVersion: 1,
+    schemaVersion: 2,
     application: 'employee-management-portal',
     firebaseProjectId: process.env.FIREBASE_ADMIN_PROJECT_ID,
     archiveKey: window.key,
+    archiveKind: 'weekly',
     timezone: 'Asia/Ho_Chi_Minh',
     weekStart: window.start.toISOString(),
     weekEndExclusive: window.end.toISOString(),
@@ -309,127 +130,65 @@ export async function runWeeklyArchive(now = new Date()): Promise<WeeklyArchiveR
   }
   const json = JSON.stringify(payload, null, 2)
   const checksum = createHash('sha256').update(json).digest('hex')
-
   const lockAcquired = await adminDb.runTransaction(async (transaction) => {
     const current = await transaction.get(manifestRef)
     const leaseUntil = current.get('leaseUntil')
-    if (
-      current.get('state') === 'exporting' &&
-      leaseUntil instanceof Timestamp &&
-      leaseUntil.toMillis() > Date.now()
-    ) {
-      return false
-    }
-    if (current.get('state') === 'completed' || current.get('state') === 'verified') {
-      return false
-    }
-
+    if (current.get('state') === 'exporting' && leaseUntil instanceof Timestamp && leaseUntil.toMillis() > Date.now()) return false
+    if (['verified', 'completed'].includes(String(current.get('state')))) return false
     transaction.set(manifestRef, {
-      state: 'exporting',
-      archiveKey: window.key,
-      weekStart: Timestamp.fromDate(window.start),
-      weekEndExclusive: Timestamp.fromDate(window.end),
-      documentCount: archivedDocumentCount,
-      documentPaths: paths,
-      counts,
-      checksum,
+      state: 'exporting', archiveKind: 'weekly', archiveKey: window.key,
+      weekStart: Timestamp.fromDate(window.start), weekEndExclusive: Timestamp.fromDate(window.end),
+      documentCount, documentPaths: paths, counts, checksum,
       leaseUntil: Timestamp.fromMillis(Date.now() + 10 * 60 * 1000),
-      updatedAt: FieldValue.serverTimestamp(),
-      createdAt: current.get('createdAt') ?? FieldValue.serverTimestamp(),
+      updatedAt: FieldValue.serverTimestamp(), createdAt: current.get('createdAt') ?? FieldValue.serverTimestamp(),
     }, { merge: true })
     return true
   })
-  if (!lockAcquired) {
-    throw new Error('This weekly archive is already running or has already been verified.')
-  }
+  if (!lockAcquired) throw new Error(`Weekly archive ${window.key} is already running.`)
 
   try {
-    const driveFile = await storeWeeklyArchive({
-      archiveKey: window.key,
-      checksum,
-      json,
-    })
+    const driveFile = await storeWeeklyArchive({ archiveKey: window.key, checksum, json })
     await manifestRef.set({
-      state: 'verified',
-      driveFileId: driveFile.id,
-      driveFileName: driveFile.name,
-      driveFileSize: Number(driveFile.size ?? 0),
-      driveMd5Checksum: driveFile.md5Checksum ?? null,
-      driveWebViewLink: driveFile.webViewLink ?? null,
-      leaseUntil: null,
-      verifiedAt: FieldValue.serverTimestamp(),
-      updatedAt: FieldValue.serverTimestamp(),
+      state: 'verified', driveFileId: driveFile.id, driveFileName: driveFile.name,
+      driveFileSize: Number(driveFile.size ?? 0), driveMd5Checksum: driveFile.md5Checksum ?? null,
+      driveWebViewLink: driveFile.webViewLink ?? null, leaseUntil: null,
+      verifiedAt: FieldValue.serverTimestamp(), updatedAt: FieldValue.serverTimestamp(),
     }, { merge: true })
-
-    if (!deleteEnabled) {
-      return {
-        state: 'verified',
-        archiveKey: window.key,
-        documentCount: archivedDocumentCount,
-        counts,
-        driveFileId: driveFile.id,
-        driveWebViewLink: driveFile.webViewLink,
-        deleted: false,
-      }
-    }
-
-    await deleteArchivedDocuments(paths)
-    await manifestRef.set({
-      state: 'completed',
-      deletedAt: FieldValue.serverTimestamp(),
-      updatedAt: FieldValue.serverTimestamp(),
-    }, { merge: true })
-    return {
-      state: 'completed',
-      archiveKey: window.key,
-      documentCount: archivedDocumentCount,
-      counts,
-      driveFileId: driveFile.id,
-      driveWebViewLink: driveFile.webViewLink,
-      deleted: true,
-    }
+    return { state: documentCount ? 'verified' : 'empty', archiveKey: window.key, documentCount, counts, driveFileId: driveFile.id, driveWebViewLink: driveFile.webViewLink, driveFileName: driveFile.name, driveFileSize: Number(driveFile.size ?? 0), deleted: false }
   } catch (error) {
-    await manifestRef.set({
-      state: 'failed',
-      leaseUntil: null,
-      error: error instanceof Error ? error.message.slice(0, 500) : 'Unknown archive error',
-      failedAt: FieldValue.serverTimestamp(),
-      updatedAt: FieldValue.serverTimestamp(),
-    }, { merge: true })
+    await manifestRef.set({ state: 'failed', leaseUntil: null, error: error instanceof Error ? error.message.slice(0, 500) : 'Unknown archive error', failedAt: FieldValue.serverTimestamp(), updatedAt: FieldValue.serverTimestamp() }, { merge: true })
     throw error
   }
 }
 
+async function purgeVerifiedWeek(window: ArchiveWindow): Promise<number> {
+  const manifestRef = adminDb.collection('archiveRuns').doc(manifestId(window))
+  const manifest = await manifestRef.get()
+  if (manifest.get('state') === 'completed') return Number(manifest.get('deletedDocumentCount') ?? 0)
+  if (manifest.get('state') !== 'verified') throw new Error(`Week ${window.key} has not been verified on Google Drive.`)
+  const paths = manifest.get('documentPaths')
+  if (!Array.isArray(paths) || paths.some((path) => typeof path !== 'string')) throw new Error(`Week ${window.key} has invalid saved document paths.`)
+  await deleteArchivedDocuments(paths)
+  await manifestRef.set({ state: 'completed', deletedDocumentCount: paths.length, deletedAt: FieldValue.serverTimestamp(), updatedAt: FieldValue.serverTimestamp() }, { merge: true })
+  return paths.length
+}
+
+export async function runWeeklyArchive(now = new Date()): Promise<WeeklyArchiveResult> {
+  const retainedWeek = previousVietnamWeek(now, 1)
+  const expiredWeek = previousVietnamWeek(now, 2)
+  const retained = await ensureWeekArchived(retainedWeek, now)
+  if (process.env.WEEKLY_ARCHIVE_DELETE_ENABLED !== 'true') return retained
+  await ensureWeekArchived(expiredWeek, now)
+  const purgedDocumentCount = await purgeVerifiedWeek(expiredWeek)
+  return { ...retained, purgedArchiveKey: expiredWeek.key, purgedDocumentCount }
+}
+
 export async function runArchivePreview(referenceDate: Date): Promise<WeeklyArchiveResult> {
   const window = vietnamWeekContaining(referenceDate)
-  const { records, paths, counts } = await collectDocuments(window)
+  const { records, counts, documentCount } = await collectDocuments(window)
   const archiveKey = `${window.key}-test-${Date.now()}`
-  const payload = {
-    schemaVersion: 1,
-    testArchive: true,
-    application: 'employee-management-portal',
-    firebaseProjectId: process.env.FIREBASE_ADMIN_PROJECT_ID,
-    archiveKey,
-    sourceWeekKey: window.key,
-    timezone: 'Asia/Ho_Chi_Minh',
-    weekStart: window.start.toISOString(),
-    weekEndExclusive: window.end.toISOString(),
-    exportedAt: new Date().toISOString(),
-    counts,
-    records,
-  }
-  const json = JSON.stringify(payload, null, 2)
+  const json = JSON.stringify({ schemaVersion: 2, testArchive: true, application: 'employee-management-portal', firebaseProjectId: process.env.FIREBASE_ADMIN_PROJECT_ID, archiveKey, sourceWeekKey: window.key, archiveKind: 'weekly', timezone: 'Asia/Ho_Chi_Minh', weekStart: window.start.toISOString(), weekEndExclusive: window.end.toISOString(), exportedAt: new Date().toISOString(), counts, records }, null, 2)
   const checksum = createHash('sha256').update(json).digest('hex')
   const driveFile = await storeWeeklyArchive({ archiveKey, checksum, json })
-  return {
-    state: Object.values(records).flat().length ? 'verified' : 'empty',
-    archiveKey,
-    documentCount: Object.values(records).flat().length,
-    counts,
-    driveFileId: driveFile.id,
-    driveWebViewLink: driveFile.webViewLink,
-    driveFileName: driveFile.name,
-    driveFileSize: Number(driveFile.size || 0),
-    deleted: false,
-  }
+  return { state: documentCount ? 'verified' : 'empty', archiveKey, documentCount, counts, driveFileId: driveFile.id, driveWebViewLink: driveFile.webViewLink, driveFileName: driveFile.name, driveFileSize: Number(driveFile.size || 0), deleted: false }
 }

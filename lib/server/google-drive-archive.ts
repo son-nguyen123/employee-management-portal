@@ -3,6 +3,7 @@ import 'server-only'
 const DRIVE_API = 'https://www.googleapis.com/drive/v3'
 const DRIVE_UPLOAD_API = 'https://www.googleapis.com/upload/drive/v3'
 const ARCHIVE_FOLDER_NAME = 'Employee Portal - Weekly Archives'
+const MONTHLY_ARCHIVE_FOLDER_NAME = 'Employee Portal - Monthly Archives'
 const PROFILE_IMAGE_FOLDER_NAME = 'Employee Portal - Profile Images'
 
 export interface DriveFile {
@@ -129,6 +130,28 @@ async function ensureArchiveFolder(accessToken: string): Promise<string> {
       mimeType: 'application/vnd.google-apps.folder',
       appProperties: {
         portalArchiveFolder: 'true',
+        application: 'employee-management-portal',
+      },
+    }),
+  })
+  return folder.id
+}
+
+async function ensureMonthlyArchiveFolder(accessToken: string): Promise<string> {
+  const existing = await findFile(
+    accessToken,
+    `mimeType = 'application/vnd.google-apps.folder' and appProperties has { key='portalMonthlyArchiveFolder' and value='true' }`,
+  )
+  if (existing) return existing.id
+
+  const folder = await driveRequest<DriveFile>(accessToken, '/files?fields=id,name', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      name: MONTHLY_ARCHIVE_FOLDER_NAME,
+      mimeType: 'application/vnd.google-apps.folder',
+      appProperties: {
+        portalMonthlyArchiveFolder: 'true',
         application: 'employee-management-portal',
       },
     }),
@@ -278,6 +301,27 @@ export async function deleteOtherProfileImages(
   }))
 }
 
+export async function deleteAllProfileImages(employeeId: string): Promise<number> {
+  const accessToken = await googleAccessToken()
+  const safeEmployeeId = escapeDriveQuery(employeeId)
+  const files = await findFiles(
+    accessToken,
+    `appProperties has { key='portalProfileImage' and value='true' } and appProperties has { key='employeeId' and value='${safeEmployeeId}' }`,
+  )
+  await Promise.all(files.map(async (file) => {
+    const response = await fetch(`${DRIVE_API}/files/${encodeURIComponent(file.id)}`, {
+      method: 'DELETE',
+      headers: { authorization: `Bearer ${accessToken}` },
+      cache: 'no-store',
+    })
+    if (!response.ok && response.status !== 404) {
+      const details = (await response.text()).slice(0, 500)
+      throw new Error(`Google Drive profile cleanup failed (${response.status}): ${details}`)
+    }
+  }))
+  return files.length
+}
+
 export async function readProfileImage(fileId: string): Promise<{
   contentType: string
   bytes: ArrayBuffer
@@ -320,6 +364,7 @@ async function uploadJsonFile(
   archiveKey: string,
   checksum: string,
   json: string,
+  archiveKind: 'weekly' | 'monthly' | 'connection-test' = 'weekly',
 ): Promise<DriveFile> {
   const boundary = `codex-archive-${crypto.randomUUID()}`
   const metadata = JSON.stringify({
@@ -329,6 +374,7 @@ async function uploadJsonFile(
     appProperties: {
       archiveKey,
       checksum,
+      archiveKind,
       application: 'employee-management-portal',
     },
   })
@@ -394,21 +440,61 @@ export async function storeWeeklyArchive(params: {
   return verified
 }
 
+export async function storeMonthlyArchive(params: {
+  archiveKey: string
+  checksum: string
+  json: string
+}): Promise<DriveFile> {
+  const accessToken = await googleAccessToken()
+  const archiveKey = escapeDriveQuery(params.archiveKey)
+  const checksum = escapeDriveQuery(params.checksum)
+  const existing = await findFile(
+    accessToken,
+    `appProperties has { key='archiveKind' and value='monthly' } and appProperties has { key='archiveKey' and value='${archiveKey}' } and appProperties has { key='checksum' and value='${checksum}' }`,
+  )
+  if (existing) return existing
+
+  const folderId = await ensureMonthlyArchiveFolder(accessToken)
+  const file = await uploadJsonFile(
+    accessToken,
+    folderId,
+    `employee-portal-month-${params.archiveKey}.json`,
+    params.archiveKey,
+    params.checksum,
+    params.json,
+    'monthly',
+  )
+  const verified = await driveRequest<DriveFile>(
+    accessToken,
+    `/files/${encodeURIComponent(file.id)}?fields=id,name,size,md5Checksum,webViewLink,appProperties`,
+  )
+  if (!verified.size || Number(verified.size) <= 0) throw new Error('Google Drive returned an empty monthly archive file.')
+  return verified
+}
+
 export async function listWeeklyArchives(): Promise<WeeklyArchiveFile[]> {
   const accessToken = await googleAccessToken()
   const folderId = await ensureArchiveFolder(accessToken)
-  const params = new URLSearchParams({
-    q: `'${escapeDriveQuery(folderId)}' in parents and appProperties has { key='application' and value='employee-management-portal' } and trashed = false`,
-    spaces: 'drive',
-    pageSize: '100',
-    orderBy: 'createdTime desc',
-    fields: 'files(id,name,size,createdTime,modifiedTime,webViewLink,appProperties)',
-  })
-  const result = await driveRequest<{ files?: DriveFile[] }>(
-    accessToken,
-    `/files?${params.toString()}`,
-  )
-  return (result.files || [])
+  const files: DriveFile[] = []
+  let pageToken: string | undefined
+  do {
+    const params = new URLSearchParams({
+      q: `'${escapeDriveQuery(folderId)}' in parents and appProperties has { key='application' and value='employee-management-portal' } and trashed = false`,
+      spaces: 'drive',
+      pageSize: '100',
+      orderBy: 'createdTime desc',
+      fields: 'nextPageToken,files(id,name,size,createdTime,modifiedTime,webViewLink,appProperties)',
+    })
+    if (pageToken) params.set('pageToken', pageToken)
+    const result = await driveRequest<{ files?: DriveFile[]; nextPageToken?: string }>(
+      accessToken,
+      `/files?${params.toString()}`,
+    )
+    files.push(...(result.files || []))
+    pageToken = result.nextPageToken
+  } while (pageToken)
+
+  return files
     .filter((file) => Boolean(file.appProperties?.archiveKey) && !file.name.startsWith('_connection-test-'))
     .map((file) => ({
       id: file.id,
@@ -463,6 +549,7 @@ export async function testGoogleDriveArchiveConnection(): Promise<{
     `connection-test-${testId}`,
     'connection-test',
     json,
+    'connection-test',
   )
   const verified = await driveRequest<DriveFile>(
     accessToken,

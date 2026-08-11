@@ -1,4 +1,4 @@
-# Thiết lập lưu dữ liệu tuần lên Google Drive
+# Thiết lập lưu và reset dữ liệu lên Google Drive
 
 Ứng dụng chỉ cần ba giá trị Google OAuth:
 
@@ -65,6 +65,7 @@ GOOGLE_DRIVE_CLIENT_SECRET
 GOOGLE_DRIVE_REFRESH_TOKEN
 CRON_SECRET
 WEEKLY_ARCHIVE_DELETE_ENABLED=false
+MONTHLY_ARCHIVE_DELETE_ENABLED=false
 ```
 
 `CRON_SECRET` nên là chuỗi ngẫu nhiên ít nhất 16 ký tự. Sau đó redeploy.
@@ -79,18 +80,27 @@ curl -H "Authorization: Bearer YOUR_CRON_SECRET" \
 ```
 
 Drive sẽ tự xuất hiện thư mục **Employee Portal - Weekly Archives** và một file
-JSON của tuần vừa kết thúc. Khi đã mở file và kiểm tra dữ liệu đúng, đổi:
+JSON của tuần vừa kết thúc. Job tuần luôn giữ tuần hiện tại và tuần trước trong
+Firestore; chỉ tuần cũ hơn mới được xóa sau khi bản lưu của chính tuần đó đã xác minh.
+Khi đã mở file và kiểm tra dữ liệu đúng, đổi:
 
 ```text
 WEEKLY_ARCHIVE_DELETE_ENABLED=true
 ```
 
-Sau đó redeploy và gọi endpoint thêm một lần. Hệ thống chỉ xóa các document có
-đường dẫn đã ghi trong manifest `archiveRuns/{ngày-thứ-hai}`.
+Với khoản phạt và ứng lương, gọi thử `/api/archive/monthly`. Drive sẽ tạo thư mục
+**Employee Portal - Monthly Archives**. Sau khi kiểm tra file tháng trước, đổi:
 
-Cron trong `vercel.json` chạy `0 18 * * 0`, tức 18:00 Chủ nhật UTC. Tại Việt Nam
-là khoảng 01:00 sáng Thứ Hai. Gói Vercel Hobby có thể chạy vào bất kỳ thời điểm
-nào trong giờ đó.
+```text
+MONTHLY_ARCHIVE_DELETE_ENABLED=true
+```
+
+Khoản phạt tháng trước sẽ được reset; ứng lương chỉ bị xóa nếu đã duyệt, từ chối
+hoặc hủy. Yêu cầu đang chờ vẫn ở Firestore. Hệ thống chỉ xóa đúng đường dẫn đã ghi
+trong manifest `archiveRuns/weekly-*` hoặc `archiveRuns/monthly-*`.
+
+Hai cron chạy mỗi ngày lúc khoảng 01:00 và 01:15 giờ Việt Nam. Chạy hằng ngày giúp
+tự thử lại nếu Drive gián đoạn; manifest làm cho các lần chạy lặp không xóa trùng.
 
 ## 7. Đổi sang tài khoản Google Drive khác
 
