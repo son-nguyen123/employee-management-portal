@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
-import { AlertTriangle, CalendarRange, Check, ChevronDown, Loader2, Pencil, Trash2, UsersRound, X } from 'lucide-react'
+import { AlertTriangle, CalendarRange, Check, ChevronDown, Download, Loader2, Pencil, Trash2, UsersRound, X } from 'lucide-react'
 import { Header } from '@/components/layout/header'
 import { PageContainer } from '@/components/layout/page-container'
 import { useAuth, useUserRole } from '@/lib/hooks/useAuth'
@@ -9,6 +9,7 @@ import type { Employee, WorkSchedule } from '@/lib/models/types'
 import { subscribeToAllEmployees } from '@/lib/services/employeeService'
 import { getPreviewSchedules } from '@/lib/services/previewWorkflow'
 import { adminCancelWorkSchedules, subscribeToAllSchedules } from '@/lib/services/scheduleService'
+import { auth } from '@/lib/firebase'
 
 type Shift = WorkSchedule['shift']
 
@@ -109,6 +110,8 @@ export default function NextWeekStaffPage() {
   const [selectedIds, setSelectedIds] = useState<string[]>([])
   const [editReason, setEditReason] = useState('')
   const [savingEdit, setSavingEdit] = useState(false)
+  const [exportingNextWeek, setExportingNextWeek] = useState(false)
+  const [exportingDuty, setExportingDuty] = useState(false)
 
   useEffect(() => {
     if (!authUser) return
@@ -277,6 +280,70 @@ export default function NextWeekStaffPage() {
     }
   }
 
+  const exportNextWeekExcel = async () => {
+    if (isPreviewMode) {
+      setMessage('Chế độ xem thử không tạo file Excel.')
+      return
+    }
+    setExportingNextWeek(true)
+    setMessage('')
+    try {
+      const token = await auth.currentUser?.getIdToken()
+      if (!token) throw new Error('Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.')
+      const response = await fetch('/api/exports/next-week-schedule', {
+        headers: { authorization: `Bearer ${token}` },
+      })
+      if (!response.ok) {
+        const data = await response.json().catch(() => null) as { error?: string } | null
+        throw new Error(data?.error || 'Chưa thể xuất lịch nhân sự tuần tới.')
+      }
+      const blob = await response.blob()
+      const url = URL.createObjectURL(blob)
+      const anchor = document.createElement('a')
+      anchor.href = url
+      anchor.download = `lich-nhan-su-tuan-toi-${new Date().toISOString().slice(0, 10)}.xlsx`
+      anchor.click()
+      URL.revokeObjectURL(url)
+      setMessage('Đã tải lịch nhân sự tuần tới về máy.')
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'Chưa thể xuất lịch nhân sự tuần tới.')
+    } finally {
+      setExportingNextWeek(false)
+    }
+  }
+
+  const exportNextWeekDuty = async () => {
+    if (isPreviewMode) {
+      setMessage('Chế độ xem thử không tạo file Excel.')
+      return
+    }
+    setExportingDuty(true)
+    setMessage('')
+    try {
+      const token = await auth.currentUser?.getIdToken()
+      if (!token) throw new Error('Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.')
+      const response = await fetch('/api/exports/next-week-duty', {
+        headers: { authorization: `Bearer ${token}` },
+      })
+      if (!response.ok) {
+        const data = await response.json().catch(() => null) as { error?: string } | null
+        throw new Error(data?.error || 'Chưa thể xuất lịch trực tuần tới.')
+      }
+      const blob = await response.blob()
+      const url = URL.createObjectURL(blob)
+      const anchor = document.createElement('a')
+      anchor.href = url
+      anchor.download = `lich-truc-tuan-toi-${new Date().toISOString().slice(0, 10)}.xlsx`
+      anchor.click()
+      URL.revokeObjectURL(url)
+      setMessage('Đã tải lịch trực tuần tới về máy.')
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'Chưa thể xuất lịch trực tuần tới.')
+    } finally {
+      setExportingDuty(false)
+    }
+  }
+
   if ((!role || !['admin', 'manager'].includes(role)) && !isPreviewMode) {
     return (
       <main className="min-h-screen">
@@ -292,7 +359,34 @@ export default function NextWeekStaffPage() {
 
   return (
     <main className="min-h-screen pb-8">
-      <Header title="Nhân sự tuần tới" subtitle="Xem nhanh người làm theo ngày và ca" />
+      <Header
+        title="Nhân sự tuần tới"
+        subtitle="Xem nhanh người làm theo ngày và ca"
+        rightAction={(
+          <div className="flex items-center gap-1.5">
+            <button
+              type="button"
+              onClick={() => void exportNextWeekExcel()}
+              disabled={exportingNextWeek || exportingDuty}
+              className="flex min-h-10 min-w-10 shrink-0 items-center justify-center gap-1.5 rounded-xl bg-emerald-600 px-2.5 text-xs font-extrabold text-white shadow-sm shadow-emerald-600/20 transition active:scale-[.98] disabled:cursor-wait disabled:opacity-60 sm:px-3"
+              aria-label="Xuất lịch nhân sự tuần tới ra Excel"
+            >
+              {exportingNextWeek ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+              <span className="hidden sm:inline">Excel</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => void exportNextWeekDuty()}
+              disabled={exportingNextWeek || exportingDuty}
+              className="flex min-h-10 min-w-10 shrink-0 items-center justify-center gap-1.5 rounded-xl bg-violet-600 px-2.5 text-xs font-extrabold text-white shadow-sm shadow-violet-600/20 transition active:scale-[.98] disabled:cursor-wait disabled:opacity-60 sm:px-3"
+              aria-label="Xuất lịch trực tuần tới ra Excel"
+            >
+              {exportingDuty ? <Loader2 className="h-4 w-4 animate-spin" /> : <UsersRound className="h-4 w-4" />}
+              <span className="hidden sm:inline">Trực</span>
+            </button>
+          </div>
+        )}
+      />
       <PageContainer maxWidth="2xl">
         <section className="mb-4 flex items-center gap-3 rounded-3xl bg-gradient-to-r from-indigo-600 to-violet-600 p-4 text-white shadow-lg shadow-indigo-600/20">
           <div className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-white/15">
