@@ -76,6 +76,7 @@ describe('next-week schedule export', () => {
     expect(sheet?.getCell('AC5').value).toBe('Chiều')
     expect(sheet?.getCell('AD5').value).toBeNull()
     expect(sheet?.getCell('D6').value).toBe('X')
+    expect(sheet?.getCell('A6').border.bottom).toMatchObject({ style: 'medium', color: { argb: 'FF111827' } })
     expect(sheet?.getCell('K6').value).toBe('13h-21h')
     expect(sheet?.getCell('AC6').value).toBe('T')
     expect(sheet?.getCell('D7').value).toMatchObject({ result: 1 })
