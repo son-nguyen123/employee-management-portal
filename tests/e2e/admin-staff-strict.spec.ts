@@ -45,6 +45,10 @@ for (const route of ['/', '/schedule', '/penalties', '/salary-advance']) {
     await enterPreview(page, 'employee')
     await page.goto(route, { waitUntil: 'domcontentloaded' })
     await expect(page.locator('body')).toBeVisible()
+    if (route.includes('view=employees')) {
+      await expect(page.getByRole('button', { name: 'Xuất lịch nhân sự tuần tới ra Excel' })).toBeVisible()
+      await expect(page.getByRole('button', { name: 'Xuất lịch trực tuần tới ra Excel' })).toBeVisible()
+    }
     await strictUiAudit(page)
   })
 }

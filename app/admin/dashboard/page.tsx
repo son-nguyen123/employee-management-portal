@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
 import Image from 'next/image'
-import { ArrowLeft, CalendarCheck, Check, ChevronRight, ExternalLink, Loader2, MessageSquareText, Phone, RotateCcw, UsersRound, X } from 'lucide-react'
+import { ArrowLeft, CalendarCheck, Check, ChevronRight, Download, ExternalLink, Loader2, MessageSquareText, Phone, RotateCcw, UsersRound, X } from 'lucide-react'
 import { useAuth, useUserRole } from '@/lib/hooks/useAuth'
 import { setEmployeeAccountStatus, subscribeToAllEmployees } from '@/lib/services/employeeService'
 import { ensureFixedSchedule, reviewWorkScheduleBatch, subscribeToAllSchedules } from '@/lib/services/scheduleService'
@@ -15,6 +15,7 @@ import { Badge } from '@/components/ui/badge'
 import { OtherRequestWorkspace } from '@/components/admin/other-request-workspace'
 import { RequestIdentityAvatar } from '@/components/admin/request-identity-avatar'
 import { profileImageUrl } from '@/lib/utils/profileImage'
+import { auth } from '@/lib/firebase'
 
 type ScheduleRow = WorkSchedule & {
   id: string
@@ -105,6 +106,8 @@ export default function AdminDashboardPage() {
   const [selectedPendingBatch, setSelectedPendingBatch] = useState<ScheduleBatch | null>(null)
   const [newEmployeeApprovalBatch, setNewEmployeeApprovalBatch] = useState<ScheduleBatch | null>(null)
   const [processedReason, setProcessedReason] = useState('')
+  const [exportingNextWeek, setExportingNextWeek] = useState(false)
+  const [exportingDuty, setExportingDuty] = useState(false)
   const [referenceNow] = useState(() => Date.now())
   const legacyAutoApprovalRef = useRef(new Set<string>())
   const fixedSyncRef = useRef(new Set<string>())
@@ -379,6 +382,70 @@ export default function AdminDashboardPage() {
     return referenceNow - joined.getTime() <= 45 * 24 * 60 * 60 * 1000 && !hasPreviousSchedule
   }
 
+  const exportNextWeekExcel = async () => {
+    if (isPreviewMode) {
+      setMessage('Chế độ xem thử không tạo file Excel.')
+      return
+    }
+    setExportingNextWeek(true)
+    setMessage('')
+    try {
+      const token = await auth.currentUser?.getIdToken()
+      if (!token) throw new Error('Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.')
+      const response = await fetch('/api/exports/next-week-schedule', {
+        headers: { authorization: `Bearer ${token}` },
+      })
+      if (!response.ok) {
+        const data = await response.json().catch(() => null) as { error?: string } | null
+        throw new Error(data?.error || 'Chưa thể xuất lịch nhân sự tuần tới.')
+      }
+      const blob = await response.blob()
+      const url = URL.createObjectURL(blob)
+      const anchor = document.createElement('a')
+      anchor.href = url
+      anchor.download = `lich-nhan-su-tuan-toi-${new Date().toISOString().slice(0, 10)}.xlsx`
+      anchor.click()
+      URL.revokeObjectURL(url)
+      setMessage('Đã tải lịch nhân sự tuần tới về máy.')
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'Chưa thể xuất lịch nhân sự tuần tới.')
+    } finally {
+      setExportingNextWeek(false)
+    }
+  }
+
+  const exportNextWeekDuty = async () => {
+    if (isPreviewMode) {
+      setMessage('Chế độ xem thử không tạo file Excel.')
+      return
+    }
+    setExportingDuty(true)
+    setMessage('')
+    try {
+      const token = await auth.currentUser?.getIdToken()
+      if (!token) throw new Error('Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.')
+      const response = await fetch('/api/exports/next-week-duty', {
+        headers: { authorization: `Bearer ${token}` },
+      })
+      if (!response.ok) {
+        const data = await response.json().catch(() => null) as { error?: string } | null
+        throw new Error(data?.error || 'Chưa thể xuất lịch trực tuần tới.')
+      }
+      const blob = await response.blob()
+      const url = URL.createObjectURL(blob)
+      const anchor = document.createElement('a')
+      anchor.href = url
+      anchor.download = `lich-truc-tuan-toi-${new Date().toISOString().slice(0, 10)}.xlsx`
+      anchor.click()
+      URL.revokeObjectURL(url)
+      setMessage('Đã tải lịch trực tuần tới về máy.')
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'Chưa thể xuất lịch trực tuần tới.')
+    } finally {
+      setExportingDuty(false)
+    }
+  }
+
   if ((!role || !['admin', 'manager'].includes(role)) && !isPreviewMode) {
     return (
       <main className="min-h-screen">
@@ -391,7 +458,35 @@ export default function AdminDashboardPage() {
   if (tab === 'employees') {
     return (
       <main className="min-h-screen pb-8">
-        <Header title="Danh sách nhân viên" subtitle={`${activeEmployees.length} nhân viên đang hoạt động`} backHref="/" />
+        <Header
+          title="Danh sách nhân viên"
+          subtitle={`${activeEmployees.length} nhân viên đang hoạt động`}
+          backHref="/"
+          rightAction={(
+            <div className="flex items-center gap-1.5">
+              <button
+                type="button"
+                onClick={() => void exportNextWeekExcel()}
+                disabled={exportingNextWeek || exportingDuty}
+                className="flex min-h-10 shrink-0 items-center gap-1.5 rounded-xl bg-emerald-600 px-2.5 text-xs font-extrabold text-white shadow-sm shadow-emerald-600/20 transition active:scale-[.98] disabled:cursor-wait disabled:opacity-60 sm:px-3"
+                aria-label="Xuất lịch nhân sự tuần tới ra Excel"
+              >
+                {exportingNextWeek ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+                <span className="hidden sm:inline">Excel</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => void exportNextWeekDuty()}
+                disabled={exportingNextWeek || exportingDuty}
+                className="flex min-h-10 shrink-0 items-center gap-1.5 rounded-xl bg-violet-600 px-2.5 text-xs font-extrabold text-white shadow-sm shadow-violet-600/20 transition active:scale-[.98] disabled:cursor-wait disabled:opacity-60 sm:px-3"
+                aria-label="Xuất lịch trực tuần tới ra Excel"
+              >
+                {exportingDuty ? <Loader2 className="h-4 w-4 animate-spin" /> : <UsersRound className="h-4 w-4" />}
+                <span className="hidden sm:inline">Trực</span>
+              </button>
+            </div>
+          )}
+        />
         <PageContainer maxWidth="2xl">
           {message && <p className="mb-3 rounded-2xl bg-indigo-50 p-3 text-sm font-semibold text-indigo-900 dark:bg-indigo-500/10 dark:text-indigo-100">{message}</p>}
           {fixedForNextWeek.length > 0 && <section className="mb-5 rounded-3xl border border-violet-200 bg-violet-50 p-4 dark:border-violet-500/30 dark:bg-violet-500/10"><div className="flex items-center justify-between gap-3"><h2 className="font-black text-violet-900 dark:text-violet-100">Lịch cố định tuần sau</h2><span className="rounded-full bg-violet-600 px-2.5 py-1 text-xs font-black text-white">{fixedForNextWeek.length} người</span></div><p className="mt-2 text-sm leading-6 text-violet-800 dark:text-violet-200">{fixedForNextWeek.map((employee) => employee.fullName).join(' · ')}</p></section>}

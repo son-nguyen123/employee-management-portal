@@ -59,7 +59,7 @@ const shiftOptions: { value: Shift; label: string; shortLabel: string; time: str
   { value: 'Morning', label: 'Ca sáng', shortLabel: 'sáng', time: '07:30–11:30' },
   { value: 'Afternoon', label: 'Ca chiều', shortLabel: 'chiều', time: '13:00–17:00' },
   { value: 'Evening', label: 'Ca tối', shortLabel: 'tối', time: '18:00–22:00' },
-  { value: 'Custom', label: 'Tùy chỉnh', shortLabel: 'tùy chỉnh', time: 'Tự chọn giờ' },
+  { value: 'Custom', label: 'Tăng ca', shortLabel: 'tăng ca', time: 'Tự chọn giờ' },
 ]
 
 const shiftDisplayOrder: Shift[] = ['Morning', 'Afternoon', 'Custom', 'Evening']
@@ -1394,7 +1394,7 @@ export default function SchedulePage() {
           <section className="max-h-[calc(100dvh-1rem)] w-full overflow-y-auto rounded-t-[2rem] bg-white p-4 pb-[max(1rem,env(safe-area-inset-bottom))] shadow-2xl dark:bg-slate-900" onClick={(event) => event.stopPropagation()}>
             <div className="mx-auto max-w-lg">
               <div className="mb-4 flex items-center justify-between">
-                <div><p className="text-xs font-bold uppercase tracking-wider text-indigo-600">Ca tùy chỉnh</p><h2 className="text-xl font-extrabold">{customDay?.name}</h2></div>
+                <div><p className="text-xs font-bold uppercase tracking-wider text-indigo-600">Ca tăng ca</p><h2 className="text-xl font-extrabold">{customDay?.name}</h2></div>
                 <button onClick={() => setCustomFor(null)} className="grid h-11 w-11 place-items-center rounded-2xl bg-slate-100 dark:bg-slate-800"><X className="h-5 w-5" /></button>
               </div>
                <p className="mb-4 rounded-2xl bg-indigo-50 px-3 py-2 text-sm font-semibold text-indigo-800 dark:bg-indigo-500/10 dark:text-indigo-100">Chọn giờ cho riêng ngày này. Bạn có thể mở lại để sửa bất cứ lúc nào trước khi xác nhận cả tuần.</p>
@@ -1404,8 +1404,8 @@ export default function SchedulePage() {
                  <label className="text-sm font-bold">Kết thúc<select className="mobile-field mt-2 appearance-none text-center font-extrabold tabular-nums" value={customData[customFor]?.end || '17:00'} onChange={(e) => setCustomData((prev) => ({ ...prev, [customFor]: { ...prev[customFor], end: e.target.value } }))}>{timeOptions.map((time) => <option key={`end-${time}`} value={time}>{time}</option>)}</select></label>
                </div>
                {customTimeInvalid && <p className="mt-3 rounded-2xl bg-rose-50 px-3 py-2 text-sm font-bold text-rose-700">Giờ kết thúc phải sau giờ bắt đầu.</p>}
-               <button type="button" disabled={customTimeInvalid} onClick={saveCustom} className="mobile-primary-button mt-5 w-full disabled:opacity-50"><Check className="h-4 w-4" /> Xác nhận ca tùy chỉnh</button>
-               {selected[customFor]?.includes('Custom') && <button type="button" onClick={() => { setSelected((prev) => { const next = { ...prev }; const shifts = (next[customFor] || []).filter((shift) => shift !== 'Custom'); if (shifts.length) next[customFor] = shifts; else delete next[customFor]; return next }); setCustomFor(null) }} className="mt-2 min-h-11 w-full rounded-2xl text-sm font-bold text-rose-600">Bỏ ca tùy chỉnh ngày này</button>}
+               <button type="button" disabled={customTimeInvalid} onClick={saveCustom} className="mobile-primary-button mt-5 w-full disabled:opacity-50"><Check className="h-4 w-4" /> Xác nhận ca tăng ca</button>
+               {selected[customFor]?.includes('Custom') && <button type="button" onClick={() => { setSelected((prev) => { const next = { ...prev }; const shifts = (next[customFor] || []).filter((shift) => shift !== 'Custom'); if (shifts.length) next[customFor] = shifts; else delete next[customFor]; return next }); setCustomFor(null) }} className="mt-2 min-h-11 w-full rounded-2xl text-sm font-bold text-rose-600">Bỏ ca tăng ca ngày này</button>}
             </div>
           </section>
         </div>
