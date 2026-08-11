@@ -49,7 +49,7 @@ for (const route of ['/', '/schedule', '/penalties', '/salary-advance']) {
   })
 }
 
-for (const route of ['/admin/dashboard', '/admin/dashboard?view=employees', '/admin/next-week', '/admin/requests']) {
+for (const route of ['/admin/dashboard', '/admin/dashboard?view=employees', '/admin/next-week', '/admin/requests', '/admin/archive']) {
   test(`admin: ${route} không lỗi, không tràn và vùng bấm dùng được`, async ({ page }) => {
     await enterPreview(page, 'admin')
     await page.goto(route, { waitUntil: 'domcontentloaded' })

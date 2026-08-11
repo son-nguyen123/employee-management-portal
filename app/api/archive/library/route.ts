@@ -1,7 +1,8 @@
 import { NextResponse } from 'next/server'
 import { ApiError, authenticateRequest, requireManager } from '@/lib/server/api-auth'
-import { listWeeklyArchives, readWeeklyArchive } from '@/lib/server/google-drive-archive'
+import { listAllArchives, readArchive } from '@/lib/server/google-drive-archive'
 import { runArchivePreview } from '@/lib/server/weekly-archive'
+import { runMonthlyArchive } from '@/lib/server/monthly-archive'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -13,8 +14,8 @@ export async function GET(request: Request) {
     requireManager(actor)
     const fileId = new URL(request.url).searchParams.get('fileId')?.trim()
     const result = fileId
-      ? await readWeeklyArchive(fileId)
-      : await listWeeklyArchives()
+      ? await readArchive(fileId)
+      : await listAllArchives()
     return NextResponse.json({ ok: true, result })
   } catch (error) {
     const status = error instanceof ApiError ? error.status : 500
@@ -36,7 +37,10 @@ export async function POST(request: Request) {
   try {
     const actor = await authenticateRequest(request)
     requireManager(actor)
-    const body = await request.json() as { referenceDate?: unknown }
+    const body = await request.json() as { referenceDate?: unknown; action?: unknown }
+    if (body.action === 'archive-previous-month') {
+      return NextResponse.json({ ok: true, result: await runMonthlyArchive() })
+    }
     if (typeof body.referenceDate !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(body.referenceDate)) {
       throw new ApiError(400, 'Ngày kiểm thử không hợp lệ.')
     }

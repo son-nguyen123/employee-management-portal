@@ -25,6 +25,7 @@ import {
   listArchiveFiles,
   readArchiveFile,
   createArchivePreview,
+  archivePreviousMonth,
   type ArchiveFileSummary,
   type ArchivedRecord,
   type WeeklyArchivePayload,
@@ -88,6 +89,7 @@ function sourceWeekKey(archiveKey: string) {
 }
 
 function monthKey(file: ArchiveFileSummary) {
+  if (file.archiveKind === 'monthly') return file.archiveKey.slice(0, 7)
   return sourceWeekKey(file.archiveKey).slice(0, 7)
 }
 
@@ -109,6 +111,7 @@ function localMonthKey(date: Date) {
 }
 
 function fileTouchesMonth(file: ArchiveFileSummary, targetMonth: string) {
+  if (file.archiveKind === 'monthly') return monthKey(file) === targetMonth
   const start = new Date(`${sourceWeekKey(file.archiveKey)}T12:00:00`)
   const end = new Date(start)
   end.setDate(end.getDate() + 6)
@@ -184,7 +187,7 @@ function canonicalFiles(files: ArchiveFileSummary[]) {
   }
   const byWeek = new Map<string, ArchiveFileSummary>()
   files.forEach((file) => {
-    const week = sourceWeekKey(file.archiveKey)
+    const week = `${file.archiveKind}:${sourceWeekKey(file.archiveKey)}`
     const current = byWeek.get(week)
     const currentIsTest = current?.archiveKey.includes('-test-') ?? false
     const fileIsTest = file.archiveKey.includes('-test-')
@@ -214,6 +217,7 @@ export default function AdminArchivePage() {
     return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
   })
   const [creatingTest, setCreatingTest] = useState(false)
+  const [archivingMonth, setArchivingMonth] = useState(false)
   const [filterOpen, setFilterOpen] = useState(false)
   const [draftCollection, setDraftCollection] = useState<FilterCollection>('all')
   const [draftEmployee, setDraftEmployee] = useState('')
@@ -252,6 +256,10 @@ export default function AdminArchivePage() {
     const groups = new Map<string, ArchiveFileSummary[]>()
     visibleFiles.forEach((file) => {
       const startKey = monthKey(file)
+      if (file.archiveKind === 'monthly') {
+        groups.set(startKey, [...(groups.get(startKey) || []), file])
+        return
+      }
       const end = new Date(`${sourceWeekKey(file.archiveKey)}T12:00:00+07:00`)
       end.setDate(end.getDate() + 6)
       const endKey = localMonthKey(end)
@@ -264,7 +272,7 @@ export default function AdminArchivePage() {
       .map(([key, entries]) => ({
         key,
         files: entries.sort((left, right) => right.archiveKey.localeCompare(left.archiveKey)),
-        weekKeys: [...new Set(entries.map((file) => sourceWeekKey(file.archiveKey)))].sort(),
+        weekKeys: [...new Set(entries.filter((file) => file.archiveKind === 'weekly').map((file) => sourceWeekKey(file.archiveKey)))].sort(),
       }))
   }, [visibleFiles])
 
@@ -363,6 +371,7 @@ export default function AdminArchivePage() {
           archiveKey: result.archiveKey,
           size: result.driveFileSize || 0,
           webViewLink: result.driveWebViewLink,
+          archiveKind: 'weekly',
         }, ...current])
       }
       setMessage(`Đã tạo bản lưu thử có ${result.documentCount} mục. Firestore không bị xóa.`)
@@ -370,6 +379,22 @@ export default function AdminArchivePage() {
       setMessage(error instanceof Error ? error.message : 'Chưa thể tạo bản lưu thử.')
     } finally {
       setCreatingTest(false)
+    }
+  }
+
+  const createPreviousMonthArchive = async () => {
+    if (isPreviewMode || archivingMonth) return
+    setArchivingMonth(true)
+    setMessage('')
+    try {
+      const result = await archivePreviousMonth()
+      await loadFiles()
+      setSelectedBrowseMonth(result.archiveKey)
+      setMessage(`Đã lưu tháng ${result.archiveKey}: ${result.documentCount} mục, reset ${result.deletedDocumentCount} mục theo cấu hình.`)
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'Chưa thể lưu dữ liệu tháng trước.')
+    } finally {
+      setArchivingMonth(false)
     }
   }
 
@@ -381,6 +406,7 @@ export default function AdminArchivePage() {
     try {
       const monthFiles = canonicalFiles(files.filter((file) => fileTouchesMonth(file, nextFilter.month)))
       const loaded = await Promise.all(monthFiles.map(async (file) => ({ file, archive: await getArchive(file) })))
+      const hasMonthlySnapshot = loaded.some(({ file }) => file.archiveKind === 'monthly')
       const employeeNames = new Map<string, string>()
       loaded.forEach(({ archive: payload }) => {
         ;(payload.records?.employeeProfiles || []).forEach((record) => {
@@ -395,6 +421,7 @@ export default function AdminArchivePage() {
       loaded.forEach(({ file, archive: payload }) => {
         Object.entries(payload.records || {}).forEach(([collection, records]) => {
           if (collection === 'employeeProfiles' || (nextFilter.collection !== 'all' && collection !== nextFilter.collection)) return
+          if (hasMonthlySnapshot && file.archiveKind === 'weekly' && ['penalties', 'salaryAdvances'].includes(collection)) return
           records.forEach((record) => {
             if (!recordBelongsToMonth(collection, record.data, nextFilter.month)) return
             const summary = recordSummary(record, employeeNames)
@@ -402,7 +429,7 @@ export default function AdminArchivePage() {
             if (query && !dataText.includes(query)) return
             const batchKey = typeof record.data.batchKey === 'string' ? record.data.batchKey : ''
             const resultKey = collection === 'workSchedules'
-              ? `${collection}:${payload.weekStart}:${batchKey || summary.employeeId || record.id}`
+              ? `${collection}:${payload.weekStart || payload.monthStart || file.archiveKey}:${batchKey || summary.employeeId || record.id}`
               : `${collection}:${record.path}`
             const existing = grouped.get(resultKey)
             if (existing) {
@@ -415,7 +442,7 @@ export default function AdminArchivePage() {
                 employee: summary.employee,
                 status: summary.status,
                 date: summary.date,
-                weekStart: payload.weekStart,
+                weekStart: payload.weekStart || payload.monthStart || '',
                 weekKey: sourceWeekKey(file.archiveKey),
               })
             }
@@ -503,7 +530,7 @@ export default function AdminArchivePage() {
     return (
       <div className="border-t border-slate-100 bg-slate-50/70 p-3 dark:border-white/10 dark:bg-slate-950/30">
         <div className="flex items-center justify-between gap-3">
-          <p className="text-xs font-bold uppercase tracking-wider text-indigo-600">Chi tiết tuần</p>
+          <p className="text-xs font-bold uppercase tracking-wider text-indigo-600">Chi tiết {file.archiveKind === 'monthly' ? 'tháng' : 'tuần'}</p>
           {file.webViewLink && <a href={file.webViewLink} target="_blank" rel="noreferrer" className="flex min-h-9 items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 text-xs font-bold dark:border-slate-700 dark:bg-slate-900"><ExternalLink className="h-3.5 w-3.5" /> Drive</a>}
         </div>
         <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3">
@@ -537,7 +564,7 @@ export default function AdminArchivePage() {
         <section className="overflow-hidden rounded-[1.75rem] bg-slate-950 p-4 text-white shadow-xl shadow-slate-950/15">
           <div className="flex items-start gap-3">
             <div className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-indigo-600"><Archive className="h-5 w-5" /></div>
-            <div className="min-w-0 flex-1"><p className="text-[11px] font-bold uppercase tracking-wider text-indigo-300">Lưu trữ dài hạn</p><h1 className="mt-0.5 text-xl font-black">{visibleFiles.length} bản · {monthGroups.length} tháng</h1><p className="mt-1 text-xs leading-5 text-slate-300">Dữ liệu tuần đã lưu an toàn trên Google Drive.</p></div>
+            <div className="min-w-0 flex-1"><p className="text-[11px] font-bold uppercase tracking-wider text-indigo-300">Lưu trữ dài hạn</p><h1 className="mt-0.5 text-xl font-black">{visibleFiles.length} bản · {monthGroups.length} tháng</h1><p className="mt-1 text-xs leading-5 text-slate-300">Bản tuần và bản chốt tháng được lưu riêng trên Google Drive.</p></div>
             <button type="button" onClick={() => void loadFiles()} disabled={loading} aria-label="Tải lại kho dữ liệu" className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-white/10 disabled:opacity-50"><RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} /></button>
           </div>
         </section>
@@ -580,11 +607,12 @@ export default function AdminArchivePage() {
           </section>
         ) : showWeeklyDetails ? (
           <section className="mt-4 space-y-3">
-            <div className="flex items-end justify-between gap-3 px-1"><div><h2 className="font-black">Các tuần trong {monthLabel(selectedBrowseMonth).toLocaleLowerCase('vi')}</h2><p className="mt-1 text-xs text-muted-foreground">Chạm vào một tuần để xem dữ liệu.</p></div><Badge variant="outline">{browseGroup?.weekKeys.length || 0} tuần</Badge></div>
+            <div className="flex items-end justify-between gap-3 px-1"><div><h2 className="font-black">Các bản lưu trong {monthLabel(selectedBrowseMonth).toLocaleLowerCase('vi')}</h2><p className="mt-1 text-xs text-muted-foreground">Bản tháng chứa khoản phạt và ứng lương; bản tuần chứa lịch làm.</p></div><Badge variant="outline">{browseGroup?.files.length || 0} bản</Badge></div>
             {browseGroup?.files.map((file) => {
                     const weekKey = sourceWeekKey(file.archiveKey)
                     const weekNumber = browseGroup.weekKeys.indexOf(weekKey) + 1
-                    return <div key={file.id} className="mobile-card overflow-hidden"><button type="button" onClick={() => void openArchive(file)} className="flex w-full items-center gap-3 p-4 text-left"><div className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-indigo-50 text-indigo-600 dark:bg-indigo-500/10"><CalendarDays className="h-5 w-5" /></div><div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-2"><h3 className="font-extrabold">Tuần {weekNumber}</h3>{file.archiveKey.includes('-test-') && <Badge variant="outline">Bản thử</Badge>}</div><p className="mt-1 text-xs text-muted-foreground">{weekRange(weekKey)} · {bytes(file.size)}</p></div>{selected?.id === file.id && loadingFile ? <Loader2 className="h-5 w-5 animate-spin text-indigo-600" /> : <ChevronDown className={`h-5 w-5 text-slate-400 transition ${selected?.id === file.id ? 'rotate-180' : ''}`} />}</button>{selected?.id === file.id && archive && archiveDetails(archive, file)}</div>
+                    const monthly = file.archiveKind === 'monthly'
+                    return <div key={file.id} className="mobile-card overflow-hidden"><button type="button" onClick={() => void openArchive(file)} className="flex w-full items-center gap-3 p-4 text-left"><div className={`grid h-11 w-11 shrink-0 place-items-center rounded-2xl ${monthly ? 'bg-emerald-50 text-emerald-600 dark:bg-emerald-500/10' : 'bg-indigo-50 text-indigo-600 dark:bg-indigo-500/10'}`}><CalendarDays className="h-5 w-5" /></div><div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-2"><h3 className="font-extrabold">{monthly ? 'Bản chốt tháng' : `Tuần ${weekNumber}`}</h3>{file.archiveKey.includes('-test-') && <Badge variant="outline">Bản thử</Badge>}</div><p className="mt-1 text-xs text-muted-foreground">{monthly ? monthLabel(file.archiveKey) : weekRange(weekKey)} · {bytes(file.size)}</p></div>{selected?.id === file.id && loadingFile ? <Loader2 className="h-5 w-5 animate-spin text-indigo-600" /> : <ChevronDown className={`h-5 w-5 text-slate-400 transition ${selected?.id === file.id ? 'rotate-180' : ''}`} />}</button>{selected?.id === file.id && archive && archiveDetails(archive, file)}</div>
                   })}
             {!browseGroup && <div className="mobile-card p-8 text-center"><CalendarDays className="mx-auto h-8 w-8 text-slate-300" /><h2 className="mt-3 font-extrabold">Tháng này chưa có dữ liệu</h2><p className="mt-1 text-sm leading-6 text-muted-foreground">Khi có bản lưu tuần, dữ liệu sẽ tự xuất hiện tại đây.</p></div>}
           </section>
@@ -592,7 +620,7 @@ export default function AdminArchivePage() {
 
         <details className="group mt-6 overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm dark:border-slate-700 dark:bg-slate-900">
           <summary className="flex cursor-pointer list-none items-center gap-3 p-4"><div className="grid h-10 w-10 shrink-0 place-items-center rounded-2xl bg-indigo-50 text-indigo-600 dark:bg-indigo-500/10"><FlaskConical className="h-4 w-4" /></div><div className="min-w-0 flex-1"><h2 className="text-sm font-extrabold">Công cụ kiểm thử</h2><p className="mt-0.5 text-xs text-muted-foreground">Tạo bản thử bằng ngày lùi khi cần kiểm tra.</p></div><ChevronDown className="h-5 w-5 text-slate-400 transition group-open:rotate-180" /></summary>
-          <div className="border-t border-slate-100 p-4 dark:border-white/10"><p className="text-xs leading-5 text-muted-foreground">File test được lưu thật trên Drive nhưng không xóa dữ liệu Firebase.</p><input type="date" value={testDate} onChange={(event) => setTestDate(event.target.value)} className="mobile-field mt-3 min-w-0 !px-4 text-sm" /><button type="button" onClick={() => void createTestArchive()} disabled={creatingTest || isPreviewMode} className="mt-2 flex min-h-12 w-full items-center justify-center rounded-2xl bg-indigo-600 px-4 text-sm font-bold text-white disabled:opacity-50">{creatingTest ? 'Đang tạo...' : 'Tạo bản thử'}</button></div>
+          <div className="border-t border-slate-100 p-4 dark:border-white/10"><p className="text-xs leading-5 text-muted-foreground">Tạo bù tháng trước dùng đúng quy trình Drive → xác minh → reset. File test tuần không xóa Firebase.</p><button type="button" onClick={() => void createPreviousMonthArchive()} disabled={archivingMonth || isPreviewMode} className="mt-3 flex min-h-12 w-full items-center justify-center rounded-2xl bg-emerald-600 px-4 text-sm font-bold text-white disabled:opacity-50">{archivingMonth ? 'Đang lưu tháng trước...' : 'Lưu tháng trước ngay'}</button><input type="date" value={testDate} onChange={(event) => setTestDate(event.target.value)} className="mobile-field mt-3 min-w-0 !px-4 text-sm" /><button type="button" onClick={() => void createTestArchive()} disabled={creatingTest || isPreviewMode} className="mt-2 flex min-h-12 w-full items-center justify-center rounded-2xl bg-indigo-600 px-4 text-sm font-bold text-white disabled:opacity-50">{creatingTest ? 'Đang tạo...' : 'Tạo bản thử tuần'}</button></div>
         </details>
       </PageContainer>
 

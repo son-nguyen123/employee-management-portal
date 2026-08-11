@@ -26,6 +26,7 @@ export interface WeeklyArchiveFile {
   createdTime?: string
   modifiedTime?: string
   webViewLink?: string
+  archiveKind: 'weekly' | 'monthly'
 }
 
 function requiredEnv(name: string): string {
@@ -472,9 +473,11 @@ export async function storeMonthlyArchive(params: {
   return verified
 }
 
-export async function listWeeklyArchives(): Promise<WeeklyArchiveFile[]> {
-  const accessToken = await googleAccessToken()
-  const folderId = await ensureArchiveFolder(accessToken)
+async function listArchivesInFolder(
+  accessToken: string,
+  folderId: string,
+  archiveKind: 'weekly' | 'monthly',
+): Promise<WeeklyArchiveFile[]> {
   const files: DriveFile[] = []
   let pageToken: string | undefined
   do {
@@ -504,10 +507,36 @@ export async function listWeeklyArchives(): Promise<WeeklyArchiveFile[]> {
       createdTime: file.createdTime,
       modifiedTime: file.modifiedTime,
       webViewLink: file.webViewLink,
+      archiveKind,
     }))
 }
 
-export async function readWeeklyArchive(fileId: string): Promise<unknown> {
+export async function listWeeklyArchives(): Promise<WeeklyArchiveFile[]> {
+  const accessToken = await googleAccessToken()
+  return listArchivesInFolder(accessToken, await ensureArchiveFolder(accessToken), 'weekly')
+}
+
+export async function listMonthlyArchives(): Promise<WeeklyArchiveFile[]> {
+  const accessToken = await googleAccessToken()
+  return listArchivesInFolder(accessToken, await ensureMonthlyArchiveFolder(accessToken), 'monthly')
+}
+
+export async function listAllArchives(): Promise<WeeklyArchiveFile[]> {
+  const accessToken = await googleAccessToken()
+  const [weeklyFolderId, monthlyFolderId] = await Promise.all([
+    ensureArchiveFolder(accessToken),
+    ensureMonthlyArchiveFolder(accessToken),
+  ])
+  const files = await Promise.all([
+    listArchivesInFolder(accessToken, weeklyFolderId, 'weekly'),
+    listArchivesInFolder(accessToken, monthlyFolderId, 'monthly'),
+  ])
+  return files.flat().sort((left, right) =>
+    String(right.createdTime || '').localeCompare(String(left.createdTime || '')),
+  )
+}
+
+export async function readArchive(fileId: string): Promise<unknown> {
   if (!/^[a-zA-Z0-9_-]{10,200}$/.test(fileId)) {
     throw new Error('Invalid Google Drive archive file ID.')
   }
@@ -530,6 +559,8 @@ export async function readWeeklyArchive(fileId: string): Promise<unknown> {
     `/files/${encodeURIComponent(fileId)}?alt=media`,
   )
 }
+
+export const readWeeklyArchive = readArchive
 
 export async function testGoogleDriveArchiveConnection(): Promise<{
   uploadedBytes: number

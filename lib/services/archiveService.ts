@@ -8,6 +8,7 @@ export interface ArchiveFileSummary {
   createdTime?: string
   modifiedTime?: string
   webViewLink?: string
+  archiveKind: 'weekly' | 'monthly'
 }
 
 export interface ArchivedRecord {
@@ -20,8 +21,11 @@ export interface WeeklyArchivePayload {
   schemaVersion: number
   archiveKey: string
   timezone: string
-  weekStart: string
-  weekEndExclusive: string
+  archiveKind?: 'weekly' | 'monthly'
+  weekStart?: string
+  weekEndExclusive?: string
+  monthStart?: string
+  monthEndExclusive?: string
   exportedAt: string
   counts: Record<string, number>
   records: Record<string, ArchivedRecord[]>
@@ -75,5 +79,19 @@ export async function createArchivePreview(referenceDate: string): Promise<Archi
   })
   const body = await response.json().catch(() => null) as { ok: boolean; result?: ArchivePreviewResult; error?: string } | null
   if (!response.ok || !body?.ok || !body.result) throw new Error(body?.error || 'Chưa thể tạo bản lưu thử.')
+  return body.result
+}
+
+export async function archivePreviousMonth(): Promise<{ archiveKey: string; state: string; documentCount: number; deletedDocumentCount: number }> {
+  const user = auth.currentUser
+  if (!user) throw new Error('Bạn cần đăng nhập để lưu dữ liệu tháng.')
+  const token = await user.getIdToken()
+  const response = await fetch('/api/archive/library', {
+    method: 'POST',
+    headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+    body: JSON.stringify({ action: 'archive-previous-month' }),
+  })
+  const body = await response.json().catch(() => null) as { ok: boolean; result?: { archiveKey: string; state: string; documentCount: number; deletedDocumentCount: number }; error?: string } | null
+  if (!response.ok || !body?.ok || !body.result) throw new Error(body?.error || 'Chưa thể lưu dữ liệu tháng trước.')
   return body.result
 }
