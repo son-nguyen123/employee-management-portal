@@ -361,7 +361,6 @@ export default function NextWeekStaffPage() {
     <main className="min-h-screen pb-8">
       <Header
         title="Nhân sự tuần tới"
-        subtitle="Xem nhanh người làm theo ngày và ca"
         rightAction={(
           <div className="flex items-center gap-1.5">
             <button
