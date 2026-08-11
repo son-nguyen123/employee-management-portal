@@ -21,7 +21,7 @@ export interface WeeklyArchivePayload {
   schemaVersion: number
   archiveKey: string
   timezone: string
-  archiveKind?: 'weekly' | 'monthly'
+  archiveKind?: 'weekly' | 'monthly' | 'live'
   weekStart?: string
   weekEndExclusive?: string
   monthStart?: string
@@ -56,6 +56,20 @@ export function listArchiveFiles(): Promise<ArchiveFileSummary[]> {
 
 export function readArchiveFile(fileId: string): Promise<WeeklyArchivePayload> {
   return archiveRequest<WeeklyArchivePayload>(fileId)
+}
+
+export function readCurrentMonthSnapshot(month: string): Promise<WeeklyArchivePayload> {
+  const user = auth.currentUser
+  if (!user) return Promise.reject(new Error('Bạn cần đăng nhập để đọc dữ liệu hiện tại.'))
+  return user.getIdToken().then(async (token) => {
+    const response = await fetch(`/api/archive/library?liveMonth=${encodeURIComponent(month)}`, {
+      headers: { authorization: `Bearer ${token}` },
+      cache: 'no-store',
+    })
+    const body = await response.json().catch(() => null) as { ok: boolean; result?: WeeklyArchivePayload; error?: string } | null
+    if (!response.ok || !body?.ok || !body.result) throw new Error(body?.error || 'Chưa thể đọc dữ liệu Firestore hiện tại.')
+    return body.result
+  })
 }
 
 export interface ArchivePreviewResult {

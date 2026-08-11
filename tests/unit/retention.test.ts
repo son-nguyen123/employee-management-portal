@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { previousVietnamMonth, previousVietnamWeek, scheduleShareText, vietnamWeekContaining } from '@/lib/archive/retention'
+import { currentVietnamMonth, previousVietnamMonth, previousVietnamWeek, scheduleShareText, vietnamWeekContaining } from '@/lib/archive/retention'
 
 describe('quy tắc lưu và reset dữ liệu', () => {
   it('giữ tuần hiện tại và tuần trước, chỉ chọn tuần cách đây hai tuần để xóa', () => {
@@ -20,6 +20,13 @@ describe('quy tắc lưu và reset dữ liệu', () => {
     expect(window.key).toBe('2026-12')
     expect(window.start.toISOString()).toBe('2026-11-30T17:00:00.000Z')
     expect(window.end.toISOString()).toBe('2026-12-31T17:00:00.000Z')
+  })
+
+  it('nhận đúng tháng hiện tại để cộng Firestore với Drive', () => {
+    const window = currentVietnamMonth(new Date('2026-08-31T23:59:00+07:00'))
+    expect(window.key).toBe('2026-08')
+    expect(window.start.toISOString()).toBe('2026-07-31T17:00:00.000Z')
+    expect(window.end.toISOString()).toBe('2026-08-31T17:00:00.000Z')
   })
 })
 

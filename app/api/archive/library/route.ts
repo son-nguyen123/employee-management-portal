@@ -3,6 +3,7 @@ import { ApiError, authenticateRequest, requireManager } from '@/lib/server/api-
 import { listAllArchives, readArchive } from '@/lib/server/google-drive-archive'
 import { runArchivePreview } from '@/lib/server/weekly-archive'
 import { runMonthlyArchive } from '@/lib/server/monthly-archive'
+import { getCurrentMonthSnapshot } from '@/lib/server/current-month-snapshot'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -12,10 +13,15 @@ export async function GET(request: Request) {
   try {
     const actor = await authenticateRequest(request)
     requireManager(actor)
-    const fileId = new URL(request.url).searchParams.get('fileId')?.trim()
+    const searchParams = new URL(request.url).searchParams
+    const fileId = searchParams.get('fileId')?.trim()
+    const liveMonth = searchParams.get('liveMonth')?.trim()
+    if (liveMonth && !/^\d{4}-\d{2}$/.test(liveMonth)) throw new ApiError(400, 'Tháng cần có định dạng YYYY-MM.')
     const result = fileId
       ? await readArchive(fileId)
-      : await listAllArchives()
+      : liveMonth
+        ? await getCurrentMonthSnapshot(liveMonth)
+        : await listAllArchives()
     return NextResponse.json({ ok: true, result })
   } catch (error) {
     const status = error instanceof ApiError ? error.status : 500

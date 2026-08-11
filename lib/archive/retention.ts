@@ -44,6 +44,17 @@ export function previousVietnamMonth(now: Date): ArchiveWindow {
   }
 }
 
+export function currentVietnamMonth(now: Date): ArchiveWindow {
+  const shifted = shiftedVietnamDate(now)
+  const startShifted = new Date(Date.UTC(shifted.getUTCFullYear(), shifted.getUTCMonth(), 1))
+  const endShifted = new Date(Date.UTC(shifted.getUTCFullYear(), shifted.getUTCMonth() + 1, 1))
+  return {
+    key: `${startShifted.getUTCFullYear()}-${String(startShifted.getUTCMonth() + 1).padStart(2, '0')}`,
+    start: new Date(startShifted.getTime() - VIETNAM_OFFSET_MS),
+    end: new Date(endShifted.getTime() - VIETNAM_OFFSET_MS),
+  }
+}
+
 export function scheduleShareText(params: { fullName?: string | null; employeeCode?: string | null; weekStart: Date; weekEnd: Date }): string {
   const fullName = params.fullName?.trim() || 'nhân viên'
   const employeeCode = params.employeeCode?.trim() || 'chưa có mã'

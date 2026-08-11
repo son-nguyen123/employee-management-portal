@@ -26,6 +26,7 @@ import {
   readArchiveFile,
   createArchivePreview,
   archivePreviousMonth,
+  readCurrentMonthSnapshot,
   type ArchiveFileSummary,
   type ArchivedRecord,
   type WeeklyArchivePayload,
@@ -106,22 +107,25 @@ function weekRange(key: string) {
   return `Từ ${formatter.format(start)} đến ${formatter.format(end)}`
 }
 
-function localMonthKey(date: Date) {
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`
+function vietnamMonthKey(date: Date) {
+  const parts = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Ho_Chi_Minh', year: 'numeric', month: '2-digit' }).formatToParts(date)
+  const year = parts.find((part) => part.type === 'year')?.value
+  const month = parts.find((part) => part.type === 'month')?.value
+  return `${year}-${month}`
 }
 
 function fileTouchesMonth(file: ArchiveFileSummary, targetMonth: string) {
   if (file.archiveKind === 'monthly') return monthKey(file) === targetMonth
-  const start = new Date(`${sourceWeekKey(file.archiveKey)}T12:00:00`)
+  const start = new Date(`${sourceWeekKey(file.archiveKey)}T12:00:00+07:00`)
   const end = new Date(start)
   end.setDate(end.getDate() + 6)
-  return localMonthKey(start) === targetMonth || localMonthKey(end) === targetMonth
+  return vietnamMonthKey(start) === targetMonth || vietnamMonthKey(end) === targetMonth
 }
 
 function recordBelongsToMonth(collection: string, data: Record<string, unknown>, targetMonth: string) {
   const [year, month] = targetMonth.split('-').map(Number)
-  const monthStart = new Date(year, month - 1, 1)
-  const monthEnd = new Date(year, month, 1)
+  const monthStart = new Date(Date.UTC(year, month - 1, 1) - 7 * 60 * 60 * 1000)
+  const monthEnd = new Date(Date.UTC(year, month, 1) - 7 * 60 * 60 * 1000)
   if (collection === 'leaveRequests') {
     const start = new Date(String(data.leaveDate || ''))
     const end = new Date(String(data.endDate || data.leaveDate || ''))
@@ -231,6 +235,7 @@ export default function AdminArchivePage() {
   const centeredYearRef = useRef<number | null>(null)
   const filterRequestIdRef = useRef(0)
   const visibleFiles = useMemo(() => canonicalFiles(files), [files])
+  const currentMonthKey = vietnamMonthKey(new Date())
 
   const loadFiles = useCallback(async () => {
     if (!authUser) return
@@ -262,7 +267,7 @@ export default function AdminArchivePage() {
       }
       const end = new Date(`${sourceWeekKey(file.archiveKey)}T12:00:00+07:00`)
       end.setDate(end.getDate() + 6)
-      const endKey = localMonthKey(end)
+      const endKey = vietnamMonthKey(end)
       ;[...new Set([startKey, endKey])].forEach((key) => {
         groups.set(key, [...(groups.get(key) || []), file])
       })
@@ -278,10 +283,9 @@ export default function AdminArchivePage() {
 
   useEffect(() => {
     if (!selectedBrowseMonth && !loading) {
-      const now = new Date()
-      setSelectedBrowseMonth(monthGroups[0]?.key || `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`)
+      setSelectedBrowseMonth(currentMonthKey)
     }
-  }, [loading, monthGroups, selectedBrowseMonth])
+  }, [currentMonthKey, loading, selectedBrowseMonth])
 
   const browseGroup = monthGroups.find((group) => group.key === selectedBrowseMonth)
   const selectedYear = Number(selectedBrowseMonth.slice(0, 4)) || new Date().getFullYear()
@@ -405,8 +409,14 @@ export default function AdminArchivePage() {
     setMessage('')
     try {
       const monthFiles = canonicalFiles(files.filter((file) => fileTouchesMonth(file, nextFilter.month)))
-      const loaded = await Promise.all(monthFiles.map(async (file) => ({ file, archive: await getArchive(file) })))
-      const hasMonthlySnapshot = loaded.some(({ file }) => file.archiveKind === 'monthly')
+      const currentMonth = vietnamMonthKey(new Date())
+      const liveSnapshot = nextFilter.month === currentMonth && !isPreviewMode ? await readCurrentMonthSnapshot(nextFilter.month) : null
+      const driveSnapshots = await Promise.all(monthFiles.map(async (file) => ({ file, archive: await getArchive(file) })))
+      const loaded: Array<{ file: ArchiveFileSummary | null; archive: WeeklyArchivePayload }> = [
+        ...(liveSnapshot ? [{ file: null, archive: liveSnapshot }] : []),
+        ...driveSnapshots,
+      ]
+      const hasMonthlySnapshot = loaded.some(({ file }) => file?.archiveKind === 'monthly')
       const employeeNames = new Map<string, string>()
       loaded.forEach(({ archive: payload }) => {
         ;(payload.records?.employeeProfiles || []).forEach((record) => {
@@ -418,18 +428,21 @@ export default function AdminArchivePage() {
 
       const query = nextFilter.employee.toLocaleLowerCase('vi')
       const grouped = new Map<string, FilterResult>()
+      const seenPaths = new Set<string>()
       loaded.forEach(({ file, archive: payload }) => {
         Object.entries(payload.records || {}).forEach(([collection, records]) => {
           if (collection === 'employeeProfiles' || (nextFilter.collection !== 'all' && collection !== nextFilter.collection)) return
-          if (hasMonthlySnapshot && file.archiveKind === 'weekly' && ['penalties', 'salaryAdvances'].includes(collection)) return
+          if (hasMonthlySnapshot && file?.archiveKind === 'weekly' && ['penalties', 'salaryAdvances'].includes(collection)) return
           records.forEach((record) => {
+            if (seenPaths.has(record.path)) return
+            seenPaths.add(record.path)
             if (!recordBelongsToMonth(collection, record.data, nextFilter.month)) return
             const summary = recordSummary(record, employeeNames)
             const dataText = `${summary.employee} ${summary.employeeId} ${String(record.data.employeeCode || '')} ${String(record.data.employeeName || '')}`.toLocaleLowerCase('vi')
             if (query && !dataText.includes(query)) return
             const batchKey = typeof record.data.batchKey === 'string' ? record.data.batchKey : ''
             const resultKey = collection === 'workSchedules'
-              ? `${collection}:${payload.weekStart || payload.monthStart || file.archiveKey}:${batchKey || summary.employeeId || record.id}`
+              ? `${collection}:${payload.weekStart || payload.monthStart || file?.archiveKey || nextFilter.month}:${batchKey || summary.employeeId || record.id}`
               : `${collection}:${record.path}`
             const existing = grouped.get(resultKey)
             if (existing) {
@@ -443,7 +456,7 @@ export default function AdminArchivePage() {
                 status: summary.status,
                 date: summary.date,
                 weekStart: payload.weekStart || payload.monthStart || '',
-                weekKey: sourceWeekKey(file.archiveKey),
+                weekKey: file?.archiveKind === 'weekly' ? sourceWeekKey(file.archiveKey) : nextFilter.month,
               })
             }
           })
@@ -458,10 +471,10 @@ export default function AdminArchivePage() {
     } finally {
       if (requestId === filterRequestIdRef.current) setFiltering(false)
     }
-  }, [files, getArchive])
+  }, [files, getArchive, isPreviewMode])
 
   useEffect(() => {
-    if (!selectedBrowseMonth || loading || !files.length) return
+    if (!selectedBrowseMonth || loading) return
     const timeout = window.setTimeout(() => {
       void runFilters({ month: selectedBrowseMonth, collection: 'all', employee: '' })
     }, 150)
@@ -493,6 +506,7 @@ export default function AdminArchivePage() {
     return counts
   }, [filterResults])
   const monthTotal = Object.values(monthCounts).reduce((sum, value) => sum + value, 0)
+  const displayedMonthCount = new Set([...monthGroups.map((group) => group.key), currentMonthKey]).size
 
   const exportMonthWord = async () => {
     if (!selectedBrowseMonth || isPreviewMode) return
@@ -564,7 +578,7 @@ export default function AdminArchivePage() {
         <section className="overflow-hidden rounded-[1.75rem] bg-slate-950 p-4 text-white shadow-xl shadow-slate-950/15">
           <div className="flex items-start gap-3">
             <div className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-indigo-600"><Archive className="h-5 w-5" /></div>
-            <div className="min-w-0 flex-1"><p className="text-[11px] font-bold uppercase tracking-wider text-indigo-300">Lưu trữ dài hạn</p><h1 className="mt-0.5 text-xl font-black">{visibleFiles.length} bản · {monthGroups.length} tháng</h1><p className="mt-1 text-xs leading-5 text-slate-300">Bản tuần và bản chốt tháng được lưu riêng trên Google Drive.</p></div>
+            <div className="min-w-0 flex-1"><p className="text-[11px] font-bold uppercase tracking-wider text-indigo-300">Lưu trữ dài hạn</p><h1 className="mt-0.5 text-xl font-black">{visibleFiles.length} bản Drive · {displayedMonthCount} tháng</h1><p className="mt-1 text-xs leading-5 text-slate-300">Tháng hiện tại cộng Drive + Firestore; tháng đã chốt chỉ đọc Drive.</p></div>
             <button type="button" onClick={() => void loadFiles()} disabled={loading} aria-label="Tải lại kho dữ liệu" className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-white/10 disabled:opacity-50"><RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} /></button>
           </div>
         </section>
@@ -579,13 +593,13 @@ export default function AdminArchivePage() {
         {selectedBrowseMonth && (
           <section className="mt-3 overflow-hidden rounded-3xl border border-slate-200/80 bg-white/70 py-3 shadow-sm backdrop-blur dark:border-slate-700 dark:bg-slate-900/70">
             <div className="flex items-center justify-center gap-4 px-3"><button type="button" onClick={() => selectYear(-1)} aria-label="Năm trước" className="grid h-9 w-9 place-items-center rounded-xl bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300"><ChevronLeft className="h-4 w-4" /></button><p className="min-w-20 text-center text-sm font-black">Năm {selectedYear}</p><button type="button" onClick={() => selectYear(1)} aria-label="Năm sau" className="grid h-9 w-9 place-items-center rounded-xl bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300"><ChevronRight className="h-4 w-4" /></button></div>
-            <div className="relative mt-3"><div className="pointer-events-none absolute inset-y-0 left-1/2 z-0 w-[8.5rem] -translate-x-1/2 rounded-2xl bg-indigo-50/70 dark:bg-indigo-500/5" /><nav ref={monthRailRef} aria-label="Bánh xe chọn tháng" onScroll={handleMonthScroll} className="relative z-10 flex snap-x snap-mandatory gap-2 overflow-x-auto px-0 py-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"><span aria-hidden="true" className="shrink-0" style={{ width: 'calc(50% - 4.25rem)' }} />{wheelMonths.map((key) => { const group = monthGroups.find((item) => item.key === key); const active = key === selectedBrowseMonth; return <button key={key} data-month-key={key} type="button" onClick={() => { setSelectedBrowseMonth(key); setSelected(null); setArchive(null); centerMonth(key) }} className={`w-[8.5rem] shrink-0 snap-center rounded-2xl border px-3 py-3 text-center transition duration-200 active:scale-[0.98] ${active ? 'scale-100 border-indigo-600 bg-indigo-600 text-white shadow-lg shadow-indigo-600/25' : 'scale-90 border-slate-200 bg-white text-slate-500 opacity-70 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300'}`}><p className="text-[10px] font-bold uppercase tracking-wider">Tháng</p><p className="mt-0.5 text-2xl font-black">{Number(key.slice(5))}</p><p className={`mt-1 text-[10px] font-semibold ${active ? 'text-indigo-100' : 'text-slate-400'}`}>{group ? `${group.files.length} bản lưu` : 'Không có dữ liệu'}</p></button>})}<span aria-hidden="true" className="shrink-0" style={{ width: 'calc(50% - 4.25rem)' }} /></nav></div>
+            <div className="relative mt-3"><div className="pointer-events-none absolute inset-y-0 left-1/2 z-0 w-[8.5rem] -translate-x-1/2 rounded-2xl bg-indigo-50/70 dark:bg-indigo-500/5" /><nav ref={monthRailRef} aria-label="Bánh xe chọn tháng" onScroll={handleMonthScroll} className="relative z-10 flex snap-x snap-mandatory gap-2 overflow-x-auto px-0 py-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"><span aria-hidden="true" className="shrink-0" style={{ width: 'calc(50% - 4.25rem)' }} />{wheelMonths.map((key) => { const group = monthGroups.find((item) => item.key === key); const active = key === selectedBrowseMonth; const live = key === currentMonthKey; return <button key={key} data-month-key={key} type="button" onClick={() => { setSelectedBrowseMonth(key); setSelected(null); setArchive(null); centerMonth(key) }} className={`w-[8.5rem] shrink-0 snap-center rounded-2xl border px-3 py-3 text-center transition duration-200 active:scale-[0.98] ${active ? 'scale-100 border-indigo-600 bg-indigo-600 text-white shadow-lg shadow-indigo-600/25' : 'scale-90 border-slate-200 bg-white text-slate-500 opacity-70 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-300'}`}><p className="text-[10px] font-bold uppercase tracking-wider">Tháng</p><p className="mt-0.5 text-2xl font-black">{Number(key.slice(5))}</p><p className={`mt-1 text-[10px] font-semibold ${active ? 'text-indigo-100' : 'text-slate-400'}`}>{live ? `${monthTotal} mục hiện tại` : group ? `${group.files.length} bản Drive` : 'Không có dữ liệu Drive'}</p></button>})}<span aria-hidden="true" className="shrink-0" style={{ width: 'calc(50% - 4.25rem)' }} /></nav></div>
             <p className="mt-1 text-center text-[10px] font-semibold text-slate-400">Vuốt ngang để đổi tháng</p>
           </section>
         )}
 
         <section className="mt-4 rounded-3xl border border-indigo-100 bg-indigo-50/80 p-4 dark:border-indigo-500/20 dark:bg-indigo-500/10">
-          <div className="flex items-start justify-between gap-3"><div><p className="text-[11px] font-bold uppercase tracking-wider text-indigo-600">Tổng quan {monthLabel(selectedBrowseMonth)}</p><h2 className="mt-1 text-xl font-black">{monthTotal} mục dữ liệu · {filteredEmployeeGroups.length} nhân viên</h2></div>{activeFilterCount > 0 && <button type="button" onClick={clearFilters} className="shrink-0 rounded-xl bg-white px-3 py-2 text-xs font-bold text-slate-600 shadow-sm dark:bg-slate-900 dark:text-slate-300">Xóa lọc</button>}</div>
+          <div className="flex items-start justify-between gap-3"><div><p className="text-[11px] font-bold uppercase tracking-wider text-indigo-600">Tổng quan {monthLabel(selectedBrowseMonth)} · {selectedBrowseMonth === currentMonthKey ? 'Drive + Firestore' : 'Drive'}</p><h2 className="mt-1 text-xl font-black">{monthTotal} mục dữ liệu · {filteredEmployeeGroups.length} nhân viên</h2></div>{activeFilterCount > 0 && <button type="button" onClick={clearFilters} className="shrink-0 rounded-xl bg-white px-3 py-2 text-xs font-bold text-slate-600 shadow-sm dark:bg-slate-900 dark:text-slate-300">Xóa lọc</button>}</div>
           <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3">{Object.entries(monthCounts).filter(([, count]) => count > 0).map(([collection, count]) => <div key={collection} className="rounded-2xl bg-white p-3 shadow-sm dark:bg-slate-900"><p className="text-xs font-semibold text-muted-foreground">{collectionLabels[collection] || collection}</p><p className="mt-1 text-xl font-black">{count}</p></div>)}</div>
           <div className="mt-3 grid grid-cols-2 gap-2">
             <button type="button" onClick={() => void exportMonthWord()} disabled={exportingMonth || !monthTotal} className="flex min-h-12 items-center justify-center gap-2 rounded-2xl bg-indigo-600 px-3 text-sm font-bold text-white disabled:opacity-50">{exportingMonth ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />} Xuất Word</button>
