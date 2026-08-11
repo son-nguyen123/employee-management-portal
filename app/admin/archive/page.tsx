@@ -67,6 +67,7 @@ interface FilterResult {
   collection: string
   records: ArchivedRecord[]
   employee: string
+  employeeId: string
   status: string
   date: string
   weekStart: string
@@ -453,6 +454,7 @@ export default function AdminArchivePage() {
                 collection,
                 records: [record],
                 employee: summary.employee,
+                employeeId: summary.employeeId,
                 status: summary.status,
                 date: summary.date,
                 weekStart: payload.weekStart || payload.monthStart || '',
@@ -494,9 +496,13 @@ export default function AdminArchivePage() {
 
   const filteredEmployeeGroups = useMemo(() => {
     const groups = new Map<string, FilterResult[]>()
-    filterResults.forEach((result) => groups.set(result.employee, [...(groups.get(result.employee) || []), result]))
+    filterResults.forEach((result) => {
+      const employee = result.employeeId ? result.employee : result.collection === 'auditEvents' ? 'Hệ thống' : result.employee
+      groups.set(employee, [...(groups.get(employee) || []), result])
+    })
     return [...groups.entries()].map(([employee, results]) => ({ employee, results }))
   }, [filterResults])
+  const employeeCount = useMemo(() => new Set(filterResults.map((result) => result.employeeId).filter(Boolean)).size, [filterResults])
   const activeFilterCount = appliedFilter ? Number(appliedFilter.collection !== 'all') + Number(Boolean(appliedFilter.employee)) : 0
   const monthCounts = useMemo(() => {
     const counts: Record<string, number> = {}
@@ -599,7 +605,7 @@ export default function AdminArchivePage() {
         )}
 
         <section className="mt-4 rounded-3xl border border-indigo-100 bg-indigo-50/80 p-4 dark:border-indigo-500/20 dark:bg-indigo-500/10">
-          <div className="flex items-start justify-between gap-3"><div><p className="text-[11px] font-bold uppercase tracking-wider text-indigo-600">Tổng quan {monthLabel(selectedBrowseMonth)} · {selectedBrowseMonth === currentMonthKey ? 'Drive + Firestore' : 'Drive'}</p><h2 className="mt-1 text-xl font-black">{monthTotal} mục dữ liệu · {filteredEmployeeGroups.length} nhân viên</h2></div>{activeFilterCount > 0 && <button type="button" onClick={clearFilters} className="shrink-0 rounded-xl bg-white px-3 py-2 text-xs font-bold text-slate-600 shadow-sm dark:bg-slate-900 dark:text-slate-300">Xóa lọc</button>}</div>
+          <div className="flex items-start justify-between gap-3"><div><p className="text-[11px] font-bold uppercase tracking-wider text-indigo-600">Tổng quan {monthLabel(selectedBrowseMonth)} · {selectedBrowseMonth === currentMonthKey ? 'Drive + Firestore' : 'Drive'}</p><h2 className="mt-1 text-xl font-black">{monthTotal} mục dữ liệu · {employeeCount} nhân viên</h2><p className="mt-1 text-[11px] leading-4 text-indigo-700/80 dark:text-indigo-200/80">Tổng tháng gồm cả lịch đã tạo trước cho những ngày sắp tới.</p></div>{activeFilterCount > 0 && <button type="button" onClick={clearFilters} className="shrink-0 rounded-xl bg-white px-3 py-2 text-xs font-bold text-slate-600 shadow-sm dark:bg-slate-900 dark:text-slate-300">Xóa lọc</button>}</div>
           <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3">{Object.entries(monthCounts).filter(([, count]) => count > 0).map(([collection, count]) => <div key={collection} className="rounded-2xl bg-white p-3 shadow-sm dark:bg-slate-900"><p className="text-xs font-semibold text-muted-foreground">{collectionLabels[collection] || collection}</p><p className="mt-1 text-xl font-black">{count}</p></div>)}</div>
           <div className="mt-3 grid grid-cols-2 gap-2">
             <button type="button" onClick={() => void exportMonthWord()} disabled={exportingMonth || !monthTotal} className="flex min-h-12 items-center justify-center gap-2 rounded-2xl bg-indigo-600 px-3 text-sm font-bold text-white disabled:opacity-50">{exportingMonth ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />} Xuất Word</button>
