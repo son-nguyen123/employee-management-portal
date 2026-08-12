@@ -10,6 +10,7 @@ import { subscribeToAllEmployees } from '@/lib/services/employeeService'
 import { getPreviewSchedules } from '@/lib/services/previewWorkflow'
 import { adminCancelWorkSchedules, subscribeToAllSchedules } from '@/lib/services/scheduleService'
 import { auth } from '@/lib/firebase'
+import { employeeFactoryId } from '@/lib/models/factory'
 
 type Shift = WorkSchedule['shift']
 
@@ -86,7 +87,7 @@ function isDutySchedule(schedule: WorkSchedule) {
 }
 
 export default function NextWeekStaffPage() {
-  const { authUser, isPreviewMode } = useAuth()
+  const { authUser, employee: currentEmployee, isPreviewMode } = useAuth()
   const role = useUserRole()
   const [employees, setEmployees] = useState<Employee[]>([])
   const [schedules, setSchedules] = useState<ScheduleRow[]>([])
@@ -125,6 +126,7 @@ export default function NextWeekStaffPage() {
       return
     }
 
+    const factoryScope = role === 'director' ? undefined : employeeFactoryId(currentEmployee)
     const unsubscribeEmployees = subscribeToAllEmployees(
       (items) => {
         setEmployees(items)
@@ -133,7 +135,8 @@ export default function NextWeekStaffPage() {
       () => {
         setMessage('Chưa tải được danh sách nhân viên.')
         setEmployeesReady(true)
-      }
+      },
+      factoryScope
     )
     const unsubscribeSchedules = subscribeToAllSchedules(
       (items) => {
@@ -143,21 +146,24 @@ export default function NextWeekStaffPage() {
       () => {
         setMessage('Chưa tải được lịch tuần này. Hãy kiểm tra quyền quản lý.')
         setSchedulesReady(true)
-      }
+      },
+      factoryScope
     )
 
     return () => {
       unsubscribeEmployees()
       unsubscribeSchedules()
     }
-  }, [authUser, isPreviewMode])
+  }, [authUser, currentEmployee, isPreviewMode, role])
 
   // Saturday registrations belong to the following week, but management
   // always views the week that is currently running.
   const days = useMemo(() => currentWeekDays(), [])
+  const activeEmployees = useMemo(() => employees.filter((employee) => employee.status === 'active'), [employees])
+  const activeEmployeeIds = useMemo(() => new Set(activeEmployees.map((employee) => employee.uid)), [activeEmployees])
   const employeeNames = useMemo(
-    () => new Map(employees.map((employee) => [employee.uid, employee.fullName])),
-    [employees]
+    () => new Map(activeEmployees.map((employee) => [employee.uid, employee.fullName])),
+    [activeEmployees]
   )
   const summaries = useMemo<DaySummary[]>(() => days.map((day) => {
     const shifts: Record<Shift, Map<string, string>> = {
@@ -167,7 +173,7 @@ export default function NextWeekStaffPage() {
     }
 
     schedules
-      .filter((schedule) => dateKey(toDate(schedule.date)) === day.key && isVisibleSchedule(schedule))
+      .filter((schedule) => activeEmployeeIds.has(schedule.employeeId) && dateKey(toDate(schedule.date)) === day.key && isVisibleSchedule(schedule))
       .forEach((schedule) => {
         const name = schedule.employeeName || employeeNames.get(schedule.employeeId) || 'Nhân viên chưa có tên'
         const current = shifts[schedule.shift].get(schedule.employeeId)
@@ -200,18 +206,18 @@ export default function NextWeekStaffPage() {
       },
       total: employeeIds.size,
     }
-  }), [days, employeeNames, schedules])
+  }), [activeEmployeeIds, days, employeeNames, schedules])
 
   const weekTotal = useMemo(() => new Set(
     schedules
-      .filter((schedule) => days.some((day) => day.key === dateKey(toDate(schedule.date))) && isVisibleSchedule(schedule))
+      .filter((schedule) => activeEmployeeIds.has(schedule.employeeId) && days.some((day) => day.key === dateKey(toDate(schedule.date))) && isVisibleSchedule(schedule))
       .map((schedule) => schedule.employeeId)
-  ).size, [days, schedules])
+  ).size, [activeEmployeeIds, days, schedules])
 
   const dutySummaries = useMemo<DutySummary[]>(() => days.map((day) => {
     const people = new Map<string, SchedulePerson>()
     schedules
-      .filter((schedule) => dateKey(toDate(schedule.date)) === day.key && isDutySchedule(schedule))
+      .filter((schedule) => activeEmployeeIds.has(schedule.employeeId) && dateKey(toDate(schedule.date)) === day.key && isDutySchedule(schedule))
       .forEach((schedule) => {
         const existing = people.get(schedule.employeeId)
         const name = schedule.employeeName || employeeNames.get(schedule.employeeId) || 'Nhân viên chưa có tên'
@@ -226,7 +232,7 @@ export default function NextWeekStaffPage() {
       label: day.label,
       people: [...people.values()].sort((left, right) => left.name.localeCompare(right.name, 'vi')),
     }
-  }), [days, employeeNames, schedules])
+  }), [activeEmployeeIds, days, employeeNames, schedules])
 
   const dutyTotal = useMemo(() => dutySummaries.reduce((total, day) => total + day.people.length, 0), [dutySummaries])
 

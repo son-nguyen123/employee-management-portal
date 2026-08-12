@@ -170,6 +170,7 @@ export type AdvanceStatus = 'Pending' | 'Approved' | 'Rejected' | 'Cancelled'
 export interface SalaryAdvance {
   id?: string
   employeeId: string
+  factoryId?: FactoryId
   amount: number
   reason: string
   status: AdvanceStatus

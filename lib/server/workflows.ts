@@ -8,6 +8,7 @@ import { auditReceiptCapability } from '@/lib/server/audit-trail'
 import { cancelQueuedAuditEmails } from '@/lib/server/audit-email'
 import { deleteAllProfileImages } from '@/lib/server/google-drive-archive'
 import { defaultUserFeatureSettings, userFeatureKeys, type UserFeatureKey, type UserFeatureSettings } from '@/lib/models/userFeatureSettings'
+import { vietnamWeekContaining } from '@/lib/archive/retention'
 
 type Shift = 'Morning' | 'Afternoon' | 'Evening'
 type ReviewStatus = 'Approved' | 'Rejected' | 'ChangesRequested'
@@ -310,25 +311,25 @@ export async function manageEmployeeStatus(actor: RequestActor, raw: unknown) {
   const employeeRef = adminDb.collection('employees').doc(employeeId)
   let releasedSchedules = 0
   await adminDb.runTransaction(async (transaction) => {
-    const [employee, employeeSchedules] = await Promise.all([
-      transaction.get(employeeRef),
-      transaction.get(adminDb.collection('workSchedules').where('employeeId', '==', employeeId)),
-    ])
+    const employee = await transaction.get(employeeRef)
     if (!employee.exists) throw new ApiError(404, 'Không tìm thấy nhân viên.')
     if (actor.role !== 'director' && String(employee.get('factoryId') || 'factory-1') !== actor.factoryId) {
       throw new ApiError(403, 'Bạn chỉ được xử lý nhân viên thuộc xưởng của mình.')
     }
     if (employee.get('role') !== 'employee') throw new ApiError(409, 'Chỉ có thể đổi trạng thái tài khoản nhân viên.')
     const now = FieldValue.serverTimestamp()
-    const todayKey = vietnamDateKey(new Date())
-    const schedulesToRelease = status === 'inactive'
-      ? employeeSchedules.docs.filter((schedule) => {
-          const date = schedule.get('date')
-          return date instanceof Timestamp &&
-            vietnamDateKey(date.toDate()) >= todayKey &&
-            ['Registered', 'Draft', 'Pending', 'Editing', 'ChangesRequested', 'Approved'].includes(String(schedule.get('status')))
-        })
-      : []
+    const currentMonday = vietnamWeekContaining(new Date()).start
+    const statusChangedAt = employee.get('statusChangedAt')
+    const gracePeriodExpired = status === 'active' && employee.get('status') === 'inactive' &&
+      statusChangedAt instanceof Timestamp && statusChangedAt.toDate() < currentMonday
+    const expiredSchedules = gracePeriodExpired
+      ? await transaction.get(adminDb.collection('workSchedules')
+          .where('employeeId', '==', employeeId)
+          .where('date', '>=', Timestamp.fromDate(currentMonday)))
+      : null
+    const schedulesToRelease = expiredSchedules?.docs.filter((schedule) =>
+      ['Registered', 'Draft', 'Pending', 'Editing', 'ChangesRequested', 'Approved'].includes(String(schedule.get('status')))
+    ) || []
     releasedSchedules = schedulesToRelease.length
     const firstSelectionFields = status === 'active' && !employee.get('scheduleModeInitialSelectionDeadlineAt') && !employee.get('scheduleModeInitialSelectionCompletedAt')
       ? { scheduleModeInitialSelectionDeadlineAt: Timestamp.fromDate(new Date(Date.now() + 24 * 60 * 60 * 1000)) }
@@ -338,9 +339,9 @@ export async function manageEmployeeStatus(actor: RequestActor, raw: unknown) {
       status: 'Cancelled',
       lockedAt: null,
       statusBeforeDeactivation: schedule.get('status'),
-      cancelledBy: actor.uid,
+      cancelledBy: 'system-inactive-account-expiry',
       cancelledAt: now,
-      cancellationReason: 'Tự động giải phóng do tài khoản nhân viên bị vô hiệu hóa.',
+      cancellationReason: 'Tài khoản đã qua hạn khôi phục lịch 00:00 Thứ Hai.',
       updatedAt: now,
     }, { merge: true }))
     transaction.set(adminDb.collection('notifications').doc(`account-status-${employeeId}`), {
@@ -348,7 +349,7 @@ export async function manageEmployeeStatus(actor: RequestActor, raw: unknown) {
       title: status === 'active' ? 'Tài khoản đã được chấp nhận' : 'Tài khoản đã bị vô hiệu hóa',
       message: status === 'active'
         ? 'Quản lý đã duyệt hồ sơ. Bạn có thể sử dụng đầy đủ các tính năng.'
-        : `${releasedSchedules} ca hiện tại hoặc tương lai đã được giải phóng. Liên hệ quản lý nếu bạn muốn quay lại làm việc.`,
+        : 'Tài khoản và dữ liệu vận hành đã được tạm ẩn. Liên hệ quản lý nếu bạn muốn quay lại làm việc.',
       type: status === 'active' ? 'success' : 'warning',
       isRead: false,
       createdAt: now,
@@ -2008,6 +2009,7 @@ export async function submitSalaryAdvance(actor: RequestActor, raw: unknown) {
     const now = FieldValue.serverTimestamp()
     transaction.create(advanceRef, {
       employeeId: actor.uid,
+      factoryId: actor.factoryId,
       amount,
       reason,
       status: 'Pending',
@@ -2692,6 +2694,9 @@ export async function reviewRequest(actor: RequestActor, raw: unknown) {
     if (!employeeSnapshot.exists) throw new ApiError(404, 'Chưa tìm thấy hồ sơ nhân viên.')
     if (actor.role !== 'director' && String(employeeSnapshot.get('factoryId') || 'factory-1') !== actor.factoryId) {
       throw new ApiError(403, 'Bạn chỉ được xử lý yêu cầu của nhân viên thuộc xưởng mình.')
+    }
+    if (resource === 'salary' && employeeSnapshot.get('status') !== 'active') {
+      throw new ApiError(409, 'Tài khoản nhân viên đã bị vô hiệu hóa nên không thể xử lý yêu cầu ứng lương.')
     }
     const employeeName = String(employeeSnapshot.get('fullName') || 'Nhân viên')
     const employeeCode = String(employeeSnapshot.get('employeeCode') || employeeId.slice(0, 8))

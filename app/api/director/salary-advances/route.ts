@@ -25,7 +25,10 @@ export async function GET(request: Request) {
     ])
     const employees = new Map(employeeSnapshot.docs.map((item) => [item.id, item.data()]))
     const items = advanceSnapshot.docs
-      .filter((item) => item.get('status') === 'Approved')
+      .filter((item) => {
+        const employee = employees.get(String(item.get('employeeId')))
+        return item.get('status') === 'Approved' && employee?.status === 'active'
+      })
       .map((item) => {
         const advance = item.data()
         const employee = employees.get(String(advance.employeeId)) || {}

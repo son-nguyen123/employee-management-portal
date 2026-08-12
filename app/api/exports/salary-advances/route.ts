@@ -26,7 +26,11 @@ export async function GET(request: Request) {
       adminDb.collection('employees').get(),
     ])
     const employeeMap = new Map(employees.docs.map((snapshot) => [snapshot.id, snapshot.data()]))
-    const approvedAdvances = advances.docs.filter((snapshot) => snapshot.get('status') === 'Approved')
+    const approvedAdvances = advances.docs.filter((snapshot) => {
+      const employee = employeeMap.get(String(snapshot.get('employeeId')))
+      const sameFactory = actor.role === 'director' || String(employee?.factoryId || 'factory-1') === actor.factoryId
+      return snapshot.get('status') === 'Approved' && employee?.status === 'active' && sameFactory
+    })
     const rows = approvedAdvances.map((snapshot, index) => {
       const advance = snapshot.data()
       const employee = employeeMap.get(String(advance.employeeId)) || {}

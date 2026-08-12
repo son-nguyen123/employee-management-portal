@@ -8,7 +8,7 @@ export const runtime = 'nodejs'
 const VIETNAM_TIME_ZONE = 'Asia/Ho_Chi_Minh'
 const WEEKDAY_LABELS = ['Thứ 2', 'Thứ 3', 'Thứ 4', 'Thứ 5', 'Thứ 6', 'Thứ 7', 'Chủ nhật']
 type DateParts = { year: number; month: number; day: number }
-type EmployeeRecord = { uid: string; employeeCode?: unknown; fullName?: unknown }
+type EmployeeRecord = { uid: string; employeeCode?: unknown; fullName?: unknown; status?: unknown; factoryId?: unknown }
 
 function datePartsInVietnam(value: Date): DateParts {
   const parts = new Intl.DateTimeFormat('en-US', {
@@ -83,9 +83,8 @@ export async function GET(request: Request) {
 
     const bounds = currentWeekBounds()
     const [employeeSnapshot, scheduleSnapshot] = await Promise.all([
-      // Do not restrict the roster to active profiles here. A valid duty
-      // registration must remain exportable even if the employee status was
-      // changed after the schedule was submitted.
+      // Keep historical documents in Firestore, but only active employees
+      // belong in the current operational roster.
       adminDb.collection('employees').get(),
       // Schedule dates have existed as both Firestore Timestamps and legacy
       // serialized values. Read the collection, then apply the canonical
@@ -95,12 +94,10 @@ export async function GET(request: Request) {
     ])
     const employees: EmployeeRecord[] = employeeSnapshot.docs
       .map((snapshot) => ({ ...snapshot.data(), uid: snapshot.id }) as EmployeeRecord)
+      .filter((employee) => employee.status === 'active')
+      .filter((employee) => actor.role === 'director' || String(employee.factoryId || 'factory-1') === actor.factoryId)
     const employeeMap = new Map<string, EmployeeRecord>()
     employees.forEach((employee) => employeeMap.set(employee.uid, employee))
-    employeeSnapshot.docs.forEach((snapshot) => {
-      const storedUid = (snapshot.data() as { uid?: unknown }).uid
-      if (storedUid) employeeMap.set(String(storedUid), employeeMap.get(snapshot.id)!)
-    })
     const dayDates = Array.from({ length: 7 }, (_, index) => {
       const value = new Date(bounds.start)
       value.setUTCDate(value.getUTCDate() + index)

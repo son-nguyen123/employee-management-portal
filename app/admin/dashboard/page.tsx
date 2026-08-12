@@ -16,7 +16,6 @@ import { Badge } from '@/components/ui/badge'
 import { OtherRequestWorkspace } from '@/components/admin/other-request-workspace'
 import { RequestIdentityAvatar } from '@/components/admin/request-identity-avatar'
 import { profileImageUrl } from '@/lib/utils/profileImage'
-import { auth } from '@/lib/firebase'
 
 type ScheduleRow = WorkSchedule & {
   id: string
@@ -200,6 +199,7 @@ export default function AdminDashboardPage() {
   }, [authUser, currentEmployee, isPreviewMode, role])
 
   const activeEmployees = useMemo(() => employees.filter((item) => item.status === 'active'), [employees])
+  const activeEmployeeIds = useMemo(() => new Set(activeEmployees.map((item) => item.uid)), [activeEmployees])
   const fixedForNextWeek = useMemo(() => activeEmployees.filter((employee) => {
     const targetWeek = nextMondayKey()
     if (employee.scheduleMode !== 'fixed') return false
@@ -226,18 +226,11 @@ export default function AdminDashboardPage() {
     setProcessingId(employee.uid)
     setMessage('')
     try {
-      const today = new Date()
-      today.setHours(0, 0, 0, 0)
-      const result = isPreviewMode
-        ? { employeeId: employee.uid, status, releasedSchedules: status === 'inactive' ? schedules.filter((item) => item.employeeId === employee.uid && item.status !== 'Cancelled' && toDate(item.date) >= today).length : 0 }
-        : await setEmployeeAccountStatus(employee.uid, status)
+      if (!isPreviewMode) await setEmployeeAccountStatus(employee.uid, status)
       setEmployees((current) => current.map((item) => item.uid === employee.uid ? { ...item, status } : item))
-      if (status === 'inactive' && result.releasedSchedules) {
-        setSchedules((current) => current.map((item) => item.employeeId === employee.uid && item.status !== 'Cancelled' && toDate(item.date) >= today ? { ...item, status: 'Cancelled' } : item))
-      }
       setMessage(status === 'active'
         ? `Đã chấp nhận tài khoản ${employee.fullName}.`
-        : `Đã vô hiệu hóa tài khoản ${employee.fullName} và giải phóng ${result.releasedSchedules} ca hiện tại hoặc tương lai.`)
+        : `Đã vô hiệu hóa ${employee.fullName}. Lịch và ứng lương được tạm ẩn; bật lại trước 00:00 Thứ Hai để khôi phục lịch.`)
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'Chưa thể đổi trạng thái tài khoản.')
     } finally {
@@ -248,7 +241,7 @@ export default function AdminDashboardPage() {
     const grouped = new Map<string, ScheduleBatch>()
     const referenceDate = new Date(referenceNow)
     const reviewableWeeks = new Set([activeRegistrationWeekKey(referenceDate), nextMondayKey(), ...(referenceDate.getDay() === 0 ? [mondayKey(referenceDate)] : [])])
-    schedules.filter((item) =>
+    schedules.filter((item) => activeEmployeeIds.has(item.employeeId) &&
       ['Registered', 'Pending'].includes(item.status) &&
       reviewableWeeks.has(mondayKey(toDate(item.date)))
     ).forEach((schedule) => {
@@ -281,7 +274,7 @@ export default function AdminDashboardPage() {
         requiresReapproval: uniqueRows.some((item) => item.requiresReapproval),
       }
     })
-  }, [schedules, referenceNow])
+  }, [activeEmployeeIds, schedules, referenceNow])
   useEffect(() => {
     if (isPreviewMode || !authUser || !['admin', 'manager'].includes(role || '')) return
     pendingBatches.forEach((batch) => {
@@ -299,7 +292,7 @@ export default function AdminDashboardPage() {
   }, [authUser, isPreviewMode, pendingBatches, role])
   const processedBatches = useMemo(() => {
     const grouped = new Map<string, ProcessedScheduleBatch>()
-    schedules.filter((item) =>
+    schedules.filter((item) => activeEmployeeIds.has(item.employeeId) &&
       ['Approved', 'Rejected'].includes(item.status) &&
       mondayKey(toDate(item.date)) === activeRegistrationWeekKey(new Date(referenceNow))
     ).forEach((schedule) => {
@@ -324,21 +317,21 @@ export default function AdminDashboardPage() {
       const rightTime = Math.max(...right.schedules.map((item) => scheduleActivityAt(item).getTime()))
       return rightTime - leftTime
     })
-  }, [schedules])
+  }, [activeEmployeeIds, referenceNow, schedules])
   const missingEmployees = useMemo(() => {
     const submitted = new Set(schedules.filter((item) =>
-      item.status !== 'Cancelled' && mondayKey(toDate(item.date)) === activeRegistrationWeekKey(new Date(referenceNow))
+      activeEmployeeIds.has(item.employeeId) && item.status !== 'Cancelled' && mondayKey(toDate(item.date)) === activeRegistrationWeekKey(new Date(referenceNow))
     ).map((item) => item.employeeId))
     return activeEmployees.filter((employee) => !submitted.has(employee.uid) && !fixedForNextWeek.some((fixed) => fixed.uid === employee.uid))
-  }, [activeEmployees, fixedForNextWeek, schedules])
+  }, [activeEmployeeIds, activeEmployees, fixedForNextWeek, referenceNow, schedules])
   const submittedEmployees = useMemo(
     () => new Set([
       ...schedules.filter((item) =>
-      item.status !== 'Cancelled' && mondayKey(toDate(item.date)) === activeRegistrationWeekKey(new Date(referenceNow))
+      activeEmployeeIds.has(item.employeeId) && item.status !== 'Cancelled' && mondayKey(toDate(item.date)) === activeRegistrationWeekKey(new Date(referenceNow))
       ).map((item) => item.employeeId),
       ...fixedForNextWeek.map((employee) => employee.uid),
     ]).size,
-    [fixedForNextWeek, schedules]
+    [activeEmployeeIds, fixedForNextWeek, referenceNow, schedules]
   )
   const weeklyTarget = activeEmployees.length
   const attentionBatches = processedBatches.filter((batch) => batch.status === 'Rejected' || batchNeedsAttention(batch))

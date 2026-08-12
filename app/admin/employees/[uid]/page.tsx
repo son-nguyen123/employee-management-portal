@@ -168,18 +168,11 @@ export default function EmployeeDetailPage() {
     setChangingStatus(true)
     setMessage('')
     try {
-      const today = new Date()
-      today.setHours(0, 0, 0, 0)
-      const result = isPreviewMode
-        ? { employeeId: employee.uid, status: confirmingStatus, releasedSchedules: confirmingStatus === 'inactive' ? schedules.filter((item) => item.status !== 'Cancelled' && toDate(item.date) >= today).length : 0 }
-        : await setEmployeeAccountStatus(employee.uid, confirmingStatus)
+      if (!isPreviewMode) await setEmployeeAccountStatus(employee.uid, confirmingStatus)
       setEmployee((current) => current ? { ...current, status: confirmingStatus } : current)
-      if (confirmingStatus === 'inactive' && result.releasedSchedules) {
-        setSchedules((current) => current.map((item) => item.status === 'Cancelled' || toDate(item.date) < today ? item : { ...item, status: 'Cancelled', lockedAt: null }))
-      }
       setMessage(confirmingStatus === 'active'
         ? `Đã bật tài khoản ${employee.fullName}. Nhân viên có thể đăng nhập và sử dụng ứng dụng.`
-        : `Đã vô hiệu hóa tài khoản và giải phóng ${result.releasedSchedules} ca hiện tại hoặc tương lai.`)
+        : 'Đã vô hiệu hóa tài khoản. Lịch được tạm ẩn và có thể khôi phục nếu bật lại trước 00:00 Thứ Hai.')
       setConfirmingStatus(null)
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'Chưa thể đổi trạng thái tài khoản.')

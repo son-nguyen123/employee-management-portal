@@ -24,6 +24,34 @@ export interface WeeklyArchiveResult {
   deleted: boolean
   purgedArchiveKey?: string
   purgedDocumentCount?: number
+  expiredInactiveSchedules?: number
+}
+
+async function expireInactiveEmployeeSchedules(now: Date): Promise<number> {
+  const currentWeek = vietnamWeekContaining(now)
+  const [inactiveEmployees, schedules] = await Promise.all([
+    adminDb.collection('employees').where('status', '==', 'inactive').get(),
+    adminDb.collection('workSchedules').where('date', '>=', Timestamp.fromDate(currentWeek.start)).get(),
+  ])
+  const inactiveIds = new Set(inactiveEmployees.docs.map((employee) => employee.id))
+  const expirable = schedules.docs.filter((schedule) =>
+    inactiveIds.has(String(schedule.get('employeeId'))) &&
+    ['Registered', 'Draft', 'Pending', 'Editing', 'ChangesRequested', 'Approved'].includes(String(schedule.get('status')))
+  )
+  for (let offset = 0; offset < expirable.length; offset += 450) {
+    const batch = adminDb.batch()
+    expirable.slice(offset, offset + 450).forEach((schedule) => batch.set(schedule.ref, {
+      status: 'Cancelled',
+      lockedAt: null,
+      statusBeforeDeactivation: schedule.get('status'),
+      cancelledBy: 'system-inactive-account-expiry',
+      cancelledAt: FieldValue.serverTimestamp(),
+      cancellationReason: 'Tài khoản vẫn bị vô hiệu hóa khi sang tuần mới.',
+      updatedAt: FieldValue.serverTimestamp(),
+    }, { merge: true }))
+    await batch.commit()
+  }
+  return expirable.length
 }
 
 function normalizeForJson(value: unknown): unknown {
@@ -177,10 +205,11 @@ export async function runWeeklyArchive(now = new Date()): Promise<WeeklyArchiveR
   const retainedWeek = previousVietnamWeek(now, 1)
   const expiredWeek = previousVietnamWeek(now, 2)
   const retained = await ensureWeekArchived(retainedWeek, now)
-  if (process.env.WEEKLY_ARCHIVE_DELETE_ENABLED !== 'true') return retained
+  const expiredInactiveSchedules = await expireInactiveEmployeeSchedules(now)
+  if (process.env.WEEKLY_ARCHIVE_DELETE_ENABLED !== 'true') return { ...retained, expiredInactiveSchedules }
   await ensureWeekArchived(expiredWeek, now)
   const purgedDocumentCount = await purgeVerifiedWeek(expiredWeek)
-  return { ...retained, purgedArchiveKey: expiredWeek.key, purgedDocumentCount }
+  return { ...retained, expiredInactiveSchedules, purgedArchiveKey: expiredWeek.key, purgedDocumentCount }
 }
 
 export async function runArchivePreview(referenceDate: Date): Promise<WeeklyArchiveResult> {

@@ -2,10 +2,11 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import { CalendarCheck, Check, UsersRound } from 'lucide-react'
-import { useAuth } from '@/lib/hooks/useAuth'
+import { useAuth, useUserRole } from '@/lib/hooks/useAuth'
 import type { Employee, WorkSchedule } from '@/lib/models/types'
 import { getPreviewSchedules } from '@/lib/services/previewWorkflow'
 import { subscribeToAllSchedules } from '@/lib/services/scheduleService'
+import { employeeFactoryId } from '@/lib/models/factory'
 import {
   getWeeklyScheduleTarget,
   updateWeeklyScheduleTarget,
@@ -32,7 +33,8 @@ function scheduleWeekKey(value: WorkSchedule['date']) {
 }
 
 export function ManagementOverview({ employees }: { employees: Employee[] }) {
-  const { authUser, isPreviewMode } = useAuth()
+  const { authUser, employee: currentEmployee, isPreviewMode } = useAuth()
+  const role = useUserRole()
   const [schedules, setSchedules] = useState<WorkSchedule[]>([])
   const [expectedEmployees, setExpectedEmployees] = useState(0)
   const [saving, setSaving] = useState(false)
@@ -50,19 +52,24 @@ export function ManagementOverview({ employees }: { employees: Employee[] }) {
       })))
       return
     }
-    const unsubscribe = subscribeToAllSchedules(setSchedules)
+    const unsubscribe = subscribeToAllSchedules(
+      setSchedules,
+      undefined,
+      role === 'director' ? undefined : employeeFactoryId(currentEmployee)
+    )
     void getWeeklyScheduleTarget(nextMondayKey())
       .then((result) => setExpectedEmployees(result.expectedEmployees))
       .catch(() => setMessage('Chưa tải được mục tiêu gửi lịch tuần này.'))
     return unsubscribe
-  }, [authUser, isPreviewMode])
+  }, [authUser, currentEmployee, isPreviewMode, role])
 
-  const activeEmployees = employees.filter((item) => item.status === 'active')
+  const activeEmployees = useMemo(() => employees.filter((item) => item.status === 'active'), [employees])
+  const activeEmployeeIds = useMemo(() => new Set(activeEmployees.map((item) => item.uid)), [activeEmployees])
   const nextWeekSchedules = useMemo(
     () => schedules.filter((item) =>
-      item.status !== 'Cancelled' && scheduleWeekKey(item.date) === nextMondayKey()
+      activeEmployeeIds.has(item.employeeId) && item.status !== 'Cancelled' && scheduleWeekKey(item.date) === nextMondayKey()
     ),
-    [schedules]
+    [activeEmployeeIds, schedules]
   )
   const attention = new Set(nextWeekSchedules
     .filter((item) => item.underMinimumWarning)

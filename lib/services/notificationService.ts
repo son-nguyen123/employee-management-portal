@@ -309,6 +309,9 @@ export function subscribeToManagementPendingItems(
       phone: '',
       facebookURL: '',
     }
+    const activeEmployeeIds = new Set(
+      state.employees.filter(({ data }) => data.status === 'active').map(({ id }) => id)
+    )
     const items: ManagementPendingItem[] = []
 
     state.employees
@@ -334,6 +337,7 @@ export function subscribeToManagementPendingItems(
       const date = asDate(row.data.date)
       if (!date.getTime() || date < nextMonday || date > nextSunday) return
       const employeeId = String(row.data.employeeId || '')
+      if (!activeEmployeeIds.has(employeeId)) return
       const key = String(row.data.batchKey || `${employeeId}-${nextMonday.toISOString().slice(0, 10)}`)
       scheduleBatches.set(key, [...(scheduleBatches.get(key) || []), row])
     })
@@ -379,6 +383,7 @@ export function subscribeToManagementPendingItems(
 
     state.leaveRequests.forEach(({ id, data }) => {
       const employeeId = String(data.employeeId || '')
+      if (!activeEmployeeIds.has(employeeId)) return
       const employee = identity(employeeId)
       const endDate = data.endDate ? ` – ${shortDate(data.endDate)}` : ''
       items.push({
@@ -411,6 +416,7 @@ export function subscribeToManagementPendingItems(
 
     state.lateRequests.forEach(({ id, data }) => {
       const employeeId = String(data.employeeId || '')
+      if (!activeEmployeeIds.has(employeeId)) return
       const employee = identity(employeeId)
       const minutes = typeof data.lateMinutes === 'number' ? `${data.lateMinutes} phút` : 'Chưa rõ số phút'
       const shifts = asShiftList(data.lateEntries, true)
@@ -446,6 +452,7 @@ export function subscribeToManagementPendingItems(
 
     state.salaryAdvances.forEach(({ id, data }) => {
       const employeeId = String(data.employeeId || '')
+      if (!activeEmployeeIds.has(employeeId)) return
       const employee = identity(employeeId)
       const amount = typeof data.amount === 'number' ? data.amount : Number(data.amount || 0)
       items.push({
@@ -468,6 +475,7 @@ export function subscribeToManagementPendingItems(
 
     state.staffRequests.forEach(({ id, data }) => {
       const employeeId = String(data.employeeId || '')
+      if (!activeEmployeeIds.has(employeeId)) return
       const employee = identity(employeeId)
       const requestType = data.type === 'overtime' || data.type === 'scheduleChange' || data.type === 'scheduleModeChange' || data.type === 'note'
         ? data.type

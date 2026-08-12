@@ -12,6 +12,7 @@ import { reopenSalaryAdvance, subscribeToAllSalaryAdvances, updateSalaryAdvanceS
 import { DEMO_EMPLOYEE } from '@/lib/config/demo'
 import { mockSalaryAdvances } from '@/lib/services/mockData'
 import { auth } from '@/lib/firebase'
+import { employeeFactoryId } from '@/lib/models/factory'
 
 type SalaryFilter = 'all' | 'Pending' | 'Approved' | 'Rejected' | 'Cancelled'
 
@@ -265,7 +266,7 @@ function DirectorSalaryAdvancesPanel({ isPreviewMode }: { isPreviewMode: boolean
 }
 
 export default function AdminSalaryAdvancesPage() {
-  const { authUser, isPreviewMode } = useAuth()
+  const { authUser, employee: currentEmployee, isPreviewMode } = useAuth()
   const role = useUserRole()
   const [employees, setEmployees] = useState<Employee[]>([])
   const [requests, setRequests] = useState<SalaryAdvance[]>([])
@@ -322,7 +323,7 @@ export default function AdminSalaryAdvancesPage() {
     const unsubscribeEmployees = subscribeToAllEmployees((items) => {
       setEmployees(items)
       setReady((current) => ({ ...current, employees: true }))
-    }, fail)
+    }, fail, employeeFactoryId(currentEmployee))
     const unsubscribeRequests = subscribeToAllSalaryAdvances((items) => {
       setRequests(items)
       setReady((current) => ({ ...current, requests: true }))
@@ -331,20 +332,28 @@ export default function AdminSalaryAdvancesPage() {
       unsubscribeEmployees()
       unsubscribeRequests()
     }
-  }, [authUser, isPreviewMode, role])
+  }, [authUser, currentEmployee, isPreviewMode, role])
 
+  const activeEmployeeIds = useMemo(
+    () => new Set(employees.filter((employee) => employee.status === 'active').map((employee) => employee.uid)),
+    [employees]
+  )
+  const operationalRequests = useMemo(
+    () => requests.filter((request) => activeEmployeeIds.has(request.employeeId)),
+    [activeEmployeeIds, requests]
+  )
   const filteredRequests = useMemo(
-    () => requests.filter((request) => filter === 'all' || request.status === filter),
-    [filter, requests]
+    () => operationalRequests.filter((request) => filter === 'all' || request.status === filter),
+    [filter, operationalRequests]
   )
   const pendingRequests = filteredRequests.filter((request) => request.status === 'Pending')
   const processedRequests = filteredRequests.filter((request) => request.status !== 'Pending')
-  const pendingCount = requests.filter((request) => request.status === 'Pending').length
-  const approvedCount = requests.filter((request) => request.status === 'Approved').length
-  const pendingTotal = requests
+  const pendingCount = operationalRequests.filter((request) => request.status === 'Pending').length
+  const approvedCount = operationalRequests.filter((request) => request.status === 'Approved').length
+  const pendingTotal = operationalRequests
     .filter((request) => request.status === 'Pending')
     .reduce((sum, request) => sum + Number(request.amount || 0), 0)
-  const approvedTotal = requests
+  const approvedTotal = operationalRequests
     .filter((request) => request.status === 'Approved')
     .reduce((sum, request) => sum + Number(request.amount || 0), 0)
 

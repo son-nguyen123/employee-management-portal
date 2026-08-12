@@ -3,7 +3,7 @@
   "crons": [
     {
       "path": "/api/archive/weekly",
-      "schedule": "0 18 * * 0"
+      "schedule": "0 17 * * 0"
     },
     {
       "path": "/api/archive/monthly",

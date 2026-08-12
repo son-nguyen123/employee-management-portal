@@ -4,6 +4,7 @@ import ExcelJS from 'exceljs'
 const mocks = vi.hoisted(() => {
   const employeeDocs = [
     { id: 'employee-1', data: () => ({ fullName: 'Nguyễn Minh An', employeeCode: 'NV-001', status: 'active' }) },
+    { id: 'employee-2', data: () => ({ fullName: 'Nhân viên đã nghỉ', employeeCode: 'NV-002', status: 'inactive' }) },
   ]
   const currentWeekStart = new Date()
   const day = currentWeekStart.getDay() || 7
@@ -17,6 +18,7 @@ const mocks = vi.hoisted(() => {
     { id: 'schedule-1', data: () => ({ employeeId: 'employee-1', date: currentWeekStart, shift: 'Morning', status: 'Approved', note: '' }) },
     { id: 'schedule-2', data: () => ({ employeeId: 'employee-1', date: tuesday, shift: 'Morning', status: 'Approved', note: '[CUSTOM:13:00-21:00]' }) },
     { id: 'schedule-3', data: () => ({ employeeId: 'employee-1', date: sunday, shift: 'Afternoon', status: 'Approved', note: '[DUTY_ONLY]' }) },
+    { id: 'schedule-4', data: () => ({ employeeId: 'employee-2', date: sunday, shift: 'Afternoon', status: 'Approved', note: '[DUTY_ONLY]' }) },
   ]
   const collection = (docs: typeof employeeDocs | typeof scheduleDocs) => {
     const query = {
@@ -29,7 +31,7 @@ const mocks = vi.hoisted(() => {
     employeeDocs,
     scheduleDocs,
     adminDb: { collection: vi.fn((name: string) => collection(name === 'employees' ? employeeDocs : scheduleDocs)) },
-    authenticateRequest: vi.fn(async () => ({ role: 'admin', uid: 'admin-1' })),
+    authenticateRequest: vi.fn(async () => ({ role: 'admin', uid: 'admin-1', factoryId: 'factory-1' })),
   }
 })
 
@@ -82,6 +84,7 @@ describe('current-week schedule export', () => {
     expect(sheet?.getCell('AC6').value).toBe('T')
     expect(sheet?.getCell('D7').value).toMatchObject({ result: 1 })
     expect(sheet?.getCell('AC7').value).toMatchObject({ result: 1 })
+    expect(sheet?.rowCount).toBe(7)
   })
 
   it('creates a compact duty roster with one column per day', async () => {
@@ -104,5 +107,6 @@ describe('current-week schedule export', () => {
     expect(sheet?.getCell('A1').value).toBe('LỊCH TRỰC TUẦN NÀY')
     expect(String(sheet?.getCell('G4').value)).toContain('Chủ nhật')
     expect(String(sheet?.getCell('G5').value)).toContain('Nguyễn Minh An-001')
+    expect(String(sheet?.getCell('G5').value)).not.toContain('Nhân viên đã nghỉ')
   })
 })

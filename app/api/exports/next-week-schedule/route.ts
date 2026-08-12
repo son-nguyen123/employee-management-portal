@@ -34,7 +34,7 @@ const SUNDAY_SHIFT_FILLS: Record<ShiftKey, string> = {
 const SUNDAY_CUSTOM_FILL = 'FFF9A8D4'
 
 type DateParts = { year: number; month: number; day: number }
-type EmployeeRecord = { uid: string; employeeCode?: unknown; fullName?: unknown }
+type EmployeeRecord = { uid: string; employeeCode?: unknown; fullName?: unknown; status?: unknown; factoryId?: unknown }
 
 function datePartsInVietnam(value: Date): DateParts {
   const parts = new Intl.DateTimeFormat('en-US', {
@@ -138,6 +138,8 @@ export async function GET(request: Request) {
 
     const employees: EmployeeRecord[] = employeeSnapshot.docs
       .map((snapshot) => ({ uid: snapshot.id, ...snapshot.data() }) as EmployeeRecord)
+      .filter((employee) => employee.status === 'active')
+      .filter((employee) => actor.role === 'director' || String(employee.factoryId || 'factory-1') === actor.factoryId)
       .sort((left, right) => {
         const codeOrder = String(left.employeeCode || '').localeCompare(String(right.employeeCode || ''), 'vi', { numeric: true })
         return codeOrder || String(left.fullName || '').localeCompare(String(right.fullName || ''), 'vi')
