@@ -166,7 +166,16 @@ export default function ProfileSetupPage() {
     setMessage('')
     try {
       if (employee) {
-        const { scheduleMode, ...profileValues } = values
+        const { scheduleMode } = values
+        const profileValues = {
+          fullName: values.fullName,
+          phone: values.phone,
+          photoURL: values.photoURL,
+          facebookUrl: values.facebookUrl,
+          bankName: values.bankName,
+          bankAccountName: values.bankAccountName,
+          bankAccountNumber: values.bankAccountNumber,
+        }
         const initialDeadline = employee.scheduleModeInitialSelectionDeadlineAt instanceof Date
           ? employee.scheduleModeInitialSelectionDeadlineAt
           : employee.scheduleModeInitialSelectionDeadlineAt?.toDate()
@@ -188,7 +197,7 @@ export default function ProfileSetupPage() {
           scheduleMode: values.scheduleMode,
         })
       }
-      await updateUserProfile(values.fullName, values.photoURL)
+      if (!employee) await updateUserProfile(values.fullName, values.photoURL)
       await refreshEmployee()
       router.replace('/')
     } catch (error) {
@@ -280,7 +289,7 @@ export default function ProfileSetupPage() {
               {label}
               <div className="relative mt-2">
                 <Icon className="absolute left-4 top-3.5 h-5 w-5 text-muted-foreground" />
-                <input value={form[key]} onChange={(event) => setValue(key, event.target.value)} className="mobile-field !pl-12" placeholder={placeholder} disabled={saving || signingOut} required />
+                <input value={form[key]} onChange={(event) => setValue(key, event.target.value)} className="mobile-field !pl-12" placeholder={placeholder} disabled={saving || signingOut || (key === 'employeeCode' && Boolean(employee))} required />
               </div>
             </label>
           ))}

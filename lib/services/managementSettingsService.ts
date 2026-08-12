@@ -1,5 +1,6 @@
 import { callWorkflowApi } from '@/lib/services/workflowApi'
 import type { UserFeatureKey, UserFeatureSettings } from '@/lib/models/userFeatureSettings'
+import { auth } from '@/lib/firebase'
 
 export interface WeeklyScheduleTarget {
   weekStart: string
@@ -44,13 +45,13 @@ export interface AccountRegistrationWindow {
 
 const USER_FEATURE_CACHE_TTL_MS = 60_000
 let userFeatureSettingsCache: { value: UserFeatureSettings; cachedAt: number } | null = null
-let userFeatureSettingsRequest: Promise<UserFeatureSettings> | null = null
+let userFeatureSettingsRequest: { uid: string; promise: Promise<UserFeatureSettings> } | null = null
 
 const cloneUserFeatureSettings = (value: UserFeatureSettings): UserFeatureSettings => ({ ...value })
 
 /**
- * Returns the last known settings without waiting for the network. The home
- * screen uses this to render immediately, then revalidates in the background.
+ * Returns the last known settings without waiting for the network for callers
+ * that explicitly opt into a cached value.
  */
 export function getCachedUserFeatureSettings(): UserFeatureSettings | null {
   return userFeatureSettingsCache ? cloneUserFeatureSettings(userFeatureSettingsCache.value) : null
@@ -68,16 +69,19 @@ export function getUserFeatureSettings(options: { force?: boolean } = {}): Promi
   if (!options.force && userFeatureSettingsCache && Date.now() - userFeatureSettingsCache.cachedAt < USER_FEATURE_CACHE_TTL_MS) {
     return Promise.resolve(cloneUserFeatureSettings(userFeatureSettingsCache.value))
   }
-  if (userFeatureSettingsRequest) return userFeatureSettingsRequest.then(cloneUserFeatureSettings)
+  const uid = auth.currentUser?.uid || ''
+  if (userFeatureSettingsRequest?.uid === uid) {
+    return userFeatureSettingsRequest.promise.then(cloneUserFeatureSettings)
+  }
 
   const request = callWorkflowApi<UserFeatureSettings>('getUserFeatureSettings', {}).then((settings) => {
     userFeatureSettingsCache = { value: cloneUserFeatureSettings(settings), cachedAt: Date.now() }
     return cloneUserFeatureSettings(settings)
   })
-  userFeatureSettingsRequest = request
+  userFeatureSettingsRequest = { uid, promise: request }
   request.then(
-    () => { if (userFeatureSettingsRequest === request) userFeatureSettingsRequest = null },
-    () => { if (userFeatureSettingsRequest === request) userFeatureSettingsRequest = null },
+    () => { if (userFeatureSettingsRequest?.promise === request) userFeatureSettingsRequest = null },
+    () => { if (userFeatureSettingsRequest?.promise === request) userFeatureSettingsRequest = null },
   )
   return request.then(cloneUserFeatureSettings)
 }

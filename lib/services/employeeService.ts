@@ -2,13 +2,10 @@ import {
   collection,
   doc,
   getDoc,
-  updateDoc,
   query,
   where,
   getDocs,
   onSnapshot,
-  Timestamp,
-  deleteField,
 } from 'firebase/firestore'
 import { db } from '@/lib/firebase'
 import { auth } from '@/lib/firebase'
@@ -125,18 +122,19 @@ export async function createEmployee(uid: string, employeeData: Omit<Employee, '
  */
 export async function updateEmployee(uid: string, updates: Partial<Omit<Employee, 'uid' | 'createdAt'>>): Promise<void> {
   try {
-    const docRef = doc(db, EMPLOYEES_COLLECTION, uid)
-    const sanitized: Record<string, unknown> = { ...updates }
-    const touchesBank = ['bankName', 'bankAccountName', 'bankAccountNumber'].some((key) => key in updates)
-    if (touchesBank && !(updates.bankName && updates.bankAccountName && updates.bankAccountNumber)) {
-      sanitized.bankName = deleteField()
-      sanitized.bankAccountName = deleteField()
-      sanitized.bankAccountNumber = deleteField()
-    }
-    await updateDoc(docRef, {
-      ...sanitized,
-      updatedAt: Timestamp.now(),
+    void uid
+    const user = auth.currentUser
+    if (!user) throw new Error('Bạn cần đăng nhập để cập nhật hồ sơ.')
+    const response = await fetch('/api/profile/update', {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        authorization: `Bearer ${await user.getIdToken()}`,
+      },
+      body: JSON.stringify(updates),
     })
+    const result = await response.json().catch(() => null) as { error?: string } | null
+    if (!response.ok) throw new Error(result?.error || 'Chưa thể cập nhật hồ sơ.')
   } catch (error) {
     console.error('Error updating employee:', error)
     throw error

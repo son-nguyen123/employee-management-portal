@@ -31,7 +31,7 @@ import { useAuth, useUserRole } from '@/lib/hooks/useAuth'
 import { getAllEmployees } from '@/lib/services/employeeService'
 import { getAllSchedules, getEmployeeSchedules, getSchedulesByDateRange } from '@/lib/services/scheduleService'
 import { getPreviewSchedules } from '@/lib/services/previewWorkflow'
-import { getCachedUserFeatureSettings, getUserFeatureSettings, getWeeklyScheduleTarget } from '@/lib/services/managementSettingsService'
+import { getUserFeatureSettings, getWeeklyScheduleTarget } from '@/lib/services/managementSettingsService'
 import { subscribeToManagementPendingItems } from '@/lib/services/notificationService'
 import { AppLoadingScreen } from '@/components/ui/app-loading-screen'
 import { profileImageUrl } from '@/lib/utils/profileImage'
@@ -55,24 +55,39 @@ export default function Page() {
   const [adminStats, setAdminStats] = useState({ confirmed: 0, total: 0, pending: 0, actionable: 0, otherPending: 0 })
   const [schedulePrompt, setSchedulePrompt] = useState<{ visible: boolean; isNew: boolean; href: string }>({ visible: false, isNew: false, href: '/schedule' })
   const [employeeModeOpen, setEmployeeModeOpen] = useState(false)
-  const [enabledUserFeatures, setEnabledUserFeatures] = useState<UserFeatureSettings | null>(() => getCachedUserFeatureSettings())
+  const [enabledUserFeatures, setEnabledUserFeatures] = useState<UserFeatureSettings | null>(null)
 
   useEffect(() => {
-    if (!authUser || isPreviewMode) {
+    if (isPreviewMode) {
       setEnabledUserFeatures(authUser ? { ...defaultUserFeatureSettings } : null)
       return
     }
+
+    // Firebase auth resolves before the employee profile subscription. A new
+    // account can therefore reach this page briefly without a profile that
+    // the workflow API can authenticate yet. Do not treat that race as “all
+    // features enabled”; wait for the profile and then fetch the authoritative
+    // admin setting.
+    if (!authUser || !employee || employee.uid !== authUser.uid) {
+      setEnabledUserFeatures(null)
+      return
+    }
+
     let active = true
+    setEnabledUserFeatures(null)
     void getUserFeatureSettings({ force: true })
       .then((settings) => {
         if (active) setEnabledUserFeatures(settings)
       })
-      .catch(() => {
-        // A settings outage must not hide self-service actions from staff.
-        if (active) setEnabledUserFeatures({ ...defaultUserFeatureSettings })
+      .catch((error) => {
+        // Showing disabled features after a failed read is safer than showing
+        // actions that the admin explicitly turned off. The next profile/auth
+        // refresh can retry the request.
+        console.error('Error fetching user feature settings:', error)
+        if (active) setEnabledUserFeatures(null)
       })
     return () => { active = false }
-  }, [authUser, isPreviewMode])
+  }, [authUser?.uid, employee?.uid, employee?.status, isPreviewMode])
 
   useEffect(() => {
     if (!isLoading && !authUser) router.push('/auth/login')
@@ -251,8 +266,8 @@ export default function Page() {
   // Management accounts can use the same self-service utilities as staff.
   // Keep schedule registration here as the first card so managers do not
   // need to leave management mode to submit their own availability.
-  const featureSettings = authUser && !isPreviewMode
-    ? (enabledUserFeatures || getCachedUserFeatureSettings())
+  const featureSettings = authUser
+    ? (isPreviewMode ? defaultUserFeatureSettings : enabledUserFeatures)
     : null
   const featuresReady = featureSettings !== null
   const isFeatureEnabled = (key: UserFeatureKey) => featureSettings?.[key] === true
