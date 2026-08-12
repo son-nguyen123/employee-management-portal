@@ -1,7 +1,8 @@
 import { auth } from '@/lib/firebase'
 import type { Employee, Penalty, SalaryAdvance } from '@/lib/models/types'
+import { currentVietnamMonth } from '@/lib/archive/retention'
 
-export type MonthDataSource = 'firestore' | 'drive'
+export type MonthDataSource = 'firestore' | 'drive' | 'merged'
 
 export interface MonthDataResult<T> {
   month: string
@@ -34,9 +35,12 @@ async function readMonth<T extends Record<string, unknown>>(resource: 'penalties
   const result: MonthDataResult<T> = {
     ...body.result,
     records: body.result.records.map((record) => hydrateDates(record) as T),
-    employees: body.result.employees.map((employee) => hydrateDates(employee as unknown as Record<string, unknown>) as unknown as Employee),
+    employees: body.result.employees.map((employee) => {
+      const hydrated = hydrateDates(employee as unknown as Record<string, unknown>)
+      return { ...hydrated, uid: String(hydrated.uid || hydrated.id) } as unknown as Employee
+    }),
   }
-  if (result.source === 'drive') cache.set(key, result as MonthDataResult<unknown>)
+  if (month !== currentVietnamMonth(new Date()).key) cache.set(key, result as MonthDataResult<unknown>)
   return result
 }
 

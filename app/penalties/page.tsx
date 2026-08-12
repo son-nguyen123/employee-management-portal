@@ -6,7 +6,7 @@ import { Header } from '@/components/layout/header'
 import { PageContainer } from '@/components/layout/page-container'
 import { useAuth } from '@/lib/hooks/useAuth'
 import { MonthNavigator } from '@/components/ui/month-navigator'
-import { readPenaltyMonth } from '@/lib/services/monthDataService'
+import { readPenaltyMonth, type MonthDataSource } from '@/lib/services/monthDataService'
 import type { Penalty } from '@/lib/models/types'
 import { currentVietnamMonth } from '@/lib/archive/retention'
 
@@ -31,6 +31,7 @@ export default function PenaltiesPage() {
   const [loading, setLoading] = useState(true)
   const [message, setMessage] = useState('')
   const [month, setMonth] = useState(currentVietnamMonth(new Date()).key)
+  const [monthSource, setMonthSource] = useState<MonthDataSource>('firestore')
 
   useEffect(() => {
     if (!authUser) return
@@ -43,7 +44,7 @@ export default function PenaltiesPage() {
     setLoading(true)
     setMessage('')
     void readPenaltyMonth(month)
-      .then((result) => { if (active) setPenalties(result.records) })
+      .then((result) => { if (active) { setPenalties(result.records); setMonthSource(result.source) } })
       .catch(() => { if (active) setMessage('Chưa thể tải các khoản phạt của tháng này.') })
       .finally(() => { if (active) setLoading(false) })
     return () => { active = false }
@@ -57,7 +58,7 @@ export default function PenaltiesPage() {
     <main className="min-h-screen">
       <Header title="Khoản phạt" subtitle="Các khoản đã ghi nhận trong tháng" />
       <PageContainer>
-        <MonthNavigator value={month} onChange={setMonth} loading={loading} />
+        <MonthNavigator value={month} onChange={setMonth} loading={loading} count={penalties.length} countLabel="khoản phạt" source={monthSource} />
         <section className="mb-4 rounded-3xl bg-gradient-to-r from-rose-600 to-fuchsia-700 p-4 text-white shadow-lg shadow-rose-950/10">
           <div className="flex items-center gap-3">
             <div className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-white/15"><AlertTriangle className="h-5 w-5" /></div>

@@ -16,7 +16,7 @@ import { SkeletonLoader } from '@/components/ui/skeleton-loader'
 import type { SalaryAdvance } from '@/lib/models/types'
 import { getSalaryAdvancePolicy, type SalaryAdvancePolicy } from '@/lib/services/managementSettingsService'
 import { MonthNavigator } from '@/components/ui/month-navigator'
-import { readSalaryAdvanceMonth } from '@/lib/services/monthDataService'
+import { readSalaryAdvanceMonth, type MonthDataSource } from '@/lib/services/monthDataService'
 import { currentVietnamMonth } from '@/lib/archive/retention'
 
 function formatVietnameseCurrency(value: string | number): string {
@@ -85,6 +85,7 @@ export default function SalaryAdvancePage() {
   const [liveAdvances, setLiveAdvances] = useState<SalaryAdvance[]>([])
   const [month, setMonth] = useState(currentVietnamMonth(new Date()).key)
   const [monthLoading, setMonthLoading] = useState(false)
+  const [monthSource, setMonthSource] = useState<MonthDataSource>('firestore')
   const [formData, setFormData] = useState({ amount: '', reason: '' })
   const [submitting, setSubmitting] = useState(false)
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
@@ -126,7 +127,6 @@ export default function SalaryAdvancePage() {
       authUser.uid,
       (data) => {
         setLiveAdvances(data)
-        if (month === currentVietnamMonth(new Date()).key) setPreviousAdvances(data)
         setLoading(false)
       },
       (error) => {
@@ -134,19 +134,20 @@ export default function SalaryAdvancePage() {
         setLoading(false)
       }
     )
-  }, [authUser, isPreviewMode, month])
+  }, [authUser, isPreviewMode])
 
   useEffect(() => {
     if (!authUser || isPreviewMode) return
     const currentMonth = currentVietnamMonth(new Date()).key
     if (month === currentMonth) {
       setPreviousAdvances(liveAdvances)
+      setMonthSource('firestore')
       return
     }
     let active = true
     setMonthLoading(true)
     void readSalaryAdvanceMonth(month)
-      .then((result) => { if (active) setPreviousAdvances(result.records) })
+      .then((result) => { if (active) { setPreviousAdvances(result.records); setMonthSource(result.source) } })
       .catch((error) => { if (active) setMessage({ type: 'error', text: error instanceof Error ? error.message : 'Chưa thể tải lịch sử ứng lương.' }) })
       .finally(() => { if (active) setMonthLoading(false) })
     return () => { active = false }
@@ -312,7 +313,7 @@ export default function SalaryAdvancePage() {
     <div className="min-h-screen bg-slate-50/70 pb-24 dark:bg-slate-950 md:pb-0">
       <Header title="Ứng lương / yêu cầu" subtitle="Gửi đề nghị cho quản lý" />
       <PageContainer>
-        <MonthNavigator value={month} onChange={setMonth} loading={monthLoading} />
+        <MonthNavigator value={month} onChange={setMonth} loading={monthLoading} count={previousAdvances.length} countLabel="yêu cầu" source={monthSource} />
         <StaffBanner icon={DollarSign} tone="sky" eyebrow="Ứng lương" title="Bạn cần hỗ trợ khoản nào?" description="Nhập số tiền muốn ứng và ghi chú ngắn để quản lý xem xét nhanh hơn." note="Bạn chỉ có thể điều chỉnh khi yêu cầu còn chờ duyệt. Sau khi quản lý xác nhận, yêu cầu sẽ được khóa để giữ đúng lịch sử." action={<Link href="/staff-note" className="rounded-xl bg-white/15 px-3 py-2 text-xs font-extrabold text-white backdrop-blur">Gửi yêu cầu khác</Link>} />
         {salaryPolicy.restrictionEnabled && (
           <div className={`mb-6 flex items-start gap-3 rounded-2xl border p-4 ${salaryPolicy.canSubmit ? 'border-emerald-200 bg-emerald-50 text-emerald-800 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-200' : 'border-amber-200 bg-amber-50 text-amber-800 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200'}`}>
