@@ -72,6 +72,26 @@ export function subscribeToEmployeeScheduleModeRequests(
   )
 }
 
+export function subscribeToEmployeeFactoryChangeRequests(
+  employeeId: string,
+  callback: (items: StaffRequest[]) => void,
+  onError?: (error: Error) => void
+): () => void {
+  const requestQuery = query(collection(db, COLLECTION), where('employeeId', '==', employeeId))
+  return onSnapshot(
+    requestQuery,
+    (snapshot) => callback(snapshot.docs
+      .map(fromSnapshot)
+      .filter((item) => item.type === 'factoryChange')
+      .sort((left, right) => {
+        const leftDate = left.createdAt instanceof Date ? left.createdAt : left.createdAt.toDate()
+        const rightDate = right.createdAt instanceof Date ? right.createdAt : right.createdAt.toDate()
+        return rightDate.getTime() - leftDate.getTime()
+      })),
+    (error) => onError?.(error)
+  )
+}
+
 export async function getEmployeeStaffRequests(employeeId: string): Promise<StaffRequest[]> {
   const snapshot = await getDocs(query(collection(db, COLLECTION), where('employeeId', '==', employeeId)))
   return snapshot.docs.map(fromSnapshot)

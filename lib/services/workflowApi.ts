@@ -31,6 +31,7 @@ type WorkflowAction =
   | 'manageEmployeeRole'
   | 'setInitialScheduleMode'
   | 'submitScheduleModeChangeRequest'
+  | 'submitFactoryChangeRequest'
   | 'ensureFixedSchedule'
   | 'getAccountRegistrationWindow'
   | 'updateAccountRegistrationWindow'

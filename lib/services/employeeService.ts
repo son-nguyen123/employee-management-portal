@@ -225,3 +225,11 @@ export async function requestEmployeeScheduleModeChange(mode: EmployeeScheduleMo
     reason,
   })
 }
+
+export async function requestEmployeeFactoryChange(factoryId: FactoryId, reason: string): Promise<{ id: string; requestedFactoryId: FactoryId }> {
+  return callWorkflowApi('submitFactoryChangeRequest', {
+    requestId: newWorkflowRequestId(),
+    factoryId,
+    reason,
+  })
+}

@@ -18,6 +18,7 @@ import {
   type StaffRequestShift,
   type StaffRequestType,
 } from '@/lib/models/types'
+import { FACTORY_LABELS, isFactoryId } from '@/lib/models/factory'
 
 const NOTIFICATIONS_COLLECTION = 'notifications'
 
@@ -477,7 +478,7 @@ export function subscribeToManagementPendingItems(
       const employeeId = String(data.employeeId || '')
       if (!activeEmployeeIds.has(employeeId)) return
       const employee = identity(employeeId)
-      const requestType = data.type === 'overtime' || data.type === 'scheduleChange' || data.type === 'scheduleModeChange' || data.type === 'note'
+      const requestType = data.type === 'overtime' || data.type === 'scheduleChange' || data.type === 'scheduleModeChange' || data.type === 'factoryChange' || data.type === 'note'
         ? data.type
         : 'note'
       const shifts = asShiftList(data.shifts)
@@ -489,11 +490,15 @@ export function subscribeToManagementPendingItems(
           ? 'Yêu cầu đổi / thêm ca'
           : requestType === 'scheduleModeChange'
             ? 'Yêu cầu đổi chế độ làm việc'
+          : requestType === 'factoryChange'
+            ? 'Yêu cầu đổi xưởng'
           : 'Ghi chú từ nhân viên'
       const detail = requestType === 'scheduleChange'
         ? `${removedShifts.length} ca muốn hủy · ${restoredShifts.length} ca xin đi làm lại · ${shifts.length} ca muốn thêm`
         : requestType === 'scheduleModeChange'
           ? `${data.previousScheduleMode === 'fixed' ? 'Cố định' : 'Xoay ca'} → ${data.requestedScheduleMode === 'fixed' ? 'Cố định' : 'Xoay ca'} · áp dụng từ tuần ${shortDate(data.weekStart)}`
+        : requestType === 'factoryChange'
+          ? `${FACTORY_LABELS[isFactoryId(data.previousFactoryId) ? data.previousFactoryId : 'factory-1']} → ${FACTORY_LABELS[isFactoryId(data.requestedFactoryId) ? data.requestedFactoryId : 'factory-1']}`
         : requestType === 'overtime'
           ? `${shifts.length} ca muốn làm thêm`
           : 'Nội dung cần quản lý xem xét'

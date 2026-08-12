@@ -1,5 +1,6 @@
 import { collection, onSnapshot, orderBy, query, Timestamp, where } from 'firebase/firestore'
 import { db } from '@/lib/firebase'
+import { FACTORY_LABELS, isFactoryId } from '@/lib/models/factory'
 
 export type DecisionResource = 'leave' | 'late' | 'salary' | 'staff' | 'schedule'
 export type DecisionStatus = 'Approved' | 'Rejected'
@@ -129,9 +130,12 @@ function buildRows(data: Record<DecisionResource, SnapshotRow[]>, penaltyRows: S
     employeeId: String(item.employeeId || ''),
     title: item.type === 'scheduleModeChange'
       ? 'Yêu cầu đổi chế độ làm việc'
+      : item.type === 'factoryChange' ? 'Yêu cầu đổi xưởng'
       : item.type === 'scheduleChange' ? 'Yêu cầu đổi / thêm ca' : item.type === 'overtime' ? 'Yêu cầu làm thêm' : 'Ghi chú cho quản lý',
     detail: item.type === 'scheduleModeChange'
       ? `${item.previousScheduleMode === 'fixed' ? 'Cố định' : 'Xoay ca'} → ${item.requestedScheduleMode === 'fixed' ? 'Cố định' : 'Xoay ca'} · ${String(item.content || 'Không có ghi chú')}`
+      : item.type === 'factoryChange'
+      ? `${FACTORY_LABELS[isFactoryId(item.previousFactoryId) ? item.previousFactoryId : 'factory-1']} → ${FACTORY_LABELS[isFactoryId(item.requestedFactoryId) ? item.requestedFactoryId : 'factory-1']} · ${String(item.content || 'Không có ghi chú')}`
       : item.type === 'overtime'
       ? `${Array.isArray(item.shifts) ? item.shifts.length : 0} ca · ${String(item.content || 'Không có ghi chú')}`
       : String(item.content || 'Không có nội dung'),

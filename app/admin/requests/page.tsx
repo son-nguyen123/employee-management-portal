@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import Link from 'next/link'
-import { AlertTriangle, CalendarPlus, Check, ChevronDown, ChevronLeft, ChevronRight, CircleDollarSign, Clock3, Download, ExternalLink, FileText, Loader2, MessageSquareText, Phone, Plus, UsersRound, X } from 'lucide-react'
+import { AlertTriangle, Building2, CalendarPlus, Check, ChevronDown, ChevronLeft, ChevronRight, CircleDollarSign, Clock3, Download, ExternalLink, FileText, Loader2, MessageSquareText, Phone, Plus, UsersRound, X } from 'lucide-react'
 import { useAuth } from '@/lib/hooks/useAuth'
 import { auth } from '@/lib/firebase'
 import { subscribeToPendingLeaveRequests, updateLeaveStatus } from '@/lib/services/leaveService'
@@ -17,8 +17,9 @@ import { subscribeToActiveEmployees } from '@/lib/services/employeeService'
 import { adjustPenalty, cancelPenalty, createManualPenalty, getAllPenalties } from '@/lib/services/penaltyService'
 import { subscribeToPendingStaffRequests, updateStaffRequestStatus } from '@/lib/services/staffRequestService'
 import type { Employee, Penalty, StaffRequest } from '@/lib/models/types'
+import { FACTORY_LABELS } from '@/lib/models/factory'
 
-type RequestType = 'leave' | 'late' | 'salary' | 'overtime' | 'note' | 'scheduleChange' | 'scheduleModeChange'
+type RequestType = 'leave' | 'late' | 'salary' | 'overtime' | 'note' | 'scheduleChange' | 'scheduleModeChange' | 'factoryChange'
 type RequestRow = {
   id: string
   type: RequestType
@@ -102,9 +103,11 @@ function buildRequestRows(
       type: item.type,
       employeeId: item.employeeId,
       employeeName: employeeNames.get(item.employeeId) || fallbackName,
-      title: item.type === 'scheduleModeChange' ? 'Yêu cầu đổi chế độ làm việc' : item.type === 'scheduleChange' ? 'Yêu cầu đổi / thêm ca' : item.type === 'overtime' ? 'Yêu cầu làm thêm' : 'Ghi chú từ nhân viên',
+      title: item.type === 'scheduleModeChange' ? 'Yêu cầu đổi chế độ làm việc' : item.type === 'factoryChange' ? 'Yêu cầu đổi xưởng' : item.type === 'scheduleChange' ? 'Yêu cầu đổi / thêm ca' : item.type === 'overtime' ? 'Yêu cầu làm thêm' : 'Ghi chú từ nhân viên',
       detail: item.type === 'scheduleModeChange'
         ? `${item.previousScheduleMode === 'fixed' ? 'Cố định' : 'Xoay ca'} → ${item.requestedScheduleMode === 'fixed' ? 'Cố định' : 'Xoay ca'}${item.content ? ` · ${item.content}` : ''}`
+        : item.type === 'factoryChange'
+        ? `${FACTORY_LABELS[item.previousFactoryId || 'factory-1']} → ${FACTORY_LABELS[item.requestedFactoryId || 'factory-1']}${item.content ? ` · ${item.content}` : ''}`
         : item.type === 'scheduleChange'
         ? `${item.removedShifts?.length || 0} ca xin hủy · ${item.restoredShifts?.length || 0} ca đi làm lại · ${item.shifts?.length || 0} ca mới / ca thêm${item.content ? ` · ${item.content}` : ''}`
         : item.type === 'overtime'
@@ -271,7 +274,7 @@ export default function AdminRequestsPage() {
         if (row.type === 'leave') await updateLeaveStatus(row.id, status, authUser.uid, reviewNote)
         if (row.type === 'late') await updateLateStatus(row.id, status, authUser.uid, reviewNote)
         if (row.type === 'salary') await updateSalaryAdvanceStatus(row.id, status, authUser.uid, reviewNote)
-        if (row.type === 'overtime' || row.type === 'note' || row.type === 'scheduleChange' || row.type === 'scheduleModeChange') await updateStaffRequestStatus(row.id, status, reviewNote)
+        if (row.type === 'overtime' || row.type === 'note' || row.type === 'scheduleChange' || row.type === 'scheduleModeChange' || row.type === 'factoryChange') await updateStaffRequestStatus(row.id, status, reviewNote)
       }
       setRows((prev) => prev.filter((item) => item.id !== row.id))
       setMessage(status === 'Approved' ? 'Đã duyệt yêu cầu.' : 'Đã từ chối yêu cầu.')
@@ -425,6 +428,7 @@ export default function AdminRequestsPage() {
     overtime: { icon: CalendarPlus, label: 'Làm thêm' },
     scheduleChange: { icon: CalendarPlus, label: 'Đổi / thêm ca' },
     scheduleModeChange: { icon: CalendarPlus, label: 'Đổi chế độ' },
+    factoryChange: { icon: Building2, label: 'Đổi xưởng' },
     note: { icon: MessageSquareText, label: 'Ghi chú' },
   }
   const filterItems: Array<{ value: 'all' | RequestType; label: string; count: number }> = [
@@ -434,6 +438,7 @@ export default function AdminRequestsPage() {
     { value: 'salary', label: 'Ứng lương', count: rows.filter((row) => row.type === 'salary').length },
     { value: 'overtime', label: 'Làm thêm', count: rows.filter((row) => row.type === 'overtime').length },
     { value: 'scheduleChange', label: 'Đổi / thêm', count: rows.filter((row) => row.type === 'scheduleChange').length },
+    { value: 'factoryChange', label: 'Đổi xưởng', count: rows.filter((row) => row.type === 'factoryChange').length },
     { value: 'note', label: 'Ghi chú', count: rows.filter((row) => row.type === 'note').length },
   ]
 

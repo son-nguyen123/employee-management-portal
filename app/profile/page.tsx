@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import {
   ArrowRightLeft,
+  Building2,
   BellOff,
   BellRing,
   Check,
@@ -20,8 +21,9 @@ import {
 import Link from 'next/link'
 import { useAuth } from '@/lib/hooks/useAuth'
 import type { EmployeeScheduleMode, StaffRequest } from '@/lib/models/types'
-import { requestEmployeeScheduleModeChange, setInitialEmployeeScheduleMode } from '@/lib/services/employeeService'
-import { subscribeToEmployeeScheduleModeRequests } from '@/lib/services/staffRequestService'
+import { requestEmployeeFactoryChange, requestEmployeeScheduleModeChange, setInitialEmployeeScheduleMode } from '@/lib/services/employeeService'
+import { subscribeToEmployeeFactoryChangeRequests, subscribeToEmployeeScheduleModeRequests } from '@/lib/services/staffRequestService'
+import { employeeFactoryId, FACTORY_IDS, FACTORY_LABELS, type FactoryId } from '@/lib/models/factory'
 import { profileImageUrl } from '@/lib/utils/profileImage'
 import { Header } from '@/components/layout/header'
 import { PageContainer } from '@/components/layout/page-container'
@@ -73,6 +75,12 @@ export default function ProfilePage() {
   const [modeReason, setModeReason] = useState('')
   const [modeSaving, setModeSaving] = useState(false)
   const [modeMessage, setModeMessage] = useState('')
+  const [factoryRequest, setFactoryRequest] = useState<StaffRequest | null>(null)
+  const [factoryModalOpen, setFactoryModalOpen] = useState(false)
+  const [factoryDraft, setFactoryDraft] = useState<FactoryId>('factory-2')
+  const [factoryReason, setFactoryReason] = useState('')
+  const [factorySaving, setFactorySaving] = useState(false)
+  const [factoryMessage, setFactoryMessage] = useState('')
   const [clock, setClock] = useState(() => Date.now())
 
   const loadPushState = useCallback(async () => {
@@ -99,6 +107,13 @@ export default function ProfilePage() {
     if (!authUser || employee?.role !== 'employee') return
     return subscribeToEmployeeScheduleModeRequests(authUser.uid, (items) => {
       setModeRequest(items.find((item) => item.status === 'Pending') || null)
+    })
+  }, [authUser, employee?.role])
+
+  useEffect(() => {
+    if (!authUser || employee?.role !== 'employee') return
+    return subscribeToEmployeeFactoryChangeRequests(authUser.uid, (items) => {
+      setFactoryRequest(items.find((item) => item.status === 'Pending') || null)
     })
   }, [authUser, employee?.role])
 
@@ -133,6 +148,7 @@ export default function ProfilePage() {
   const cannotEnable = permission === 'unsupported' || permission === 'unavailable'
 
   const currentMode = employee?.scheduleMode || 'rotating'
+  const currentFactoryId = employeeFactoryId(employee)
   const initialDeadline = asProfileDate(employee?.scheduleModeInitialSelectionDeadlineAt)
   const initialSelectionOpen = Boolean(initialDeadline && clock < initialDeadline.getTime())
   const cooldownUntil = asProfileDate(employee?.scheduleModeChangeCooldownUntil)
@@ -178,11 +194,39 @@ export default function ProfilePage() {
     }
   }
 
+  const submitFactoryChange = async () => {
+    if (factoryDraft === currentFactoryId) {
+      setFactoryMessage(`Bạn đang thuộc ${FACTORY_LABELS[currentFactoryId]}.`)
+      return
+    }
+    if (!factoryReason.trim()) {
+      setFactoryMessage('Vui lòng ghi lý do ngắn để quản lý xem xét.')
+      return
+    }
+    setFactorySaving(true)
+    setFactoryMessage('')
+    try {
+      await requestEmployeeFactoryChange(factoryDraft, factoryReason.trim())
+      setFactoryModalOpen(false)
+      setFactoryReason('')
+      setFactoryMessage('Đã gửi yêu cầu đổi xưởng. Xưởng hiện tại giữ nguyên cho đến khi quản lý duyệt.')
+    } catch (error) {
+      setFactoryMessage(error instanceof Error ? error.message : 'Chưa thể gửi yêu cầu đổi xưởng.')
+    } finally {
+      setFactorySaving(false)
+    }
+  }
+
   const rows = [
     {
       label: 'Mã nhân viên',
       value: employee?.employeeCode || 'Chưa cập nhật',
       icon: ShieldCheck,
+    },
+    {
+      label: 'Phân xưởng',
+      value: FACTORY_LABELS[currentFactoryId],
+      icon: Building2,
     },
     {
       label: 'Email',
@@ -307,6 +351,31 @@ export default function ProfilePage() {
           </section>
         )}
 
+        {employee?.role === 'employee' && (
+          <section className="mobile-card mt-4 overflow-hidden border border-sky-100 bg-gradient-to-br from-sky-50 via-white to-cyan-50 p-4 shadow-lg shadow-sky-950/5 dark:border-sky-500/20 dark:from-sky-500/10 dark:via-slate-900 dark:to-cyan-500/10">
+            <div className="flex items-start gap-3">
+              <div className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-sky-600 text-white shadow-md shadow-sky-600/20"><Building2 className="h-5 w-5" /></div>
+              <div className="min-w-0 flex-1">
+                <div className="flex flex-wrap items-center gap-2">
+                  <h2 className="font-extrabold">Phân xưởng làm việc</h2>
+                  <span className="rounded-full bg-sky-100 px-2.5 py-1 text-[11px] font-black text-sky-700 dark:bg-sky-500/15 dark:text-sky-200">{FACTORY_LABELS[currentFactoryId]}</span>
+                </div>
+                <p className="mt-1 text-sm leading-6 text-muted-foreground">Chuyển sang xưởng khác cần quản lý duyệt.</p>
+              </div>
+            </div>
+            {factoryRequest ? (
+              <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 p-3 dark:border-amber-500/20 dark:bg-amber-500/10">
+                <p className="text-xs font-black uppercase tracking-wide text-amber-700 dark:text-amber-200">Đang chờ quản lý duyệt</p>
+                <p className="mt-1 text-sm font-bold">{FACTORY_LABELS[factoryRequest.previousFactoryId || currentFactoryId]} → {FACTORY_LABELS[factoryRequest.requestedFactoryId || currentFactoryId]}</p>
+                <p className="mt-1 text-xs leading-5 text-amber-800/80 dark:text-amber-100/80">Bạn vẫn thuộc xưởng hiện tại cho đến khi yêu cầu được duyệt.</p>
+              </div>
+            ) : (
+              <button type="button" onClick={() => { setFactoryDraft(currentFactoryId === 'factory-1' ? 'factory-2' : 'factory-1'); setFactoryReason(''); setFactoryMessage(''); setFactoryModalOpen(true) }} className="mt-4 flex min-h-11 w-full items-center justify-center gap-2 rounded-2xl border border-sky-200 bg-white px-4 text-sm font-extrabold text-sky-700 transition hover:bg-sky-50 dark:border-sky-500/20 dark:bg-slate-900/60 dark:text-sky-200"><ArrowRightLeft className="h-4 w-4" /> Gửi yêu cầu đổi xưởng</button>
+            )}
+            {factoryMessage && <p aria-live="polite" className="mt-3 rounded-2xl bg-white/80 p-3 text-sm font-semibold leading-5 text-slate-700 dark:bg-slate-900/70 dark:text-slate-200">{factoryMessage}</p>}
+          </section>
+        )}
+
         <section className="mobile-card mt-4 overflow-hidden p-4">
           <div className="flex items-start gap-3">
             <div className={`grid h-12 w-12 shrink-0 place-items-center rounded-2xl ${isRegistered ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300' : 'bg-indigo-100 text-indigo-700 dark:bg-indigo-950 dark:text-indigo-300'}`}>
@@ -356,6 +425,34 @@ export default function ProfilePage() {
               </div>
             </div>
           </section>
+        </div>
+      )}
+      {factoryModalOpen && (
+        <div className="fixed inset-0 z-[90] overflow-y-auto bg-slate-950/60 p-4 backdrop-blur-sm" onClick={() => !factorySaving && setFactoryModalOpen(false)}>
+          <div className="flex min-h-full items-center justify-center">
+            <section role="dialog" aria-modal="true" aria-labelledby="factory-change-dialog-title" className="max-h-[calc(100dvh-2rem)] w-full max-w-md overflow-y-auto rounded-[2rem] border border-white/70 bg-white shadow-2xl dark:border-white/10 dark:bg-slate-900" onClick={(event) => event.stopPropagation()}>
+              <header className="flex items-start gap-3 border-b border-slate-100 p-5 dark:border-white/10">
+                <div className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-sky-100 text-sky-700 dark:bg-sky-500/15 dark:text-sky-200"><Building2 className="h-5 w-5" /></div>
+                <div className="min-w-0 flex-1"><p className="text-xs font-black uppercase tracking-wider text-sky-600">Yêu cầu quản lý</p><h2 id="factory-change-dialog-title" className="mt-1 text-xl font-black">Bạn muốn chuyển xưởng?</h2><p className="mt-1 text-sm leading-5 text-muted-foreground">Xưởng chỉ thay đổi sau khi quản lý duyệt.</p></div>
+                <button type="button" aria-label="Đóng" disabled={factorySaving} onClick={() => setFactoryModalOpen(false)} className="grid h-10 w-10 shrink-0 place-items-center rounded-2xl bg-slate-100 text-slate-700 disabled:opacity-50 dark:bg-slate-800 dark:text-slate-200"><X className="h-5 w-5" /></button>
+              </header>
+              <div className="space-y-4 p-5">
+                <div className="grid grid-cols-2 gap-2">
+                  {FACTORY_IDS.map((factoryId) => {
+                    const isCurrent = factoryId === currentFactoryId
+                    const selected = factoryId === factoryDraft
+                    return <button key={factoryId} type="button" disabled={isCurrent || factorySaving} onClick={() => setFactoryDraft(factoryId)} className={`min-h-16 rounded-2xl border px-3 text-sm font-black transition disabled:cursor-not-allowed ${selected ? 'border-sky-600 bg-sky-600 text-white shadow-md shadow-sky-600/20' : isCurrent ? 'border-slate-200 bg-slate-100 text-slate-400 dark:border-slate-700 dark:bg-slate-800' : 'border-sky-200 bg-white text-sky-700 dark:border-sky-500/20 dark:bg-slate-900 dark:text-sky-200'}`}>{FACTORY_LABELS[factoryId]}{isCurrent && <span className="mt-1 block text-[10px] font-bold uppercase tracking-wide">Hiện tại</span>}</button>
+                  })}
+                </div>
+                <label className="block text-sm font-bold">Lý do chuyển (bắt buộc)<textarea value={factoryReason} onChange={(event) => setFactoryReason(event.target.value)} rows={3} maxLength={300} placeholder="Ví dụ: Tôi được điều chuyển sang xưởng 2…" className="mt-2 w-full resize-none rounded-2xl border border-slate-200 bg-white px-4 py-3 text-base leading-6 outline-none transition focus:border-sky-500 dark:border-slate-700 dark:bg-slate-900" /></label>
+                {factoryMessage && <p aria-live="polite" className="rounded-2xl bg-rose-50 p-3 text-sm font-semibold leading-5 text-rose-700 dark:bg-rose-500/10 dark:text-rose-200">{factoryMessage}</p>}
+                <div className="grid grid-cols-2 gap-2">
+                  <button type="button" disabled={factorySaving} onClick={() => setFactoryModalOpen(false)} className="flex min-h-12 items-center justify-center rounded-2xl border border-slate-200 font-extrabold dark:border-slate-700">Hủy</button>
+                  <button type="button" disabled={factorySaving || factoryDraft === currentFactoryId || !factoryReason.trim()} onClick={() => void submitFactoryChange()} className="flex min-h-12 items-center justify-center gap-2 rounded-2xl bg-sky-600 font-extrabold text-white shadow-lg shadow-sky-600/20 disabled:opacity-50">{factorySaving ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />} Gửi yêu cầu</button>
+                </div>
+              </div>
+            </section>
+          </div>
         </div>
       )}
     </main>

@@ -80,7 +80,7 @@ export interface WorkSchedule {
   updatedAt: Timestamp | Date
 }
 
-export type StaffRequestType = 'overtime' | 'note' | 'scheduleChange' | 'scheduleModeChange'
+export type StaffRequestType = 'overtime' | 'note' | 'scheduleChange' | 'scheduleModeChange' | 'factoryChange'
 export type StaffRequestStatus = 'Pending' | 'Approved' | 'Rejected'
 
 export interface StaffRequestShift {
@@ -99,6 +99,9 @@ export interface StaffRequest {
   restoredShifts?: Array<StaffRequestShift & { scheduleId: string; leaveRequestId?: string }>
   previousScheduleMode?: EmployeeScheduleMode
   requestedScheduleMode?: EmployeeScheduleMode
+  factoryId?: FactoryId
+  previousFactoryId?: FactoryId
+  requestedFactoryId?: FactoryId
   status: StaffRequestStatus
   reviewNote?: string
   reviewedBy?: string

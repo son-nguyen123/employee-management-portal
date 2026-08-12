@@ -12,6 +12,7 @@ import { vietnamWeekContaining } from '@/lib/archive/retention'
 import { decisionReviewIsEditable } from '@/lib/review/decision-policy'
 import { isPastRegistrationDate, reactivationWaiverApplies, restrictPastRegistration } from '@/lib/schedule/registration-policy'
 import { salaryAdvanceWindowState } from '@/lib/salary/advance-policy'
+import { FACTORY_LABELS, isFactoryId, type FactoryId } from '@/lib/models/factory'
 
 type Shift = 'Morning' | 'Afternoon' | 'Evening'
 type ReviewStatus = 'Approved' | 'Rejected' | 'ChangesRequested'
@@ -906,6 +907,71 @@ export async function submitScheduleModeChangeRequest(actor: RequestActor, raw: 
     sourceId: requestRef.id,
   })
   return { id: requestRef.id, requestedMode, effectiveWeekStart }
+}
+
+export async function submitFactoryChangeRequest(actor: RequestActor, raw: unknown) {
+  if (actor.role !== 'employee') throw new ApiError(403, 'Chỉ nhân viên mới có thể gửi yêu cầu đổi xưởng.')
+  const body = objectBody(raw)
+  const requestKey = requestId(body)
+  if (!isFactoryId(body.factoryId)) throw new ApiError(400, 'Xưởng muốn chuyển đến không hợp lệ.')
+  const requestedFactoryId = body.factoryId
+  const reason = text(body.reason, 'Lý do đổi xưởng', 300)
+  const employeeRef = adminDb.collection('employees').doc(actor.uid)
+  const employeeSnapshot = await employeeRef.get()
+  if (!employeeSnapshot.exists) throw new ApiError(404, 'Chưa tìm thấy hồ sơ nhân viên.')
+  if (employeeSnapshot.get('status') !== 'active') throw new ApiError(409, 'Tài khoản phải đang hoạt động để gửi yêu cầu đổi xưởng.')
+  const currentFactoryId: FactoryId = isFactoryId(employeeSnapshot.get('factoryId'))
+    ? employeeSnapshot.get('factoryId')
+    : 'factory-1'
+  if (currentFactoryId === requestedFactoryId) throw new ApiError(409, `Bạn đang thuộc ${FACTORY_LABELS[currentFactoryId]}.`)
+
+  const existingRequests = await adminDb.collection('staffRequests').where('employeeId', '==', actor.uid).get()
+  if (existingRequests.docs.some((item) => item.get('type') === 'factoryChange' && item.get('status') === 'Pending')) {
+    throw new ApiError(409, 'Bạn đã có một yêu cầu đổi xưởng đang chờ quản lý xử lý.')
+  }
+
+  const requestRef = adminDb.collection('staffRequests').doc()
+  const workflow = workflowRef(actor, requestKey)
+  const managerIds = await activeManagerIds(currentFactoryId)
+  await adminDb.runTransaction(async (transaction) => {
+    if ((await transaction.get(workflow)).exists) throw new ApiError(409, 'Yêu cầu này đã được gửi trước đó.')
+    const now = FieldValue.serverTimestamp()
+    transaction.create(requestRef, {
+      employeeId: actor.uid,
+      factoryId: currentFactoryId,
+      type: 'factoryChange',
+      content: reason,
+      previousFactoryId: currentFactoryId,
+      requestedFactoryId,
+      status: 'Pending',
+      createdAt: now,
+      updatedAt: now,
+    })
+    transaction.create(
+      adminDb.collection('notifications').doc(`staff-request-status-${requestRef.id}`),
+      warningNotification(actor.uid, 'Đã gửi yêu cầu đổi xưởng', `Yêu cầu chuyển sang ${FACTORY_LABELS[requestedFactoryId]} đang chờ quản lý duyệt.`)
+    )
+    managerIds.forEach((managerId) => transaction.set(
+      managerNotificationRef(managerId, `staff-${requestRef.id}`),
+      managerNotification(managerId, 'Yêu cầu đổi xưởng', `Một nhân viên muốn chuyển từ ${FACTORY_LABELS[currentFactoryId]} sang ${FACTORY_LABELS[requestedFactoryId]}.`, 'warning', false)
+    ))
+    transaction.create(workflow, {
+      employeeId: actor.uid,
+      action: 'submitFactoryChangeRequest',
+      targetIds: [requestRef.id],
+      createdAt: now,
+    })
+  })
+  await sendManagerPushes({
+    managerIds,
+    sourceKey: `staff-${requestRef.id}`,
+    title: 'Yêu cầu đổi xưởng',
+    body: `Một nhân viên muốn chuyển từ ${FACTORY_LABELS[currentFactoryId]} sang ${FACTORY_LABELS[requestedFactoryId]}.`,
+    link: '/notifications',
+    source: 'staffRequests',
+    sourceId: requestRef.id,
+  })
+  return { id: requestRef.id, requestedFactoryId }
 }
 
 export async function ensureFixedSchedule(actor: RequestActor, raw: unknown) {
@@ -2764,6 +2830,7 @@ export async function reviewRequest(actor: RequestActor, raw: unknown) {
   let reviewedEmployee = 'Nhân viên'
   let requiresEmployeeConsent = false
   let appliedPenaltyAmount = 0
+  let completedFactoryChangeTarget: FactoryId | null = null
 
   await adminDb.runTransaction(async (transaction) => {
     const [target, existingLeavePenalty] = await Promise.all([
@@ -2790,7 +2857,8 @@ export async function reviewRequest(actor: RequestActor, raw: unknown) {
     employeeId = data.employeeId
     const employeeSnapshot = await transaction.get(adminDb.collection('employees').doc(employeeId))
     if (!employeeSnapshot.exists) throw new ApiError(404, 'Chưa tìm thấy hồ sơ nhân viên.')
-    if (actor.role !== 'director' && String(employeeSnapshot.get('factoryId') || 'factory-1') !== actor.factoryId) {
+    const canReviewOriginalFactoryTransfer = resource === 'staff' && data.type === 'factoryChange' && data.previousFactoryId === actor.factoryId
+    if (actor.role !== 'director' && String(employeeSnapshot.get('factoryId') || 'factory-1') !== actor.factoryId && !canReviewOriginalFactoryTransfer) {
       throw new ApiError(403, 'Bạn chỉ được xử lý yêu cầu của nhân viên thuộc xưởng mình.')
     }
     if (resource === 'salary' && employeeSnapshot.get('status') !== 'active') {
@@ -2848,6 +2916,38 @@ export async function reviewRequest(actor: RequestActor, raw: unknown) {
           updatedAt: now,
         }, { merge: true })
         transaction.set(targetRef, { weekStart: Timestamp.fromDate(targetStart) }, { merge: true })
+      }
+    }
+    if (resource === 'staff' && data.type === 'factoryChange') {
+      const previousFactoryId = isFactoryId(data.previousFactoryId) ? data.previousFactoryId : null
+      const requestedFactoryId = isFactoryId(data.requestedFactoryId) ? data.requestedFactoryId : null
+      if (!previousFactoryId || !requestedFactoryId || previousFactoryId === requestedFactoryId) {
+        throw new ApiError(409, 'Yêu cầu đổi xưởng không còn hợp lệ.')
+      }
+      const currentFactoryId: FactoryId = isFactoryId(employeeSnapshot.get('factoryId'))
+        ? employeeSnapshot.get('factoryId')
+        : 'factory-1'
+      const expectedCurrentFactoryId = data.status === 'Approved' ? requestedFactoryId : previousFactoryId
+      if (currentFactoryId !== expectedCurrentFactoryId) {
+        throw new ApiError(409, 'Xưởng hiện tại của nhân viên đã thay đổi. Vui lòng tải lại yêu cầu.')
+      }
+      const transferTarget = status === 'Approved'
+        ? requestedFactoryId
+        : data.status === 'Approved' ? previousFactoryId : null
+      if (transferTarget) {
+        const currentWeekStart = new Date(`${vietnamWeekStartKey(new Date())}T00:00:00+07:00`)
+        const activeSchedules = await transaction.get(adminDb.collection('workSchedules')
+          .where('employeeId', '==', employeeId)
+          .where('date', '>=', Timestamp.fromDate(currentWeekStart)))
+        activeSchedules.docs.forEach((schedule) => {
+          if (schedule.get('status') === 'Cancelled') return
+          transaction.set(schedule.ref, { factoryId: transferTarget, updatedAt: now }, { merge: true })
+        })
+        transaction.set(employeeSnapshot.ref, {
+          factoryId: transferTarget,
+          updatedAt: now,
+        }, { merge: true })
+        completedFactoryChangeTarget = transferTarget
       }
     }
     const longLeaveSchedules = resource === 'leave' && status === 'Approved' && !requiresEmployeeConsent && data.duration === 'long'
@@ -3041,14 +3141,15 @@ export async function reviewRequest(actor: RequestActor, raw: unknown) {
     const requestLabel = resource === 'staff'
       ? data.type === 'scheduleModeChange'
         ? 'Yêu cầu đổi chế độ làm việc'
+        : data.type === 'factoryChange' ? 'Yêu cầu đổi xưởng'
         : data.type === 'scheduleChange' ? 'Yêu cầu đổi / thêm ca' : data.type === 'overtime' ? 'Yêu cầu làm thêm' : 'Ghi chú'
       : config.label
     reviewedLabel = requestLabel
     reviewedLink = resource === 'staff'
-      ? data.type === 'note' ? '/staff-note' : data.type === 'scheduleModeChange' ? '/profile' : config.link
+      ? data.type === 'note' ? '/staff-note' : ['scheduleModeChange', 'factoryChange'].includes(data.type) ? '/profile' : config.link
       : config.link
-    const notificationTitle = resource === 'staff' && data.type === 'scheduleModeChange'
-      ? 'Yêu cầu đổi chế độ đã được xử lý'
+    const notificationTitle = resource === 'staff' && ['scheduleModeChange', 'factoryChange'].includes(data.type)
+      ? data.type === 'factoryChange' ? 'Yêu cầu đổi xưởng đã được xử lý' : 'Yêu cầu đổi chế độ đã được xử lý'
       : config.title
     transaction.set(notificationRef, {
       employeeId,
@@ -3085,11 +3186,30 @@ export async function reviewRequest(actor: RequestActor, raw: unknown) {
     }
   })
 
+  if (completedFactoryChangeTarget) {
+    const targetManagerIds = await activeManagerIds(completedFactoryChangeTarget)
+    const targetBatch = adminDb.batch()
+    targetManagerIds.forEach((managerId) => targetBatch.set(
+      managerNotificationRef(managerId, `factory-transfer-${id}`),
+      managerNotification(managerId, 'Nhân viên mới chuyển đến', `${reviewedEmployee} đã chuyển vào ${FACTORY_LABELS[completedFactoryChangeTarget!]}.`, 'info', false)
+    ))
+    if (targetManagerIds.length) await targetBatch.commit()
+    await sendManagerPushes({
+      managerIds: targetManagerIds,
+      sourceKey: `factory-transfer-${id}`,
+      title: 'Nhân viên mới chuyển đến',
+      body: `${reviewedEmployee} đã chuyển vào ${FACTORY_LABELS[completedFactoryChangeTarget]}.`,
+      link: '/admin/dashboard?view=employees',
+      source: 'staffRequests',
+      sourceId: id,
+    })
+  }
+
   const push = await sendEmployeePush({
     employeeId,
     dispatchId: dispatchRef.id,
-    title: resource === 'staff' && reviewedLabel === 'Yêu cầu đổi chế độ làm việc'
-      ? 'Yêu cầu đổi chế độ đã được xử lý'
+    title: resource === 'staff' && ['Yêu cầu đổi chế độ làm việc', 'Yêu cầu đổi xưởng'].includes(reviewedLabel)
+      ? reviewedLabel === 'Yêu cầu đổi xưởng' ? 'Yêu cầu đổi xưởng đã được xử lý' : 'Yêu cầu đổi chế độ đã được xử lý'
       : config.title,
     body: requiresEmployeeConsent ? `${reviewedLabel} đang chờ bạn đồng ý mức trừ ${appliedPenaltyAmount.toLocaleString('vi-VN')}đ.` : `${reviewedLabel} của bạn ${statusText(status)}.`,
     link: reviewedLink,
