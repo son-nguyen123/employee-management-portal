@@ -197,7 +197,7 @@ function DirectorSalaryAdvancesPanel({ isPreviewMode }: { isPreviewMode: boolean
     <main className="min-h-screen bg-[#f3f7fb] pb-28 dark:bg-slate-950 md:pb-32">
       <Header title="Danh sách ứng lương" subtitle="Danh sách đã duyệt · sẵn sàng chuyển khoản" />
       <PageContainer maxWidth="2xl">
-        <MonthNavigator value={month} onChange={setMonth} loading={!ready} count={items.length} countLabel="yêu cầu" />
+        <MonthNavigator value={month} onChange={setMonth} loading={!ready} />
         <section className="mb-5 overflow-hidden rounded-3xl bg-gradient-to-br from-sky-600 via-blue-600 to-indigo-700 p-4 text-white shadow-lg shadow-blue-900/15 sm:p-5">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div className="flex min-w-0 items-center gap-4">
@@ -456,7 +456,7 @@ export default function AdminSalaryAdvancesPage() {
     <main className="min-h-screen bg-slate-50/70 pb-28 dark:bg-slate-950 md:pb-32">
       <Header title="Quản lý ứng lương" subtitle="Duyệt nhanh, theo dõi rõ và gửi đúng danh sách đã duyệt" />
       <PageContainer maxWidth="2xl">
-        <MonthNavigator value={month} onChange={setMonth} loading={monthLoading} count={operationalRequests.length} countLabel="yêu cầu" />
+        <MonthNavigator value={month} onChange={setMonth} loading={monthLoading} />
         <div className="mb-4 rounded-2xl border border-sky-500/20 bg-gradient-to-r from-sky-600 to-blue-700 p-3 text-white shadow-md shadow-sky-950/10">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div className="flex min-w-0 items-center gap-3">

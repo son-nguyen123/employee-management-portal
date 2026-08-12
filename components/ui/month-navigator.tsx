@@ -8,12 +8,10 @@ function shiftMonth(value: string, offset: number): string {
   return `${next.getFullYear()}-${String(next.getMonth() + 1).padStart(2, '0')}`
 }
 
-export function MonthNavigator({ value, onChange, loading = false, count, countLabel }: {
+export function MonthNavigator({ value, onChange, loading = false }: {
   value: string
   onChange: (month: string) => void
   loading?: boolean
-  count?: number
-  countLabel?: string
 }) {
   return (
     <div className="mb-4 rounded-2xl border border-slate-200 bg-white p-1.5 shadow-sm dark:border-slate-700 dark:bg-slate-900">
@@ -26,11 +24,6 @@ export function MonthNavigator({ value, onChange, loading = false, count, countL
         </label>
         <button type="button" onClick={() => onChange(shiftMonth(value, 1))} aria-label="Tháng sau" className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300"><ChevronRight className="h-4 w-4" /></button>
       </div>
-      {typeof count === 'number' && (
-        <div className="mt-1 flex items-center justify-between gap-2 rounded-xl bg-slate-50 px-3 py-2 dark:bg-slate-800/70">
-          <span className="ml-auto shrink-0 rounded-full bg-indigo-100 px-2.5 py-1 text-xs font-black text-indigo-700 dark:bg-indigo-500/15 dark:text-indigo-200">{loading ? 'Đang tải…' : `${count} ${countLabel || 'mục'}`}</span>
-        </div>
-      )}
     </div>
   )
 }

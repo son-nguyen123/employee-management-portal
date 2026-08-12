@@ -57,7 +57,7 @@ export default function PenaltiesPage() {
     <main className="min-h-screen">
       <Header title="Khoản phạt" subtitle="Các khoản đã ghi nhận trong tháng" />
       <PageContainer>
-        <MonthNavigator value={month} onChange={setMonth} loading={loading} count={penalties.length} countLabel="khoản phạt" />
+        <MonthNavigator value={month} onChange={setMonth} loading={loading} />
         <section className="mb-4 rounded-3xl bg-gradient-to-r from-rose-600 to-fuchsia-700 p-4 text-white shadow-lg shadow-rose-950/10">
           <div className="flex items-center gap-3">
             <div className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-white/15"><AlertTriangle className="h-5 w-5" /></div>

@@ -311,7 +311,7 @@ export default function SalaryAdvancePage() {
     <div className="min-h-screen bg-slate-50/70 pb-24 dark:bg-slate-950 md:pb-0">
       <Header title="Ứng lương / yêu cầu" subtitle="Gửi đề nghị cho quản lý" />
       <PageContainer>
-        <MonthNavigator value={month} onChange={setMonth} loading={monthLoading} count={previousAdvances.length} countLabel="yêu cầu" />
+        <MonthNavigator value={month} onChange={setMonth} loading={monthLoading} />
         <StaffBanner icon={DollarSign} tone="sky" eyebrow="Ứng lương" title="Bạn cần hỗ trợ khoản nào?" description="Nhập số tiền muốn ứng và ghi chú ngắn để quản lý xem xét nhanh hơn." note="Bạn chỉ có thể điều chỉnh khi yêu cầu còn chờ duyệt. Sau khi quản lý xác nhận, yêu cầu sẽ được khóa để giữ đúng lịch sử." action={<Link href="/staff-note" className="rounded-xl bg-white/15 px-3 py-2 text-xs font-extrabold text-white backdrop-blur">Gửi yêu cầu khác</Link>} />
         {salaryPolicy.restrictionEnabled && (
           <div className={`mb-6 flex items-start gap-3 rounded-2xl border p-4 ${salaryPolicy.canSubmit ? 'border-emerald-200 bg-emerald-50 text-emerald-800 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-200' : 'border-amber-200 bg-amber-50 text-amber-800 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200'}`}>

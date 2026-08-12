@@ -454,7 +454,7 @@ export default function AdminRequestsPage() {
     <main className="min-h-screen pb-8">
       <Header title={pageMode === 'penalties' ? 'Quản lý phạt' : 'Yêu cầu khác'} subtitle={pageMode === 'penalties' ? 'Theo dõi theo nhân viên và từng khoản phạt' : 'Tất cả yêu cầu ngoài lịch đăng ký tuần'} />
       <PageContainer>
-        {pageMode === 'penalties' && <MonthNavigator value={penaltyExportMonth} onChange={setPenaltyExportMonth} loading={penaltyMonthLoading} count={penalties.length} countLabel="khoản phạt" />}
+        {pageMode === 'penalties' && <MonthNavigator value={penaltyExportMonth} onChange={setPenaltyExportMonth} loading={penaltyMonthLoading} />}
         {pageMode === 'requests' && <ManagementOverview employees={employees} />}
         <div className="flex flex-col">
         {pageMode === 'penalties' && (
