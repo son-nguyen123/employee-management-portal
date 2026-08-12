@@ -130,6 +130,10 @@ export default function DecisionHistoryPage() {
   }
 
   const openChange = (item: DecisionHistoryItem, status: DecisionStatus) => {
+    if (weekOffset !== 0) {
+      setMessage('Tuần trước đã khóa quyết định và chỉ còn để tra cứu.')
+      return
+    }
     if (item.status === status) return
     setReason('')
     setChange({ item, status })
@@ -168,13 +172,13 @@ export default function DecisionHistoryPage() {
 
   return (
     <main className="min-h-screen pb-8">
-      <Header title="Lịch sử xử lý" subtitle="Xem và sửa lại quyết định trong tuần" />
+      <Header title="Lịch sử xử lý" subtitle="Giữ tuần này và tuần trước" />
       <PageContainer>
         <section className="rounded-3xl border border-slate-200 bg-white p-3 shadow-sm dark:border-white/10 dark:bg-slate-900">
           <div className="flex items-center gap-2">
-            <button type="button" onClick={() => setWeekOffset((value) => value - 1)} className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-200" aria-label="Tuần trước"><ChevronLeft className="h-5 w-5" /></button>
+            <button type="button" disabled={weekOffset <= -1} onClick={() => setWeekOffset(-1)} className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-slate-100 text-slate-600 disabled:opacity-30 dark:bg-slate-800 dark:text-slate-200" aria-label="Tuần trước"><ChevronLeft className="h-5 w-5" /></button>
             <div className="min-w-0 flex-1 text-center">
-              <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-indigo-600">{weekOffset === 0 ? 'Tuần này' : weekOffset === -1 ? 'Tuần trước' : 'Tuần đã chọn'}</p>
+              <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-indigo-600">{weekOffset === 0 ? 'Tuần này · được sửa' : 'Tuần trước · chỉ xem'}</p>
               <p className="mt-0.5 text-sm font-extrabold">{shortDate(weekStart)} – {shortDate(weekEnd)}</p>
             </div>
             <button type="button" disabled={weekOffset >= 0} onClick={() => setWeekOffset((value) => Math.min(0, value + 1))} className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-slate-100 text-slate-600 disabled:opacity-30 dark:bg-slate-800 dark:text-slate-200" aria-label="Tuần sau"><ChevronRight className="h-5 w-5" /></button>
@@ -182,8 +186,10 @@ export default function DecisionHistoryPage() {
         </section>
 
         <div className="mt-4 flex items-start gap-2 rounded-2xl bg-indigo-50 p-3 text-xs leading-5 text-indigo-800 dark:bg-indigo-500/10 dark:text-indigo-200">
-          <RotateCcw className="mt-0.5 h-4 w-4 shrink-0" />
-          Mở một yêu cầu để đổi lại quyết định. Nhân viên sẽ nhận thông báo mới sau mỗi lần sửa.
+          {weekOffset === 0 ? <RotateCcw className="mt-0.5 h-4 w-4 shrink-0" /> : <History className="mt-0.5 h-4 w-4 shrink-0" />}
+          {weekOffset === 0
+            ? 'Chỉ quyết định trong tuần này được sửa; mỗi lần sửa sẽ báo lại cho nhân viên.'
+            : 'Tuần trước đã khóa, chỉ dùng để đối chiếu. Bản lưu dài hạn nằm trên Google Drive.'}
         </div>
 
         {message && <p className="mt-3 rounded-2xl bg-slate-900 p-3 text-sm font-semibold text-white dark:bg-white dark:text-slate-900">{message}</p>}
@@ -226,10 +232,12 @@ export default function DecisionHistoryPage() {
                               <div className="border-t border-slate-100 p-3 dark:border-white/10">
                                 <p className="text-sm leading-5 text-slate-600 dark:text-slate-300">{item.detail}</p>
                                 {item.reviewNote && <p className="mt-2 rounded-xl bg-slate-50 p-2.5 text-xs text-slate-600 dark:bg-slate-800 dark:text-slate-300"><strong>Phản hồi:</strong> {item.reviewNote}</p>}
-                                <div className="mt-3 grid grid-cols-2 gap-2">
-                                  <button type="button" disabled={item.status === 'Rejected'} onClick={() => openChange(item, 'Rejected')} className="flex h-11 items-center justify-center gap-2 rounded-xl border border-slate-200 text-xs font-bold text-slate-700 disabled:bg-slate-100 disabled:text-slate-400 dark:border-slate-700 dark:text-slate-200 dark:disabled:bg-slate-800"><X className="h-4 w-4" /> Từ chối</button>
-                                  <button type="button" disabled={item.status === 'Approved'} onClick={() => openChange(item, 'Approved')} className="flex h-11 items-center justify-center gap-2 rounded-xl bg-indigo-600 text-xs font-bold text-white disabled:bg-slate-200 disabled:text-slate-400 dark:disabled:bg-slate-800"><Check className="h-4 w-4" /> Duyệt</button>
-                                </div>
+                                {weekOffset === 0 ? (
+                                  <div className="mt-3 grid grid-cols-2 gap-2">
+                                    <button type="button" disabled={item.status === 'Rejected'} onClick={() => openChange(item, 'Rejected')} className="flex h-11 items-center justify-center gap-2 rounded-xl border border-slate-200 text-xs font-bold text-slate-700 disabled:bg-slate-100 disabled:text-slate-400 dark:border-slate-700 dark:text-slate-200 dark:disabled:bg-slate-800"><X className="h-4 w-4" /> Từ chối</button>
+                                    <button type="button" disabled={item.status === 'Approved'} onClick={() => openChange(item, 'Approved')} className="flex h-11 items-center justify-center gap-2 rounded-xl bg-indigo-600 text-xs font-bold text-white disabled:bg-slate-200 disabled:text-slate-400 dark:disabled:bg-slate-800"><Check className="h-4 w-4" /> Duyệt</button>
+                                  </div>
+                                ) : <p className="mt-3 rounded-xl bg-slate-100 px-3 py-2 text-center text-xs font-bold text-slate-500 dark:bg-slate-800 dark:text-slate-300">Đã khóa chỉnh sửa</p>}
                               </div>
                             )}
                           </div>

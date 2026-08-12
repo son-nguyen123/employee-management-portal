@@ -160,6 +160,43 @@ async function ensureMonthlyArchiveFolder(accessToken: string): Promise<string> 
   return folder.id
 }
 
+async function ensureDatedArchiveFolder(
+  accessToken: string,
+  rootFolderId: string,
+  archiveKey: string,
+  archiveKind: 'weekly' | 'monthly',
+): Promise<string> {
+  const [year, month] = archiveKey.split('-')
+  if (!/^\d{4}$/.test(year || '') || !/^\d{2}$/.test(month || '')) return rootFolderId
+
+  const ensureChild = async (parentId: string, name: string, level: 'year' | 'month') => {
+    const property = `${archiveKind}-${level}-${level === 'year' ? year : `${year}-${month}`}`
+    const existing = await findFile(
+      accessToken,
+      `'${escapeDriveQuery(parentId)}' in parents and mimeType = 'application/vnd.google-apps.folder' and appProperties has { key='portalArchivePeriod' and value='${property}' }`,
+    )
+    if (existing) return existing.id
+    const folder = await driveRequest<DriveFile>(accessToken, '/files?fields=id,name', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        name,
+        mimeType: 'application/vnd.google-apps.folder',
+        parents: [parentId],
+        appProperties: {
+          portalArchivePeriod: property,
+          archiveKind,
+          application: 'employee-management-portal',
+        },
+      }),
+    })
+    return folder.id
+  }
+
+  const yearFolderId = await ensureChild(rootFolderId, year, 'year')
+  return ensureChild(yearFolderId, `Tháng ${month}`, 'month')
+}
+
 async function ensureProfileImageFolder(accessToken: string): Promise<string> {
   const existing = await findFile(
     accessToken,
@@ -421,7 +458,12 @@ export async function storeWeeklyArchive(params: {
   )
   if (existing) return existing
 
-  const folderId = await ensureArchiveFolder(accessToken)
+  const folderId = await ensureDatedArchiveFolder(
+    accessToken,
+    await ensureArchiveFolder(accessToken),
+    params.archiveKey,
+    'weekly',
+  )
   const file = await uploadJsonFile(
     accessToken,
     folderId,
@@ -455,7 +497,12 @@ export async function storeMonthlyArchive(params: {
   )
   if (existing) return existing
 
-  const folderId = await ensureMonthlyArchiveFolder(accessToken)
+  const folderId = await ensureDatedArchiveFolder(
+    accessToken,
+    await ensureMonthlyArchiveFolder(accessToken),
+    params.archiveKey,
+    'monthly',
+  )
   const file = await uploadJsonFile(
     accessToken,
     folderId,
@@ -475,14 +522,14 @@ export async function storeMonthlyArchive(params: {
 
 async function listArchivesInFolder(
   accessToken: string,
-  folderId: string,
+  _folderId: string,
   archiveKind: 'weekly' | 'monthly',
 ): Promise<WeeklyArchiveFile[]> {
   const files: DriveFile[] = []
   let pageToken: string | undefined
   do {
     const params = new URLSearchParams({
-      q: `'${escapeDriveQuery(folderId)}' in parents and appProperties has { key='application' and value='employee-management-portal' } and trashed = false`,
+      q: `appProperties has { key='application' and value='employee-management-portal' } and appProperties has { key='archiveKind' and value='${archiveKind}' } and trashed = false`,
       spaces: 'drive',
       pageSize: '100',
       orderBy: 'createdTime desc',

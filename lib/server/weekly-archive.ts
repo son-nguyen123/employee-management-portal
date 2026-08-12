@@ -7,6 +7,7 @@ import { adminDb } from '@/lib/server/firebase-admin'
 import { storeWeeklyArchive } from '@/lib/server/google-drive-archive'
 
 const MAX_ARCHIVE_DOCUMENTS = 4_000
+const WEEKLY_ARCHIVE_SCHEMA_VERSION = 3
 const FINAL_SCHEDULE_STATUSES = new Set(['Approved', 'Rejected', 'Cancelled'])
 const FINAL_REQUEST_STATUSES = new Set(['Approved', 'Rejected', 'Cancelled'])
 
@@ -83,12 +84,15 @@ function requestActivityWithin(snapshot: DocumentSnapshot<DocumentData>, window:
 async function collectDocuments(window: ArchiveWindow) {
   const start = Timestamp.fromDate(window.start)
   const end = Timestamp.fromDate(window.end)
-  const [schedules, leaveCandidates, lateRequests, staffRequests, auditEvents] = await Promise.all([
+  const [schedules, leaveCandidates, lateRequests, staffRequests, auditEvents, notifications, pushDispatches, auditEmailOutbox] = await Promise.all([
     adminDb.collection('workSchedules').where('date', '>=', start).where('date', '<', end).get(),
     adminDb.collection('leaveRequests').where('leaveDate', '<', end).get(),
     adminDb.collection('lateRequests').where('date', '>=', start).where('date', '<', end).get(),
     adminDb.collection('staffRequests').where('createdAt', '<', end).get(),
     adminDb.collection('auditEvents').where('occurredAt', '>=', start).where('occurredAt', '<', end).get(),
+    adminDb.collection('notifications').where('createdAt', '>=', start).where('createdAt', '<', end).get(),
+    adminDb.collection('pushDispatches').where('createdAt', '>=', start).where('createdAt', '<', end).get(),
+    adminDb.collection('auditEmailOutbox').where('createdAt', '>=', start).where('createdAt', '<', end).get(),
   ])
   const domainRecords = {
     workSchedules: schedules.docs.map(archiveDocument),
@@ -96,6 +100,9 @@ async function collectDocuments(window: ArchiveWindow) {
     lateRequests: lateRequests.docs.map(archiveDocument),
     staffRequests: staffRequests.docs.filter((doc) => requestActivityWithin(doc, window)).map(archiveDocument),
     auditEvents: auditEvents.docs.map(archiveDocument),
+    notifications: notifications.docs.map(archiveDocument),
+    pushDispatches: pushDispatches.docs.map(archiveDocument),
+    auditEmailOutbox: auditEmailOutbox.docs.map(archiveDocument),
   }
   const employeeIds = new Set<string>()
   Object.values(domainRecords).flat().forEach((record) => {
@@ -106,7 +113,13 @@ async function collectDocuments(window: ArchiveWindow) {
   const records = { ...domainRecords, employeeProfiles: employeeSnapshots.filter((snapshot) => snapshot.exists).map(archiveDocument) }
   const counts = Object.fromEntries(Object.entries(records).map(([collection, documents]) => [collection, documents.length]))
   const paths = Object.entries(domainRecords).flatMap(([collection, documents]) => {
-    if (collection === 'auditEvents') return []
+    if (['auditEvents', 'notifications'].includes(collection)) return documents.map((record) => record.path)
+    if (collection === 'pushDispatches') {
+      return documents.filter((record) => ['sent', 'partial', 'failed', 'no-devices'].includes(String((record.data as Record<string, unknown>).state))).map((record) => record.path)
+    }
+    if (collection === 'auditEmailOutbox') {
+      return documents.filter((record) => ['sent', 'failed', 'cancelled'].includes(String((record.data as Record<string, unknown>).state))).map((record) => record.path)
+    }
     return documents.filter((record) => {
       const status = String((record.data as Record<string, unknown>).status)
       return (collection === 'workSchedules' ? FINAL_SCHEDULE_STATUSES : FINAL_REQUEST_STATUSES).has(status)
@@ -130,7 +143,7 @@ function manifestId(window: ArchiveWindow) { return `weekly-${window.key}` }
 async function ensureWeekArchived(window: ArchiveWindow, now: Date): Promise<WeeklyArchiveResult> {
   const manifestRef = adminDb.collection('archiveRuns').doc(manifestId(window))
   const existing = await manifestRef.get()
-  if (['verified', 'completed'].includes(String(existing.get('state')))) {
+  if (['verified', 'completed'].includes(String(existing.get('state'))) && Number(existing.get('archiveSchemaVersion') || 0) >= WEEKLY_ARCHIVE_SCHEMA_VERSION) {
     return {
       state: existing.get('state') === 'completed' ? 'already-completed' : 'verified',
       archiveKey: window.key,
@@ -144,7 +157,7 @@ async function ensureWeekArchived(window: ArchiveWindow, now: Date): Promise<Wee
 
   const { records, paths, counts, documentCount } = await collectDocuments(window)
   const payload = {
-    schemaVersion: 2,
+    schemaVersion: WEEKLY_ARCHIVE_SCHEMA_VERSION,
     application: 'employee-management-portal',
     firebaseProjectId: process.env.FIREBASE_ADMIN_PROJECT_ID,
     archiveKey: window.key,
@@ -162,9 +175,9 @@ async function ensureWeekArchived(window: ArchiveWindow, now: Date): Promise<Wee
     const current = await transaction.get(manifestRef)
     const leaseUntil = current.get('leaseUntil')
     if (current.get('state') === 'exporting' && leaseUntil instanceof Timestamp && leaseUntil.toMillis() > Date.now()) return false
-    if (['verified', 'completed'].includes(String(current.get('state')))) return false
+    if (['verified', 'completed'].includes(String(current.get('state'))) && Number(current.get('archiveSchemaVersion') || 0) >= WEEKLY_ARCHIVE_SCHEMA_VERSION) return false
     transaction.set(manifestRef, {
-      state: 'exporting', archiveKind: 'weekly', archiveKey: window.key,
+      state: 'exporting', archiveKind: 'weekly', archiveSchemaVersion: WEEKLY_ARCHIVE_SCHEMA_VERSION, archiveKey: window.key,
       weekStart: Timestamp.fromDate(window.start), weekEndExclusive: Timestamp.fromDate(window.end),
       documentCount, documentPaths: paths, counts, checksum,
       leaseUntil: Timestamp.fromMillis(Date.now() + 10 * 60 * 1000),
@@ -216,7 +229,7 @@ export async function runArchivePreview(referenceDate: Date): Promise<WeeklyArch
   const window = vietnamWeekContaining(referenceDate)
   const { records, counts, documentCount } = await collectDocuments(window)
   const archiveKey = `${window.key}-test-${Date.now()}`
-  const json = JSON.stringify({ schemaVersion: 2, testArchive: true, application: 'employee-management-portal', firebaseProjectId: process.env.FIREBASE_ADMIN_PROJECT_ID, archiveKey, sourceWeekKey: window.key, archiveKind: 'weekly', timezone: 'Asia/Ho_Chi_Minh', weekStart: window.start.toISOString(), weekEndExclusive: window.end.toISOString(), exportedAt: new Date().toISOString(), counts, records }, null, 2)
+  const json = JSON.stringify({ schemaVersion: WEEKLY_ARCHIVE_SCHEMA_VERSION, testArchive: true, application: 'employee-management-portal', firebaseProjectId: process.env.FIREBASE_ADMIN_PROJECT_ID, archiveKey, sourceWeekKey: window.key, archiveKind: 'weekly', timezone: 'Asia/Ho_Chi_Minh', weekStart: window.start.toISOString(), weekEndExclusive: window.end.toISOString(), exportedAt: new Date().toISOString(), counts, records }, null, 2)
   const checksum = createHash('sha256').update(json).digest('hex')
   const driveFile = await storeWeeklyArchive({ archiveKey, checksum, json })
   return { state: documentCount ? 'verified' : 'empty', archiveKey, documentCount, counts, driveFileId: driveFile.id, driveWebViewLink: driveFile.webViewLink, driveFileName: driveFile.name, driveFileSize: Number(driveFile.size || 0), deleted: false }

@@ -9,6 +9,7 @@ import { cancelQueuedAuditEmails } from '@/lib/server/audit-email'
 import { deleteAllProfileImages } from '@/lib/server/google-drive-archive'
 import { defaultUserFeatureSettings, userFeatureKeys, type UserFeatureKey, type UserFeatureSettings } from '@/lib/models/userFeatureSettings'
 import { vietnamWeekContaining } from '@/lib/archive/retention'
+import { decisionReviewIsEditable } from '@/lib/review/decision-policy'
 import { isPastRegistrationDate, reactivationWaiverApplies, restrictPastRegistration } from '@/lib/schedule/registration-policy'
 
 type Shift = 'Morning' | 'Afternoon' | 'Evening'
@@ -2681,6 +2682,13 @@ function statusText(status: ReviewStatus): string {
   return 'cần chỉnh sửa'
 }
 
+function assertDecisionCanStillBeChanged(reviewedAt: unknown): void {
+  const reviewed = firestoreDate(reviewedAt)
+  if (!decisionReviewIsEditable(reviewed)) {
+    throw new ApiError(409, 'Quyết định của tuần cũ đã khóa và chỉ còn để tra cứu.')
+  }
+}
+
 export async function reviewRequest(actor: RequestActor, raw: unknown) {
   requireManager(actor)
   const body = objectBody(raw)
@@ -2724,6 +2732,9 @@ export async function reviewRequest(actor: RequestActor, raw: unknown) {
     }
     if (data.status === status) {
       throw new ApiError(409, 'Yêu cầu đã ở trạng thái này.')
+    }
+    if (['Approved', 'Rejected'].includes(String(data.status))) {
+      assertDecisionCanStillBeChanged(data.reviewedAt)
     }
     if (resource === 'late' && managerPenaltyAmount != null) {
       throw new ApiError(400, 'Khoản trừ đi trễ được tính tự động, không nhập mức trừ thủ công.')
@@ -3101,6 +3112,9 @@ export async function reviewScheduleBatch(actor: RequestActor, raw: unknown) {
     }
     if (schedules.every((schedule) => schedule.status === status)) {
       throw new ApiError(409, 'Bảng lịch đã ở trạng thái này.')
+    }
+    if (schedules.some((schedule) => ['Approved', 'Rejected'].includes(String(schedule.status)))) {
+      schedules.forEach((schedule) => assertDecisionCanStillBeChanged(schedule.reviewedAt))
     }
 
     let shouldWaivePenalty = false
