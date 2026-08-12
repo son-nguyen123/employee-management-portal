@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import ExcelJS from 'exceljs'
 import { authenticateRequest } from '@/lib/server/api-auth'
-import { adminDb } from '@/lib/server/firebase-admin'
+import { getAuthorizedMonthData } from '@/lib/server/month-data'
 
 export const runtime = 'nodejs'
 
@@ -21,18 +21,15 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: 'Bạn không có quyền xuất lịch sử ứng lương.' }, { status: 403 })
     }
 
-    const [advances, employees] = await Promise.all([
-      adminDb.collection('salaryAdvances').orderBy('createdAt', 'desc').get(),
-      adminDb.collection('employees').get(),
-    ])
-    const employeeMap = new Map(employees.docs.map((snapshot) => [snapshot.id, snapshot.data()]))
-    const approvedAdvances = advances.docs.filter((snapshot) => {
-      const employee = employeeMap.get(String(snapshot.get('employeeId')))
-      const sameFactory = actor.role === 'director' || String(employee?.factoryId || 'factory-1') === actor.factoryId
-      return snapshot.get('status') === 'Approved' && employee?.status === 'active' && sameFactory
+    const month = new URL(request.url).searchParams.get('month') || new Date().toISOString().slice(0, 7)
+    if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) return NextResponse.json({ error: 'Tháng xuất không hợp lệ.' }, { status: 400 })
+    const monthData = await getAuthorizedMonthData(actor, month, 'salaryAdvances')
+    const employeeMap = new Map(monthData.employees.map((employee) => [String(employee.uid || employee.id), employee as Record<string, unknown>]))
+    const approvedAdvances = monthData.records.filter((advance) => {
+      const employee = employeeMap.get(String(advance.employeeId))
+      return advance.status === 'Approved' && (monthData.source === 'drive' || employee?.status === 'active')
     })
-    const rows = approvedAdvances.map((snapshot, index) => {
-      const advance = snapshot.data()
+    const rows = approvedAdvances.map((advance, index) => {
       const employee = employeeMap.get(String(advance.employeeId)) || {}
       return [
         String(index + 1),
@@ -68,7 +65,7 @@ export async function GET(request: Request) {
     ]
 
     sheet.mergeCells('A1:I1')
-    sheet.getCell('A1').value = 'DANH SÁCH ỨNG LƯƠNG ĐÃ ĐƯỢC DUYỆT'
+    sheet.getCell('A1').value = `DANH SÁCH ỨNG LƯƠNG ĐÃ DUYỆT · THÁNG ${month.slice(5)}/${month.slice(0, 4)}`
     sheet.getCell('A1').font = { name: 'Arial', size: 18, bold: true, color: { argb: 'FFFFFFFF' } }
     sheet.getCell('A1').alignment = { horizontal: 'center', vertical: 'middle' }
     sheet.getCell('A1').fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF0F766E' } }
@@ -125,11 +122,10 @@ export async function GET(request: Request) {
     sheet.getRow(summaryRow).height = 22
 
     const buffer = await workbook.xlsx.writeBuffer()
-    const date = new Date().toISOString().slice(0, 10)
     return new Response(buffer, {
       headers: {
         'content-type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-        'content-disposition': `attachment; filename="lich-su-ung-luong-${date}.xlsx"`,
+        'content-disposition': `attachment; filename="lich-su-ung-luong-${month}.xlsx"`,
         'cache-control': 'no-store',
       },
     })

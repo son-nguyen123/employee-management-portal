@@ -13,6 +13,9 @@ import { DEMO_EMPLOYEE } from '@/lib/config/demo'
 import { mockSalaryAdvances } from '@/lib/services/mockData'
 import { auth } from '@/lib/firebase'
 import { employeeFactoryId } from '@/lib/models/factory'
+import { MonthNavigator } from '@/components/ui/month-navigator'
+import { readSalaryAdvanceMonth } from '@/lib/services/monthDataService'
+import { currentVietnamMonth } from '@/lib/archive/retention'
 
 type SalaryFilter = 'all' | 'Pending' | 'Approved' | 'Rejected' | 'Cancelled'
 
@@ -76,6 +79,7 @@ function DirectorSalaryAdvancesPanel({ isPreviewMode }: { isPreviewMode: boolean
   const [message, setMessage] = useState('')
   const [exporting, setExporting] = useState(false)
   const [copiedId, setCopiedId] = useState<string | null>(null)
+  const [month, setMonth] = useState(currentVietnamMonth(new Date()).key)
 
   useEffect(() => {
     if (!authUser) return
@@ -106,15 +110,30 @@ function DirectorSalaryAdvancesPanel({ isPreviewMode }: { isPreviewMode: boolean
     setReady(false)
     void (async () => {
       try {
-        const token = await auth.currentUser?.getIdToken()
-        if (!token) throw new Error('Bạn cần đăng nhập lại.')
-        const response = await fetch('/api/director/salary-advances', {
-          headers: { authorization: `Bearer ${token}` },
-          cache: 'no-store',
+        const result = await readSalaryAdvanceMonth(month)
+        const employeeById = new Map(result.employees.map((employee) => [employee.uid || (employee as Employee & { id?: string }).id, employee]))
+        const nextItems = result.records.filter((item) => {
+          const employee = employeeById.get(item.employeeId)
+          return item.status === 'Approved' && (result.source === 'drive' || employee?.status === 'active')
+        }).map((item) => {
+          const employee = employeeById.get(item.employeeId)
+          return {
+            id: item.id || `${item.employeeId}-${String(item.createdAt)}`,
+            employeeId: item.employeeId,
+            employeeName: employee?.fullName || 'Nhân viên',
+            employeeCode: employee?.employeeCode || item.employeeId,
+            photoURL: employee?.photoURL,
+            phone: employee?.phone,
+            facebookUrl: employee?.facebookUrl,
+            amount: Number(item.amount || 0),
+            reason: item.reason || '',
+            bankName: employee?.bankName || '',
+            bankAccountName: employee?.bankAccountName || '',
+            bankAccountNumber: employee?.bankAccountNumber || '',
+            approvedAt: item.reviewedAt instanceof Date ? item.reviewedAt.toISOString() : null,
+          }
         })
-        const data = await response.json().catch(() => null) as { items?: DirectorSalaryAdvance[]; error?: string } | null
-        if (!response.ok) throw new Error(data?.error || 'Chưa thể tải danh sách ứng lương đã duyệt.')
-        if (active) setItems(data?.items || [])
+        if (active) setItems(nextItems)
       } catch (error) {
         if (active) setMessage(error instanceof Error ? error.message : 'Chưa thể tải danh sách ứng lương đã duyệt.')
       } finally {
@@ -122,7 +141,7 @@ function DirectorSalaryAdvancesPanel({ isPreviewMode }: { isPreviewMode: boolean
       }
     })()
     return () => { active = false }
-  }, [authUser, isPreviewMode])
+  }, [authUser, isPreviewMode, month])
 
   const copyAccountNumber = async (item: DirectorSalaryAdvance) => {
     if (!item.bankAccountNumber) return
@@ -156,13 +175,13 @@ function DirectorSalaryAdvancesPanel({ isPreviewMode }: { isPreviewMode: boolean
     try {
       const token = await auth.currentUser?.getIdToken()
       if (!token) throw new Error('Bạn cần đăng nhập lại.')
-      const response = await fetch('/api/exports/salary-advances', { headers: { authorization: `Bearer ${token}` } })
+      const response = await fetch(`/api/exports/salary-advances?month=${encodeURIComponent(month)}`, { headers: { authorization: `Bearer ${token}` } })
       if (!response.ok) throw new Error('Chưa thể xuất file Excel ứng lương.')
       const blob = await response.blob()
       const url = URL.createObjectURL(blob)
       const anchor = document.createElement('a')
       anchor.href = url
-      anchor.download = `danh-sach-ung-luong-da-duyet-${new Date().toISOString().slice(0, 10)}.xlsx`
+      anchor.download = `danh-sach-ung-luong-da-duyet-${month}.xlsx`
       anchor.click()
       URL.revokeObjectURL(url)
     } catch (error) {
@@ -178,6 +197,7 @@ function DirectorSalaryAdvancesPanel({ isPreviewMode }: { isPreviewMode: boolean
     <main className="min-h-screen bg-[#f3f7fb] pb-28 dark:bg-slate-950 md:pb-32">
       <Header title="Danh sách ứng lương" subtitle="Danh sách đã duyệt · sẵn sàng chuyển khoản" />
       <PageContainer maxWidth="2xl">
+        <MonthNavigator value={month} onChange={setMonth} loading={!ready} />
         <section className="mb-5 overflow-hidden rounded-3xl bg-gradient-to-br from-sky-600 via-blue-600 to-indigo-700 p-4 text-white shadow-lg shadow-blue-900/15 sm:p-5">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div className="flex min-w-0 items-center gap-4">
@@ -270,6 +290,9 @@ export default function AdminSalaryAdvancesPage() {
   const role = useUserRole()
   const [employees, setEmployees] = useState<Employee[]>([])
   const [requests, setRequests] = useState<SalaryAdvance[]>([])
+  const [liveRequests, setLiveRequests] = useState<SalaryAdvance[]>([])
+  const [month, setMonth] = useState(currentVietnamMonth(new Date()).key)
+  const [monthLoading, setMonthLoading] = useState(false)
   const [ready, setReady] = useState({ employees: false, requests: false })
   const [filter, setFilter] = useState<SalaryFilter>('all')
   const [message, setMessage] = useState('')
@@ -289,7 +312,7 @@ export default function AdminSalaryAdvancesPage() {
     try {
       const token = await auth.currentUser?.getIdToken()
       if (!token) throw new Error('Bạn cần đăng nhập lại.')
-      const response = await fetch('/api/exports/salary-advances', {
+      const response = await fetch(`/api/exports/salary-advances?month=${encodeURIComponent(month)}`, {
         headers: { authorization: `Bearer ${token}` },
       })
       if (!response.ok) throw new Error('Chưa thể xuất file Excel ứng lương.')
@@ -325,18 +348,43 @@ export default function AdminSalaryAdvancesPage() {
       setReady((current) => ({ ...current, employees: true }))
     }, fail, employeeFactoryId(currentEmployee))
     const unsubscribeRequests = subscribeToAllSalaryAdvances((items) => {
-      setRequests(items)
+      setLiveRequests(items)
+      if (month === currentVietnamMonth(new Date()).key) setRequests(items)
       setReady((current) => ({ ...current, requests: true }))
     }, fail)
     return () => {
       unsubscribeEmployees()
       unsubscribeRequests()
     }
-  }, [authUser, currentEmployee, isPreviewMode, role])
+  }, [authUser, currentEmployee, isPreviewMode, role, month])
+
+  useEffect(() => {
+    if (!authUser || isPreviewMode || role === 'director') return
+    const currentMonth = currentVietnamMonth(new Date()).key
+    if (month === currentMonth) {
+      setRequests(liveRequests)
+      return
+    }
+    let active = true
+    setMonthLoading(true)
+    void readSalaryAdvanceMonth(month)
+      .then((result) => {
+        if (!active) return
+        setRequests(result.records)
+        setEmployees((current) => {
+          const byId = new Map(current.map((employee) => [employee.uid, employee]))
+          result.employees.forEach((employee) => byId.set(employee.uid || (employee as Employee & { id?: string }).id || '', employee))
+          return Array.from(byId.values()).filter((employee) => employee.uid)
+        })
+      })
+      .catch((error) => { if (active) setMessage(error instanceof Error ? error.message : 'Chưa thể tải lịch sử ứng lương.') })
+      .finally(() => { if (active) setMonthLoading(false) })
+    return () => { active = false }
+  }, [authUser, isPreviewMode, liveRequests, month, role])
 
   const activeEmployeeIds = useMemo(
-    () => new Set(employees.filter((employee) => employee.status === 'active').map((employee) => employee.uid)),
-    [employees]
+    () => new Set(employees.filter((employee) => month === currentVietnamMonth(new Date()).key ? employee.status === 'active' : true).map((employee) => employee.uid)),
+    [employees, month]
   )
   const operationalRequests = useMemo(
     () => requests.filter((request) => activeEmployeeIds.has(request.employeeId)),
@@ -409,6 +457,7 @@ export default function AdminSalaryAdvancesPage() {
     <main className="min-h-screen bg-slate-50/70 pb-28 dark:bg-slate-950 md:pb-32">
       <Header title="Quản lý ứng lương" subtitle="Duyệt nhanh, theo dõi rõ và gửi đúng danh sách đã duyệt" />
       <PageContainer maxWidth="2xl">
+        <MonthNavigator value={month} onChange={setMonth} loading={monthLoading} />
         <div className="mb-4 rounded-2xl border border-sky-500/20 bg-gradient-to-r from-sky-600 to-blue-700 p-3 text-white shadow-md shadow-sky-950/10">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div className="flex min-w-0 items-center gap-3">
@@ -471,10 +520,10 @@ export default function AdminSalaryAdvancesPage() {
                       <a href={`tel:${employee?.phone || ''}`} className="flex min-h-11 items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-white text-xs font-bold text-slate-700 transition active:scale-[0.98] dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200"><Phone className="h-4 w-4" /> Gọi điện</a>
                       <a href={employee?.facebookUrl || 'https://facebook.com/'} target="_blank" rel="noreferrer" className="flex min-h-11 items-center justify-center gap-2 rounded-2xl border border-slate-200 bg-white text-xs font-bold text-slate-700 transition active:scale-[0.98] dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200"><MessageCircle className="h-4 w-4" /> Facebook</a>
                     </div>
-                    <div className="mt-2 grid grid-cols-2 gap-2 border-t border-slate-100 pt-3 dark:border-white/10">
+                    {month === currentVietnamMonth(new Date()).key && <div className="mt-2 grid grid-cols-2 gap-2 border-t border-slate-100 pt-3 dark:border-white/10">
                       <button type="button" onClick={() => openRejectDialog(request)} disabled={busy} className="flex min-h-11 items-center justify-center gap-2 rounded-2xl border border-rose-200 text-xs font-black text-rose-700 transition active:scale-[0.98] disabled:opacity-50 dark:border-rose-500/30 dark:text-rose-300"><X className="h-4 w-4" /> Từ chối</button>
                       <button type="button" onClick={() => void handleReview(request, 'Approved')} disabled={busy} className="flex min-h-11 items-center justify-center gap-2 rounded-2xl bg-emerald-600 text-xs font-black text-white transition active:scale-[0.98] disabled:opacity-50">{busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />} Duyệt</button>
-                    </div>
+                    </div>}
                   </article>
                 )
               })}
@@ -501,11 +550,11 @@ export default function AdminSalaryAdvancesPage() {
                           <div className="flex items-end justify-between gap-3"><p className="text-xl font-black text-slate-900 dark:text-white">{formatAmount(request.amount)}</p><p className="text-xs font-semibold text-slate-500">Gửi {formatDate(request.createdAt)} · Xử lý {formatDate(request.reviewedAt)}</p></div>
                           <p className="mt-2 text-sm leading-6 text-slate-600 dark:text-slate-300">{request.reason || 'Không có ghi chú.'}</p>
                           {request.reviewNote && <p className="mt-3 rounded-2xl bg-slate-50 p-3 text-xs font-semibold leading-5 text-slate-600 dark:bg-slate-800 dark:text-slate-300"><span className="font-black">Phản hồi:</span> {request.reviewNote}</p>}
-                          <div className="mt-4 grid gap-2 sm:grid-cols-2">
+                          {month === currentVietnamMonth(new Date()).key && <div className="mt-4 grid gap-2 sm:grid-cols-2">
                             {request.status === 'Approved' && <button type="button" onClick={() => openRejectDialog(request)} disabled={busy} className="flex min-h-11 items-center justify-center gap-2 rounded-2xl border border-rose-200 text-xs font-black text-rose-700 disabled:opacity-50 dark:border-rose-500/30 dark:text-rose-300"><X className="h-4 w-4" /> Đổi sang từ chối</button>}
                             {request.status === 'Rejected' && <button type="button" onClick={() => void handleReview(request, 'Approved')} disabled={busy} className="flex min-h-11 items-center justify-center gap-2 rounded-2xl bg-emerald-600 text-xs font-black text-white disabled:opacity-50">{busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />} Duyệt lại</button>}
                             <button type="button" onClick={() => void handleReopen(request)} disabled={busy} className="flex min-h-11 items-center justify-center gap-2 rounded-2xl bg-sky-50 text-xs font-black text-sky-700 disabled:opacity-50 dark:bg-sky-500/10 dark:text-sky-300">{busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <RotateCcw className="h-4 w-4" />} Mở lại chờ xử lý</button>
-                          </div>
+                          </div>}
                         </div>
                       )}
                     </article>

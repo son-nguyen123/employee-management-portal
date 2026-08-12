@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import Link from 'next/link'
-import { AlertTriangle, Building2, CalendarPlus, Check, ChevronDown, ChevronLeft, ChevronRight, CircleDollarSign, Clock3, Download, ExternalLink, FileText, Loader2, MessageSquareText, Phone, Plus, UsersRound, X } from 'lucide-react'
+import { AlertTriangle, Building2, CalendarPlus, Check, ChevronDown, CircleDollarSign, Clock3, Download, ExternalLink, FileText, Loader2, MessageSquareText, Phone, Plus, UsersRound, X } from 'lucide-react'
 import { useAuth } from '@/lib/hooks/useAuth'
 import { auth } from '@/lib/firebase'
 import { subscribeToPendingLeaveRequests, updateLeaveStatus } from '@/lib/services/leaveService'
@@ -18,6 +18,9 @@ import { adjustPenalty, cancelPenalty, createManualPenalty, getAllPenalties } fr
 import { subscribeToPendingStaffRequests, updateStaffRequestStatus } from '@/lib/services/staffRequestService'
 import type { Employee, Penalty, StaffRequest } from '@/lib/models/types'
 import { FACTORY_LABELS } from '@/lib/models/factory'
+import { MonthNavigator } from '@/components/ui/month-navigator'
+import { invalidateMonthData, readPenaltyMonth } from '@/lib/services/monthDataService'
+import { currentVietnamMonth } from '@/lib/archive/retention'
 
 type RequestType = 'leave' | 'late' | 'salary' | 'overtime' | 'note' | 'scheduleChange' | 'scheduleModeChange' | 'factoryChange'
 type RequestRow = {
@@ -149,8 +152,9 @@ export default function AdminRequestsPage() {
   const [manualPenaltyOpen, setManualPenaltyOpen] = useState(false)
   const [pageMode, setPageMode] = useState<'requests' | 'penalties'>('requests')
   const [penaltyTab, setPenaltyTab] = useState<'employees' | 'list'>('employees')
-  const [penaltyExportMonth, setPenaltyExportMonth] = useState(new Date().toISOString().slice(0, 7))
+  const [penaltyExportMonth, setPenaltyExportMonth] = useState(currentVietnamMonth(new Date()).key)
   const [exportingPenalties, setExportingPenalties] = useState(false)
+  const [penaltyMonthLoading, setPenaltyMonthLoading] = useState(false)
 
   useEffect(() => {
     if (!rejectingRow && !editingPenalty) return
@@ -245,16 +249,30 @@ export default function AdminRequestsPage() {
     getAllPenalties()
       .then((items) => {
         setPenalties(items)
-        const latest = items[0]?.penaltyDate
-        if (latest) {
-          const date = latest instanceof Date ? latest : latest.toDate()
-          setPenaltyExportMonth(`${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`)
-        }
       })
       .catch(() => setMessage('Chưa tải được danh sách khoản phạt.'))
 
     return () => unsubscribers.forEach((unsubscribe) => unsubscribe())
   }, [authUser, isPreviewMode])
+
+  useEffect(() => {
+    if (!authUser || isPreviewMode || pageMode !== 'penalties') return
+    let active = true
+    setPenaltyMonthLoading(true)
+    void readPenaltyMonth(penaltyExportMonth)
+      .then((result) => {
+        if (!active) return
+        setPenalties(result.records)
+        setEmployees((current) => {
+          const byId = new Map(current.map((employee) => [employee.uid, employee]))
+          result.employees.forEach((employee) => byId.set(employee.uid || (employee as Employee & { id?: string }).id || '', employee))
+          return Array.from(byId.values()).filter((employee) => employee.uid)
+        })
+      })
+      .catch((error) => { if (active) setMessage(error instanceof Error ? error.message : 'Chưa thể tải dữ liệu phạt của tháng này.') })
+      .finally(() => { if (active) setPenaltyMonthLoading(false) })
+    return () => { active = false }
+  }, [authUser, isPreviewMode, pageMode, penaltyExportMonth])
 
   useEffect(() => {
     if (!manualPenaltyOpen) return
@@ -327,7 +345,8 @@ export default function AdminRequestsPage() {
       if (!isPreviewMode) {
         const result = await createManualPenalty(penaltyEmployeeId, `${penaltyDate}T12:00:00`, amount, penaltyNote.trim())
         createdPenalty.id = result.id
-        setPenalties(await getAllPenalties())
+        invalidateMonthData('penalties', penaltyExportMonth)
+        setPenalties((await readPenaltyMonth(penaltyExportMonth)).records)
       } else {
         setPenalties((current) => [createdPenalty, ...current])
       }
@@ -370,12 +389,6 @@ export default function AdminRequestsPage() {
     } finally {
       setExportingPenalties(false)
     }
-  }
-
-  const shiftPenaltyExportMonth = (offset: number) => {
-    const [year, month] = penaltyExportMonth.split('-').map(Number)
-    const next = new Date(year, month - 1 + offset, 1)
-    setPenaltyExportMonth(`${next.getFullYear()}-${String(next.getMonth() + 1).padStart(2, '0')}`)
   }
 
   const openPenaltyManager = (penalty: Penalty, mode: 'adjust' | 'cancel') => {
@@ -446,6 +459,7 @@ export default function AdminRequestsPage() {
     <main className="min-h-screen pb-8">
       <Header title={pageMode === 'penalties' ? 'Quản lý phạt' : 'Yêu cầu khác'} subtitle={pageMode === 'penalties' ? 'Theo dõi theo nhân viên và từng khoản phạt' : 'Tất cả yêu cầu ngoài lịch đăng ký tuần'} />
       <PageContainer>
+        {pageMode === 'penalties' && <MonthNavigator value={penaltyExportMonth} onChange={setPenaltyExportMonth} loading={penaltyMonthLoading} />}
         {pageMode === 'requests' && <ManagementOverview employees={employees} />}
         <div className="flex flex-col">
         {pageMode === 'penalties' && (
@@ -454,18 +468,9 @@ export default function AdminRequestsPage() {
               <button type="button" onClick={() => setPenaltyTab('employees')} className={`min-h-11 rounded-xl text-sm font-bold ${penaltyTab === 'employees' ? 'bg-white text-rose-600 shadow-sm dark:bg-slate-950' : 'text-muted-foreground'}`}>Theo nhân viên</button>
               <button type="button" onClick={() => setPenaltyTab('list')} className={`min-h-11 rounded-xl text-sm font-bold ${penaltyTab === 'list' ? 'bg-white text-rose-600 shadow-sm dark:bg-slate-950' : 'text-muted-foreground'}`}>Từng khoản phạt</button>
             </div>
-            <div className="grid grid-cols-2 gap-2">
-              <button type="button" onClick={toggleManualPenalty} className="flex min-h-12 items-center justify-center gap-2 rounded-2xl bg-rose-600 px-3 text-sm font-bold text-white"><Plus className="h-4 w-4" /> Ghi phạt</button>
+            <div className={`grid gap-2 ${penaltyExportMonth === currentVietnamMonth(new Date()).key ? 'grid-cols-2' : 'grid-cols-1'}`}>
+              {penaltyExportMonth === currentVietnamMonth(new Date()).key && <button type="button" onClick={toggleManualPenalty} className="flex min-h-12 items-center justify-center gap-2 rounded-2xl bg-rose-600 px-3 text-sm font-bold text-white"><Plus className="h-4 w-4" /> Ghi phạt</button>}
               <button type="button" onClick={() => void exportPenalties()} disabled={exportingPenalties} className="flex min-h-12 items-center justify-center gap-2 rounded-2xl border border-rose-200 bg-white px-3 text-sm font-bold text-rose-700 disabled:opacity-50 dark:bg-slate-900"><Download className="h-4 w-4" /> {exportingPenalties ? 'Đang xuất...' : 'Xuất Excel'}</button>
-            </div>
-            <div className="flex items-center justify-between rounded-2xl border border-slate-200 bg-white p-1.5 shadow-sm dark:border-slate-700 dark:bg-slate-900">
-              <button type="button" onClick={() => shiftPenaltyExportMonth(-1)} aria-label="Tháng trước" className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300"><ChevronLeft className="h-4 w-4" /></button>
-              <label className="relative min-w-0 cursor-pointer px-3 text-center">
-                <span className="block text-[10px] font-bold uppercase tracking-wider text-slate-400">Tháng xuất</span>
-                <span className="mt-0.5 block text-sm font-black">Tháng {Number(penaltyExportMonth.slice(5))}/{penaltyExportMonth.slice(0, 4)}</span>
-                <input type="month" value={penaltyExportMonth} onChange={(event) => event.target.value && setPenaltyExportMonth(event.target.value)} aria-label="Chọn tháng xuất phạt" className="absolute inset-0 h-full w-full cursor-pointer opacity-0" />
-              </label>
-              <button type="button" onClick={() => shiftPenaltyExportMonth(1)} aria-label="Tháng sau" className="grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300"><ChevronRight className="h-4 w-4" /></button>
             </div>
           </div>
         )}
@@ -488,10 +493,10 @@ export default function AdminRequestsPage() {
                       <article key={penalty.id} className="rounded-2xl bg-slate-50 p-3">
                         <div className="flex justify-between gap-3"><strong>{penalty.title}</strong><span className="font-black text-rose-600">{Number(penalty.amount || 0).toLocaleString('vi-VN')}đ</span></div>
                         <p className="mt-1 text-xs text-muted-foreground">{penalty.description}</p>
-                        <div className="mt-3 grid grid-cols-2 gap-2">
+                        {penaltyExportMonth === currentVietnamMonth(new Date()).key && <div className="mt-3 grid grid-cols-2 gap-2">
                           <button type="button" onClick={() => openPenaltyManager(penalty, 'cancel')} className="min-h-10 rounded-xl border border-rose-200 text-xs font-bold text-rose-600">Xóa phạt</button>
                           <button type="button" onClick={() => openPenaltyManager(penalty, 'adjust')} className="min-h-10 rounded-xl bg-slate-900 text-xs font-bold text-white">Xác nhận / sửa</button>
-                        </div>
+                        </div>}
                       </article>
                     ))}
                   </div>
@@ -591,14 +596,14 @@ export default function AdminRequestsPage() {
                       {Number(penalty.amount || 0).toLocaleString('vi-VN')}đ
                     </span>
                   </div>
-                  <div className="mt-4 grid grid-cols-2 gap-2">
+                  {penaltyExportMonth === currentVietnamMonth(new Date()).key && <div className="mt-4 grid grid-cols-2 gap-2">
                     <button type="button" onClick={() => openPenaltyManager(penalty, 'cancel')} className="min-h-11 rounded-xl border border-rose-200 text-sm font-bold text-rose-600">
                       Xóa phạt
                     </button>
                     <button type="button" onClick={() => openPenaltyManager(penalty, 'adjust')} className="min-h-11 rounded-xl bg-slate-900 text-sm font-bold text-white dark:bg-white dark:text-slate-900">
                       Điều chỉnh
                     </button>
-                  </div>
+                  </div>}
                 </article>
               )
             })}

@@ -1,19 +1,9 @@
 import { NextResponse } from 'next/server'
 import ExcelJS from 'exceljs'
-import { Timestamp } from 'firebase-admin/firestore'
 import { authenticateRequest } from '@/lib/server/api-auth'
-import { adminDb } from '@/lib/server/firebase-admin'
+import { getAuthorizedMonthData } from '@/lib/server/month-data'
 
 export const runtime = 'nodejs'
-
-function monthWindow(month: string) {
-  const [year, monthNumber] = month.split('-').map(Number)
-  const start = new Date(`${month}-01T00:00:00+07:00`)
-  const nextYear = monthNumber === 12 ? year + 1 : year
-  const nextMonth = monthNumber === 12 ? 1 : monthNumber + 1
-  const end = new Date(`${nextYear}-${String(nextMonth).padStart(2, '0')}-01T00:00:00+07:00`)
-  return { start, end }
-}
 
 function toDate(value: unknown): Date | null {
   if (value && typeof value === 'object' && 'toDate' in value && typeof value.toDate === 'function') {
@@ -109,19 +99,11 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: 'Tháng xuất không hợp lệ.' }, { status: 400 })
     }
 
-    const { start, end } = monthWindow(month)
-    const [penalties, employees] = await Promise.all([
-      adminDb.collection('penalties')
-        .where('penaltyDate', '>=', Timestamp.fromDate(start))
-        .where('penaltyDate', '<', Timestamp.fromDate(end))
-        .get(),
-      adminDb.collection('employees').get(),
-    ])
-    const employeeMap = new Map(employees.docs.map((snapshot) => [snapshot.id, snapshot.data()]))
+    const monthData = await getAuthorizedMonthData(actor, month, 'penalties')
+    const employeeMap = new Map(monthData.employees.map((employee) => [String(employee.uid || employee.id), employee as Record<string, unknown>]))
     const penaltyRows: PenaltyRow[] = []
 
-    penalties.docs.forEach((snapshot) => {
-      const penalty = snapshot.data()
+    monthData.records.forEach((penalty) => {
       if (penalty.status === 'Cancelled') return
       const employeeId = String(penalty.employeeId || '')
       const employee = employeeMap.get(employeeId) || {}

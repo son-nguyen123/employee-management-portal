@@ -15,6 +15,9 @@ import { RequestIdentityAvatar } from '@/components/admin/request-identity-avata
 import { SkeletonLoader } from '@/components/ui/skeleton-loader'
 import type { SalaryAdvance } from '@/lib/models/types'
 import { getSalaryAdvancePolicy, type SalaryAdvancePolicy } from '@/lib/services/managementSettingsService'
+import { MonthNavigator } from '@/components/ui/month-navigator'
+import { readSalaryAdvanceMonth } from '@/lib/services/monthDataService'
+import { currentVietnamMonth } from '@/lib/archive/retention'
 
 function formatVietnameseCurrency(value: string | number): string {
   const digits = String(value).replace(/\D/g, '')
@@ -79,6 +82,9 @@ export default function SalaryAdvancePage() {
   const { authUser, employee, isLoading, isPreviewMode } = useAuth()
   const [loading, setLoading] = useState(true)
   const [previousAdvances, setPreviousAdvances] = useState<SalaryAdvance[]>([])
+  const [liveAdvances, setLiveAdvances] = useState<SalaryAdvance[]>([])
+  const [month, setMonth] = useState(currentVietnamMonth(new Date()).key)
+  const [monthLoading, setMonthLoading] = useState(false)
   const [formData, setFormData] = useState({ amount: '', reason: '' })
   const [submitting, setSubmitting] = useState(false)
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
@@ -119,7 +125,8 @@ export default function SalaryAdvancePage() {
     return subscribeToEmployeeSalaryAdvances(
       authUser.uid,
       (data) => {
-        setPreviousAdvances(data)
+        setLiveAdvances(data)
+        if (month === currentVietnamMonth(new Date()).key) setPreviousAdvances(data)
         setLoading(false)
       },
       (error) => {
@@ -127,7 +134,23 @@ export default function SalaryAdvancePage() {
         setLoading(false)
       }
     )
-  }, [authUser, isPreviewMode])
+  }, [authUser, isPreviewMode, month])
+
+  useEffect(() => {
+    if (!authUser || isPreviewMode) return
+    const currentMonth = currentVietnamMonth(new Date()).key
+    if (month === currentMonth) {
+      setPreviousAdvances(liveAdvances)
+      return
+    }
+    let active = true
+    setMonthLoading(true)
+    void readSalaryAdvanceMonth(month)
+      .then((result) => { if (active) setPreviousAdvances(result.records) })
+      .catch((error) => { if (active) setMessage({ type: 'error', text: error instanceof Error ? error.message : 'Chưa thể tải lịch sử ứng lương.' }) })
+      .finally(() => { if (active) setMonthLoading(false) })
+    return () => { active = false }
+  }, [authUser, isPreviewMode, liveAdvances, month])
 
   const submitAdvanceRequest = async (amount: number, reason: string) => {
     if (!authUser) return
@@ -271,7 +294,8 @@ export default function SalaryAdvancePage() {
 
   const pendingAdvances = useMemo(() => previousAdvances.filter((item) => item.status === 'Pending'), [previousAdvances])
   const processedAdvances = useMemo(() => previousAdvances.filter((item) => item.status !== 'Pending'), [previousAdvances])
-  const hasPendingRequest = pendingAdvances.length > 0
+  const hasPendingRequest = liveAdvances.some((item) => item.status === 'Pending')
+  const isCurrentMonth = month === currentVietnamMonth(new Date()).key
   const employeeName = employee?.fullName || authUser?.displayName || 'Nhân viên'
   const employeeCode = employee?.employeeCode || 'Chưa có mã'
 
@@ -288,6 +312,7 @@ export default function SalaryAdvancePage() {
     <div className="min-h-screen bg-slate-50/70 pb-24 dark:bg-slate-950 md:pb-0">
       <Header title="Ứng lương / yêu cầu" subtitle="Gửi đề nghị cho quản lý" />
       <PageContainer>
+        <MonthNavigator value={month} onChange={setMonth} loading={monthLoading} />
         <StaffBanner icon={DollarSign} tone="sky" eyebrow="Ứng lương" title="Bạn cần hỗ trợ khoản nào?" description="Nhập số tiền muốn ứng và ghi chú ngắn để quản lý xem xét nhanh hơn." note="Bạn chỉ có thể điều chỉnh khi yêu cầu còn chờ duyệt. Sau khi quản lý xác nhận, yêu cầu sẽ được khóa để giữ đúng lịch sử." action={<Link href="/staff-note" className="rounded-xl bg-white/15 px-3 py-2 text-xs font-extrabold text-white backdrop-blur">Gửi yêu cầu khác</Link>} />
         {salaryPolicy.restrictionEnabled && (
           <div className={`mb-6 flex items-start gap-3 rounded-2xl border p-4 ${salaryPolicy.canSubmit ? 'border-emerald-200 bg-emerald-50 text-emerald-800 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-200' : 'border-amber-200 bg-amber-50 text-amber-800 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200'}`}>
@@ -318,7 +343,7 @@ export default function SalaryAdvancePage() {
               <article key={advance.id} className="overflow-hidden rounded-3xl border border-sky-100 bg-white p-4 shadow-sm dark:border-sky-500/20 dark:bg-slate-900">
                 <div className="flex items-start gap-3"><RequestIdentityAvatar name={employeeName} photoURL={employee?.photoURL} icon={CircleDollarSign} iconColor="bg-sky-500" /><div className="min-w-0 flex-1"><h3 className="truncate font-black">{employeeName}</h3><p className="text-xs font-bold text-slate-500 dark:text-slate-400">Mã nhân viên · {employeeCode}</p></div><span className={`rounded-full px-2.5 py-1 text-[11px] font-black ring-1 ${statusClasses(advance.status)}`}>{statusLabel(advance.status)}</span></div>
                 <div className="mt-4 rounded-2xl bg-sky-50/80 p-3 dark:bg-sky-500/10"><div className="flex items-end justify-between gap-3"><p className="text-2xl font-black text-sky-700 dark:text-sky-300">{formatAmount(advance.amount)}</p><p className="text-xs font-semibold text-slate-500">Gửi {formatDate(advance.createdAt)}</p></div><p className="mt-2 text-sm leading-6 text-slate-700 dark:text-slate-200">{advance.reason || 'Không có ghi chú.'}</p></div>
-                <div className="mt-3 grid grid-cols-2 gap-2"><button type="button" disabled={!salaryPolicy.canSubmit} onClick={() => editAdvance(advance)} className="flex min-h-11 items-center justify-center gap-2 rounded-2xl bg-indigo-50 text-xs font-black text-indigo-700 disabled:cursor-not-allowed disabled:opacity-45 dark:bg-indigo-500/10 dark:text-indigo-200"><Pencil className="h-4 w-4" /> Điều chỉnh</button><button type="button" onClick={() => void cancelAdvance(advance.id)} className="flex min-h-11 items-center justify-center gap-2 rounded-2xl bg-rose-50 text-xs font-black text-rose-700 dark:bg-rose-500/10 dark:text-rose-200"><Trash2 className="h-4 w-4" /> Hủy yêu cầu</button></div>
+                {isCurrentMonth && <div className="mt-3 grid grid-cols-2 gap-2"><button type="button" disabled={!salaryPolicy.canSubmit} onClick={() => editAdvance(advance)} className="flex min-h-11 items-center justify-center gap-2 rounded-2xl bg-indigo-50 text-xs font-black text-indigo-700 disabled:cursor-not-allowed disabled:opacity-45 dark:bg-indigo-500/10 dark:text-indigo-200"><Pencil className="h-4 w-4" /> Điều chỉnh</button><button type="button" onClick={() => void cancelAdvance(advance.id)} className="flex min-h-11 items-center justify-center gap-2 rounded-2xl bg-rose-50 text-xs font-black text-rose-700 dark:bg-rose-500/10 dark:text-rose-200"><Trash2 className="h-4 w-4" /> Hủy yêu cầu</button></div>}
               </article>
             ))}
             {!pendingAdvances.length && <div className="rounded-3xl border border-dashed border-slate-300 p-6 text-center text-sm font-semibold text-slate-500 dark:border-slate-700">Chưa có yêu cầu chờ duyệt.</div>}
