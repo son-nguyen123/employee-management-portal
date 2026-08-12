@@ -39,8 +39,6 @@ function nextWeekBounds(now = new Date()) {
   return {
     start,
     end,
-    firestoreStart: new Date(start.getTime() - 7 * 60 * 60 * 1000),
-    firestoreEnd: new Date(end.getTime() + 17 * 60 * 60 * 1000 - 1),
   }
 }
 
@@ -79,21 +77,30 @@ function displayEmployeeCode(value: unknown, fallback: string): string {
 export async function GET(request: Request) {
   try {
     const actor = await authenticateRequest(request)
-    if (!['admin', 'manager'].includes(actor.role)) {
-      return NextResponse.json({ error: 'Chỉ quản lý hoặc admin được xuất lịch trực.' }, { status: 403 })
+    if (!['admin', 'manager', 'director'].includes(actor.role)) {
+      return NextResponse.json({ error: 'Chỉ tài khoản quản trị được xuất lịch trực.' }, { status: 403 })
     }
 
     const bounds = nextWeekBounds()
     const [employeeSnapshot, scheduleSnapshot] = await Promise.all([
-      adminDb.collection('employees').where('status', '==', 'active').get(),
-      adminDb.collection('workSchedules')
-        .where('date', '>=', bounds.firestoreStart)
-        .where('date', '<=', bounds.firestoreEnd)
-        .get(),
+      // Do not restrict the roster to active profiles here. A valid duty
+      // registration must remain exportable even if the employee status was
+      // changed after the schedule was submitted.
+      adminDb.collection('employees').get(),
+      // Schedule dates have existed as both Firestore Timestamps and legacy
+      // serialized values. Read the collection, then apply the canonical
+      // Vietnam date filter below so a UTC/local-time boundary cannot empty
+      // an otherwise valid next-week roster.
+      adminDb.collection('workSchedules').get(),
     ])
     const employees: EmployeeRecord[] = employeeSnapshot.docs
-      .map((snapshot) => ({ uid: snapshot.id, ...snapshot.data() }) as EmployeeRecord)
-    const employeeMap = new Map(employees.map((employee) => [employee.uid, employee]))
+      .map((snapshot) => ({ ...snapshot.data(), uid: snapshot.id }) as EmployeeRecord)
+    const employeeMap = new Map<string, EmployeeRecord>()
+    employees.forEach((employee) => employeeMap.set(employee.uid, employee))
+    employeeSnapshot.docs.forEach((snapshot) => {
+      const storedUid = (snapshot.data() as { uid?: unknown }).uid
+      if (storedUid) employeeMap.set(String(storedUid), employeeMap.get(snapshot.id)!)
+    })
     const dayDates = Array.from({ length: 7 }, (_, index) => {
       const value = new Date(bounds.start)
       value.setUTCDate(value.getUTCDate() + index)
