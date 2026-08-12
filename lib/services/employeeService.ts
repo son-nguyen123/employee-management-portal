@@ -10,6 +10,7 @@ import {
 import { db } from '@/lib/firebase'
 import { auth } from '@/lib/firebase'
 import { Employee, EmployeeScheduleMode } from '@/lib/models/types'
+import { REGISTRATION_FACTORY_STORAGE_KEY, isFactoryId, type FactoryId } from '@/lib/models/factory'
 import { callWorkflowApi, newWorkflowRequestId } from '@/lib/services/workflowApi'
 
 const EMPLOYEES_COLLECTION = 'employees'
@@ -95,7 +96,13 @@ export function subscribeToEmployeeByUID(
  */
 export async function createEmployee(uid: string, employeeData: Omit<Employee, 'uid' | 'createdAt' | 'updatedAt'>): Promise<void> {
   try {
-    const sanitized = { ...employeeData }
+    const selectedFactory = typeof window !== 'undefined'
+      ? window.sessionStorage.getItem(REGISTRATION_FACTORY_STORAGE_KEY)
+      : null
+    const sanitized = {
+      ...employeeData,
+      factoryId: isFactoryId(selectedFactory) ? selectedFactory : employeeData.factoryId,
+    }
     if (!(sanitized.bankName && sanitized.bankAccountName && sanitized.bankAccountNumber)) {
       delete sanitized.bankName
       delete sanitized.bankAccountName
@@ -111,6 +118,7 @@ export async function createEmployee(uid: string, employeeData: Omit<Employee, '
     })
     const result = await response.json().catch(() => null) as { error?: string } | null
     if (!response.ok) throw new Error(result?.error || 'Chưa thể gửi hồ sơ đăng ký.')
+    if (typeof window !== 'undefined') window.sessionStorage.removeItem(REGISTRATION_FACTORY_STORAGE_KEY)
   } catch (error) {
     console.error('Error creating employee:', error)
     throw error
@@ -170,10 +178,14 @@ export async function getActiveEmployees(): Promise<Employee[]> {
 
 export function subscribeToAllEmployees(
   callback: (employees: Employee[]) => void,
-  onError?: (error: Error) => void
+  onError?: (error: Error) => void,
+  factoryId?: FactoryId
 ): () => void {
+  const source = factoryId
+    ? query(collection(db, EMPLOYEES_COLLECTION), where('factoryId', '==', factoryId))
+    : collection(db, EMPLOYEES_COLLECTION)
   return onSnapshot(
-    collection(db, EMPLOYEES_COLLECTION),
+    source,
     (snapshot) => callback(snapshot.docs.map((item) => item.data() as Employee)),
     (error) => onError?.(error)
   )
@@ -198,7 +210,7 @@ export async function setEmployeeAccountStatus(employeeId: string, status: 'acti
   return callWorkflowApi('manageEmployeeStatus', { employeeId, status })
 }
 
-export async function setEmployeeRole(employeeId: string, role: 'employee' | 'manager' | 'director'): Promise<{ employeeId: string; role: 'employee' | 'manager' | 'director' }> {
+export async function setEmployeeRole(employeeId: string, role: 'employee' | 'manager' | 'director' | 'admin'): Promise<{ employeeId: string; role: 'employee' | 'manager' | 'director' | 'admin' }> {
   return callWorkflowApi('manageEmployeeRole', { employeeId, role })
 }
 

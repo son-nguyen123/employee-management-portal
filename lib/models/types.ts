@@ -1,4 +1,5 @@
 import { Timestamp } from 'firebase/firestore'
+import type { FactoryId } from '@/lib/models/factory'
 
 // Employee Document
 export type EmployeeScheduleMode = 'rotating' | 'fixed'
@@ -14,6 +15,7 @@ export interface Employee {
   bankAccountName?: string
   bankAccountNumber?: string
   email: string
+  factoryId?: FactoryId
   role: 'admin' | 'manager' | 'director' | 'employee'
   status: 'pending' | 'active' | 'inactive'
   joinDate: Timestamp | Date
@@ -42,6 +44,7 @@ export type ScheduleStatus =
 export interface WorkSchedule {
   id?: string
   employeeId: string
+  factoryId?: FactoryId
   date: Timestamp | Date
   shift: 'Morning' | 'Afternoon' | 'Evening'
   status: ScheduleStatus

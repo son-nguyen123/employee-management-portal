@@ -4,6 +4,14 @@
       "collectionGroup": "workSchedules",
       "queryScope": "COLLECTION",
       "fields": [
+        { "fieldPath": "factoryId", "order": "ASCENDING" },
+        { "fieldPath": "date", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "workSchedules",
+      "queryScope": "COLLECTION",
+      "fields": [
         { "fieldPath": "employeeId", "order": "ASCENDING" },
         { "fieldPath": "date", "order": "DESCENDING" }
       ]

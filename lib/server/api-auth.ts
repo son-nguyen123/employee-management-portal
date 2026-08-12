@@ -2,6 +2,7 @@ import 'server-only'
 
 import type { DecodedIdToken } from 'firebase-admin/auth'
 import { adminAuth, adminDb } from '@/lib/server/firebase-admin'
+import { isFactoryId, type FactoryId } from '@/lib/models/factory'
 
 export type AppRole = 'admin' | 'manager' | 'director' | 'employee'
 
@@ -9,6 +10,7 @@ export interface RequestActor {
   token: DecodedIdToken
   uid: string
   role: AppRole
+  factoryId: FactoryId
 }
 
 export class ApiError extends Error {
@@ -49,7 +51,13 @@ export async function authenticateRequest(request: Request): Promise<RequestActo
       : 'Hồ sơ đang chờ admin duyệt. Tiện ích sẽ mở sau khi được chấp nhận.')
   }
 
-  return { token, uid: token.uid, role: role as AppRole }
+  const rawFactoryId = profile.get('factoryId')
+  return {
+    token,
+    uid: token.uid,
+    role: role as AppRole,
+    factoryId: isFactoryId(rawFactoryId) ? rawFactoryId : 'factory-1',
+  }
 }
 
 export function requireStaff(actor: RequestActor): void {

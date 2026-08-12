@@ -188,7 +188,7 @@ export default function EmployeeDetailPage() {
     }
   }
 
-  const changeAccountRole = async (nextRole: 'employee' | 'manager' | 'director') => {
+  const changeAccountRole = async (nextRole: 'employee' | 'manager' | 'director' | 'admin') => {
     if (!employee || employee.role === 'admin' || nextRole === employee.role || changingRole) return
     setChangingRole(true)
     setMessage('')
@@ -229,7 +229,7 @@ export default function EmployeeDetailPage() {
           >
             <div className="flex items-center gap-4"><div className="grid h-16 w-16 shrink-0 place-items-center overflow-hidden rounded-3xl bg-gradient-to-br from-fuchsia-500 to-violet-600 text-white shadow-lg shadow-fuchsia-900/20">{employee.photoURL ? <Image src={profileImageUrl(employee.photoURL)} alt={`Ảnh đại diện của ${employee.fullName}`} width={64} height={64} className="h-full w-full object-cover" /> : <UserRound className="h-7 w-7" />}</div><div className="min-w-0"><h1 className="truncate text-xl font-black">{employee.fullName}</h1><p className="text-sm font-semibold text-slate-700">{employee.employeeCode} · {employee.status === 'active' ? 'Đang làm việc' : employee.status === 'pending' ? 'Chờ duyệt' : 'Đã vô hiệu hóa'}</p><p className="mt-1 truncate text-xs text-slate-600">{employee.email}</p><span className="mt-2 inline-flex rounded-full bg-violet-100 px-2.5 py-1 text-[10px] font-black text-violet-700">{employee.scheduleMode === 'fixed' ? 'Lịch cố định' : 'Lịch xoay ca'}</span></div></div>
             <div className="mt-5 grid grid-cols-2 gap-2"><a href={`tel:${employee.phone}`} className="flex min-h-11 items-center justify-center gap-2 rounded-2xl bg-white/80 text-sm font-bold shadow-sm ring-1 ring-pink-200"><Phone className="h-4 w-4" /> Gọi điện</a><a href={employee.facebookUrl || 'https://facebook.com/'} target="_blank" rel="noreferrer" className="flex min-h-11 items-center justify-center gap-2 rounded-2xl bg-blue-600 text-sm font-bold text-white shadow-sm"><ExternalLink className="h-4 w-4" /> Mở Facebook</a></div>
-            {role === 'admin' && employee.role === 'employee' && (
+            {['admin', 'director'].includes(role || '') && employee.role === 'employee' && (
               <button
                 type="button"
                 disabled={changingStatus}
@@ -240,7 +240,7 @@ export default function EmployeeDetailPage() {
                 {employee.status === 'active' ? 'Vô hiệu hóa tài khoản' : employee.status === 'pending' ? 'Chấp nhận tài khoản' : 'Bật lại tài khoản'}
               </button>
             )}
-            {role === 'admin' && employee.role !== 'admin' && (
+            {['admin', 'director'].includes(role || '') && employee.role !== 'admin' && (
               <div className="mt-3 rounded-3xl border border-violet-200/80 bg-white/75 p-4 shadow-sm">
                 <div className="flex items-start gap-3">
                   <div className="grid h-10 w-10 shrink-0 place-items-center rounded-2xl bg-violet-100 text-violet-700"><Crown className="h-5 w-5" /></div>
@@ -249,11 +249,12 @@ export default function EmployeeDetailPage() {
                 <select
                   value={employee.role}
                   disabled={changingRole}
-                  onChange={(event) => void changeAccountRole(event.target.value as 'employee' | 'manager' | 'director')}
+                  onChange={(event) => void changeAccountRole(event.target.value as 'employee' | 'manager' | 'director' | 'admin')}
                   className="mt-3 min-h-11 w-full rounded-2xl border border-violet-200 bg-white px-3 text-sm font-extrabold text-slate-900 outline-none ring-violet-500 transition focus:ring-2"
                 >
                   <option value="employee">Nhân viên</option>
                   <option value="manager">Quản lý</option>
+                  <option value="admin">Admin xưởng</option>
                   <option value="director">Sếp / Giám đốc</option>
                 </select>
                 {changingRole && <p className="mt-2 flex items-center gap-2 text-xs font-bold text-violet-700"><Loader2 className="h-3.5 w-3.5 animate-spin" /> Đang cập nhật quyền...</p>}

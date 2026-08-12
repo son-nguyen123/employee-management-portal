@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { FieldValue, Timestamp } from 'firebase-admin/firestore'
 import { adminAuth, adminDb } from '@/lib/server/firebase-admin'
+import { isFactoryId } from '@/lib/models/factory'
 
 export const runtime = 'nodejs'
 
@@ -26,7 +27,8 @@ export async function POST(request: Request) {
     const photoURL = clean(body.photoURL, 500)
     const facebookUrl = clean(body.facebookUrl, 500)
     const scheduleMode = body.scheduleMode === 'fixed' ? 'fixed' : 'rotating'
-    if (codeKey.length < 3 || !fullName || !phone || !/^https?:\/\//i.test(photoURL) || !/^https?:\/\//i.test(facebookUrl)) {
+    const factoryId = isFactoryId(body.factoryId) ? body.factoryId : null
+    if (!factoryId || codeKey.length < 3 || !fullName || !phone || !/^https?:\/\//i.test(photoURL) || !/^https?:\/\//i.test(facebookUrl)) {
       return NextResponse.json({ error: 'Thông tin hồ sơ không hợp lệ.' }, { status: 400 })
     }
     const legacyEmployees = await adminDb.collection('employees').get()
@@ -39,7 +41,7 @@ export async function POST(request: Request) {
     const employeeRef = adminDb.collection('employees').doc(token.uid)
     const codeRef = adminDb.collection('employeeCodes').doc(codeKey)
     const managerIds = (await adminDb.collection('employees').where('status', '==', 'active').get()).docs
-      .filter((item) => item.get('role') === 'admin')
+      .filter((item) => item.get('role') === 'admin' && String(item.get('factoryId') || 'factory-1') === factoryId)
       .map((item) => item.id)
     await adminDb.runTransaction(async (transaction) => {
       const [existing, reservation] = await Promise.all([transaction.get(employeeRef), transaction.get(codeRef)])
@@ -54,6 +56,7 @@ export async function POST(request: Request) {
         email: token.email || '',
         photoURL,
         facebookUrl,
+        factoryId,
         scheduleMode,
         ...(clean(body.bankName, 100) && clean(body.bankAccountName, 150) && clean(body.bankAccountNumber, 24) ? {
           bankName: clean(body.bankName, 100),

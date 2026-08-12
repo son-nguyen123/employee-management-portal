@@ -4,11 +4,12 @@ import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import Image from 'next/image'
 import { useRouter } from 'next/navigation'
-import { AlertCircle, Loader2, Lock, Mail } from 'lucide-react'
+import { AlertCircle, Building2, Check, Loader2, Lock, Mail, X } from 'lucide-react'
 import { assertAccountRegistrationOpen, signInWithGoogle, signUp } from '@/lib/services/authService'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui/card'
 import { AuthShell } from '@/components/auth/auth-shell'
 import { useAuth } from '@/lib/hooks/useAuth'
+import { FACTORY_IDS, FACTORY_LABELS, REGISTRATION_FACTORY_STORAGE_KEY, type FactoryId } from '@/lib/models/factory'
 
 export function SignupForm() {
   const router = useRouter()
@@ -17,10 +18,12 @@ export function SignupForm() {
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
   const [loadingAction, setLoadingAction] = useState<'password' | 'google' | null>(null)
+  const [factoryPrompt, setFactoryPrompt] = useState<'password' | 'google' | null>(null)
+  const [selectedFactory, setSelectedFactory] = useState<FactoryId>('factory-1')
   const loading = loadingAction !== null
 
   useEffect(() => {
-    if (authUser) router.replace('/profile/setup')
+    if (authUser && window.sessionStorage.getItem(REGISTRATION_FACTORY_STORAGE_KEY)) router.replace('/profile/setup')
   }, [authUser, router])
 
   const handleSubmit = async (event: React.FormEvent) => {
@@ -28,11 +31,9 @@ export function SignupForm() {
     setError('')
     if (!email.includes('@')) return setError('Email không hợp lệ')
     if (password.length < 6) return setError('Mật khẩu phải có ít nhất 6 ký tự')
-    setLoadingAction('password')
     try {
       await assertAccountRegistrationOpen()
-      await signUp(email, password)
-      router.push('/profile/setup')
+      setFactoryPrompt('password')
     } catch (err: any) {
       setError(
         err?.code === 'account-registration-closed'
@@ -47,8 +48,6 @@ export function SignupForm() {
                 ? 'Mạng không ổn định. Vui lòng kiểm tra kết nối rồi thử lại.'
                 : 'Không thể tạo tài khoản. Vui lòng thử lại.'
       )
-    } finally {
-      setLoadingAction(null)
     }
   }
 
@@ -63,7 +62,7 @@ export function SignupForm() {
     try {
       await assertAccountRegistrationOpen()
       await signInWithGoogle()
-      router.push('/profile/setup')
+      setFactoryPrompt('google')
     } catch (err: any) {
       setError(
         err?.code === 'account-registration-closed'
@@ -82,6 +81,26 @@ export function SignupForm() {
                     ? 'Mạng không ổn định. Vui lòng kiểm tra kết nối rồi thử lại.'
                     : 'Không thể đăng ký bằng Google.'
       )
+    } finally {
+      setLoadingAction(null)
+    }
+  }
+
+  const confirmFactory = async () => {
+    if (!factoryPrompt) return
+    const method = factoryPrompt
+    setError('')
+    setLoadingAction(method)
+    try {
+      if (method === 'password') await signUp(email, password)
+      window.sessionStorage.setItem(REGISTRATION_FACTORY_STORAGE_KEY, selectedFactory)
+      setFactoryPrompt(null)
+      router.push('/profile/setup')
+    } catch (err: any) {
+      setError(err?.code === 'auth/email-already-in-use'
+        ? 'Email này đã được sử dụng.'
+        : 'Không thể hoàn tất đăng ký. Vui lòng thử lại.')
+      setFactoryPrompt(null)
     } finally {
       setLoadingAction(null)
     }
@@ -139,6 +158,44 @@ export function SignupForm() {
           </form>
         </CardContent>
       </Card>
+      {factoryPrompt && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/55 p-4 backdrop-blur-sm">
+          <section className="w-full max-w-sm rounded-[2rem] border border-white/70 bg-white p-5 shadow-2xl dark:border-white/10 dark:bg-slate-900">
+            <div className="flex items-start gap-3">
+              <div className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-gradient-to-br from-indigo-500 to-violet-600 text-white shadow-lg shadow-indigo-500/20">
+                <Building2 className="h-6 w-6" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <h2 className="text-xl font-black">Bạn làm ở xưởng nào?</h2>
+                <p className="mt-1 text-sm leading-5 text-muted-foreground">Yêu cầu sẽ được gửi đúng admin của xưởng bạn chọn.</p>
+              </div>
+              {factoryPrompt === 'password' && (
+                <button type="button" onClick={() => setFactoryPrompt(null)} className="grid h-10 w-10 place-items-center rounded-xl bg-slate-100 dark:bg-slate-800" aria-label="Đóng">
+                  <X className="h-4 w-4" />
+                </button>
+              )}
+            </div>
+            <div className="mt-5 grid grid-cols-2 gap-3">
+              {FACTORY_IDS.map((factoryId) => {
+                const active = selectedFactory === factoryId
+                return (
+                  <button key={factoryId} type="button" onClick={() => setSelectedFactory(factoryId)} className={`rounded-2xl border p-4 text-left transition ${active ? 'border-indigo-500 bg-indigo-50 text-indigo-700 ring-2 ring-indigo-500/15 dark:bg-indigo-500/10 dark:text-indigo-200' : 'border-slate-200 bg-white dark:border-slate-700 dark:bg-slate-950'}`}>
+                    <span className="flex items-center justify-between font-black">{FACTORY_LABELS[factoryId]} {active && <Check className="h-4 w-4" />}</span>
+                    <span className="mt-1 block text-xs text-muted-foreground">Nhận duyệt riêng</span>
+                  </button>
+                )
+              })}
+            </div>
+            <p className="mt-4 rounded-2xl bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-900 dark:bg-amber-500/10 dark:text-amber-100">
+              Xác nhận bạn đang làm tại {FACTORY_LABELS[selectedFactory]}.
+            </p>
+            <button type="button" onClick={confirmFactory} disabled={loading} className="mobile-primary-button mt-4">
+              {loading && <Loader2 className="h-4 w-4 animate-spin" />}
+              Chắc chắn, tiếp tục
+            </button>
+          </section>
+        </div>
+      )}
     </AuthShell>
   )
 }

@@ -5,6 +5,7 @@ import Link from 'next/link'
 import Image from 'next/image'
 import { ArrowLeft, CalendarCheck, Check, ChevronRight, ExternalLink, Loader2, MessageSquareText, Phone, RotateCcw, UsersRound, X } from 'lucide-react'
 import { useAuth, useUserRole } from '@/lib/hooks/useAuth'
+import { employeeFactoryId, FACTORY_LABELS } from '@/lib/models/factory'
 import { setEmployeeAccountStatus, subscribeToAllEmployees } from '@/lib/services/employeeService'
 import { ensureFixedSchedule, reviewWorkScheduleBatch, subscribeToAllSchedules } from '@/lib/services/scheduleService'
 import { getPreviewSchedules, updatePreviewSchedule } from '@/lib/services/previewWorkflow'
@@ -90,7 +91,7 @@ function batchHasPenalty(batch: ScheduleBatch) {
 }
 
 export default function AdminDashboardPage() {
-  const { authUser, isPreviewMode } = useAuth()
+  const { authUser, employee: currentEmployee, isPreviewMode } = useAuth()
   const role = useUserRole()
   const [employees, setEmployees] = useState<Employee[]>([])
   const [schedules, setSchedules] = useState<ScheduleRow[]>([])
@@ -170,16 +171,17 @@ export default function AdminDashboardPage() {
           }))
           if (employeesReady && schedulesReady) setLoading(false)
         }
+        const factoryScope = role === 'director' ? undefined : employeeFactoryId(currentEmployee)
         const unsubscribeEmployees = subscribeToAllEmployees((nextEmployees) => {
           employeeData = nextEmployees
           employeesReady = true
           publish()
-        })
+        }, undefined, factoryScope)
         const unsubscribeSchedules = subscribeToAllSchedules((nextSchedules) => {
           scheduleData = nextSchedules
           schedulesReady = true
           publish()
-        })
+        }, undefined, factoryScope)
         return () => {
           unsubscribeEmployees()
           unsubscribeSchedules()
@@ -195,7 +197,7 @@ export default function AdminDashboardPage() {
       cleanup = unsubscribe
     })
     return () => cleanup?.()
-  }, [authUser, isPreviewMode])
+  }, [authUser, currentEmployee, isPreviewMode, role])
 
   const activeEmployees = useMemo(() => employees.filter((item) => item.status === 'active'), [employees])
   const fixedForNextWeek = useMemo(() => activeEmployees.filter((employee) => {
@@ -343,7 +345,6 @@ export default function AdminDashboardPage() {
   const regularApprovedBatches = processedBatches.filter((batch) => batch.status === 'Approved' && !batchNeedsAttention(batch))
 
   const review = async (batch: ScheduleBatch, status: 'Approved' | 'Rejected', reviewNote = '', allowSundayResubmission = false, waiveNewEmployeePenalty = false) => {
-    if (status === 'Rejected' && !reviewNote.trim()) return false
     setProcessingId(batch.key)
     setProcessingAction(status === 'Approved' ? 'approve' : 'reject')
     setMessage('')
@@ -400,13 +401,13 @@ export default function AdminDashboardPage() {
         <PageContainer maxWidth="2xl">
           {message && <p className="mb-3 rounded-2xl bg-indigo-50 p-3 text-sm font-semibold text-indigo-900 dark:bg-indigo-500/10 dark:text-indigo-100">{message}</p>}
           {fixedForNextWeek.length > 0 && <section className="mb-5 rounded-3xl border border-violet-200 bg-violet-50 p-4 dark:border-violet-500/30 dark:bg-violet-500/10"><div className="flex items-center justify-between gap-3"><h2 className="font-black text-violet-900 dark:text-violet-100">Lịch cố định tuần sau</h2><span className="rounded-full bg-violet-600 px-2.5 py-1 text-xs font-black text-white">{fixedForNextWeek.length} người</span></div><p className="mt-2 text-sm leading-6 text-violet-800 dark:text-violet-200">{fixedForNextWeek.map((employee) => employee.fullName).join(' · ')}</p></section>}
-          {role === 'admin' && pendingEmployees.length > 0 && (
+          {['admin', 'director'].includes(role || '') && pendingEmployees.length > 0 && (
             <section className="mb-5 rounded-3xl border border-amber-200 bg-amber-50 p-4 dark:border-amber-500/30 dark:bg-amber-500/10">
               <h2 className="font-black text-amber-900 dark:text-amber-100">Tài khoản mới chờ duyệt ({pendingEmployees.length})</h2>
               <div className="mt-3 space-y-2">{pendingEmployees.map((employee) => (
                 <article key={employee.uid} className="rounded-2xl bg-white p-3 shadow-sm dark:bg-slate-900">
                   <p className="font-extrabold">{employee.fullName} · {employee.employeeCode}</p>
-                  <p className="mt-1 text-xs text-muted-foreground">{employee.phone} · {employee.email}</p>
+                  <p className="mt-1 text-xs text-muted-foreground">{FACTORY_LABELS[employeeFactoryId(employee)]} · {employee.phone} · {employee.email}</p>
                   <div className="mt-3 grid grid-cols-2 gap-2">
                     <button type="button" disabled={processingId === employee.uid} onClick={() => void changeAccountStatus(employee, 'inactive')} className="min-h-11 rounded-xl border border-rose-200 text-sm font-bold text-rose-600 disabled:opacity-50">Từ chối / khóa</button>
                     <button type="button" disabled={processingId === employee.uid} onClick={() => void changeAccountStatus(employee, 'active')} className="min-h-11 rounded-xl bg-emerald-600 text-sm font-bold text-white disabled:opacity-50">{processingId === employee.uid ? 'Đang xử lý...' : 'Chấp nhận'}</button>
@@ -598,8 +599,28 @@ export default function AdminDashboardPage() {
                   {processingId === selectedProcessedBatch.key ? <Loader2 className="h-4 w-4 animate-spin" /> : <RotateCcw className="h-4 w-4" />}
                   {selectedProcessedBatch.status === 'Approved' ? 'Hoàn tác và yêu cầu gửi lại' : 'Duyệt lại bảng lịch'}
                 </button>}
-                {selectedProcessedBatch.schedules.every((item) => item.autoApproved) && <p className={`rounded-2xl border p-4 text-sm font-semibold leading-6 ${batchHasPenalty(selectedProcessedBatch) ? 'border-rose-200 bg-rose-50 text-rose-900' : batchNeedsAttention(selectedProcessedBatch) ? 'border-amber-200 bg-amber-50 text-amber-900' : 'border-emerald-200 bg-emerald-50 text-emerald-900'}`}>{batchHasPenalty(selectedProcessedBatch) ? `Lịch vẫn được tự động xác nhận, nhưng ${batchPenaltyAmount(selectedProcessedBatch) ? `nhân viên bị trừ ${batchPenaltyAmount(selectedProcessedBatch).toLocaleString('vi-VN')}đ` : 'bản ghi có khoản phạt đăng ký trễ'} .` : batchNeedsAttention(selectedProcessedBatch) ? `Lịch vẫn được xác nhận, nhưng mới có ${actualShiftCount(selectedProcessedBatch)}/6 ca nên quản lý cần lưu ý.` : `Lịch có ${actualShiftCount(selectedProcessedBatch)} ca, đạt mức tối thiểu và không cần quản lý thao tác.`}</p>}
-                <p className="mt-3 text-center text-xs text-muted-foreground">Admin chỉ theo dõi; nhân viên tự cập nhật lịch của mình.</p>
+                {selectedProcessedBatch.schedules.every((item) => item.autoApproved) && (
+                  <>
+                    <p className={`rounded-2xl border p-3 text-sm font-semibold leading-5 ${batchHasPenalty(selectedProcessedBatch) ? 'border-rose-200 bg-rose-50 text-rose-900' : batchNeedsAttention(selectedProcessedBatch) ? 'border-amber-200 bg-amber-50 text-amber-900' : 'border-emerald-200 bg-emerald-50 text-emerald-900'}`}>
+                      {batchHasPenalty(selectedProcessedBatch) ? `Đã ghi nhận mức trừ ${batchPenaltyAmount(selectedProcessedBatch).toLocaleString('vi-VN')}đ.` : batchNeedsAttention(selectedProcessedBatch) ? `Lịch có ${actualShiftCount(selectedProcessedBatch)}/6 ca.` : `Lịch đủ ${actualShiftCount(selectedProcessedBatch)} ca.`}
+                    </p>
+                    {selectedProcessedBatch.status === 'Approved' && (
+                      <button
+                        type="button"
+                        disabled={!!processingId}
+                        onClick={async () => {
+                          const updated = await review(selectedProcessedBatch, 'Rejected')
+                          if (updated) setSelectedProcessedBatch(null)
+                        }}
+                        className="mt-3 flex min-h-12 w-full items-center justify-center gap-2 rounded-2xl bg-rose-600 font-extrabold text-white disabled:opacity-50"
+                      >
+                        {processingId === selectedProcessedBatch.key ? <Loader2 className="h-4 w-4 animate-spin" /> : <RotateCcw className="h-4 w-4" />}
+                        Từ chối · yêu cầu nhập lại
+                      </button>
+                    )}
+                  </>
+                )}
+                <p className="mt-3 text-center text-xs text-muted-foreground">Từ chối không cần nhập lý do.</p>
               </section>
             </article>
           </main>

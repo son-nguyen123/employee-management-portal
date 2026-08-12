@@ -301,7 +301,7 @@ export async function updateAuditReceiptSettings(actor: RequestActor, raw: unkno
 
 export async function manageEmployeeStatus(actor: RequestActor, raw: unknown) {
   requireManager(actor)
-  if (actor.role !== 'admin') throw new ApiError(403, 'Chỉ admin được duyệt hoặc khóa tài khoản.')
+  if (!['admin', 'director'].includes(actor.role)) throw new ApiError(403, 'Chỉ admin hoặc giám đốc được duyệt tài khoản.')
   const body = objectBody(raw)
   const employeeId = text(body.employeeId, 'Nhân viên', 128)
   const status = text(body.status, 'Trạng thái', 20) as 'active' | 'inactive'
@@ -315,6 +315,9 @@ export async function manageEmployeeStatus(actor: RequestActor, raw: unknown) {
       transaction.get(adminDb.collection('workSchedules').where('employeeId', '==', employeeId)),
     ])
     if (!employee.exists) throw new ApiError(404, 'Không tìm thấy nhân viên.')
+    if (actor.role !== 'director' && String(employee.get('factoryId') || 'factory-1') !== actor.factoryId) {
+      throw new ApiError(403, 'Bạn chỉ được xử lý nhân viên thuộc xưởng của mình.')
+    }
     if (employee.get('role') !== 'employee') throw new ApiError(409, 'Chỉ có thể đổi trạng thái tài khoản nhân viên.')
     const now = FieldValue.serverTimestamp()
     const todayKey = vietnamDateKey(new Date())
@@ -391,11 +394,11 @@ function hasCompleteBankAccount(data: Record<string, unknown> | undefined): bool
 
 export async function manageEmployeeRole(actor: RequestActor, raw: unknown) {
   requireManager(actor)
-  if (actor.role !== 'admin') throw new ApiError(403, 'Chỉ admin được phân quyền tài khoản.')
+  if (!['admin', 'director'].includes(actor.role)) throw new ApiError(403, 'Chỉ admin hoặc giám đốc được phân quyền tài khoản.')
   const body = objectBody(raw)
   const employeeId = text(body.employeeId, 'Nhân viên', 128)
-  const role = text(body.role, 'Vai trò', 20) as 'employee' | 'manager' | 'director'
-  if (!['employee', 'manager', 'director'].includes(role)) {
+  const role = text(body.role, 'Vai trò', 20) as 'employee' | 'manager' | 'director' | 'admin'
+  if (!['employee', 'manager', 'director', 'admin'].includes(role)) {
     throw new ApiError(400, 'Vai trò tài khoản không hợp lệ.')
   }
   if (employeeId === actor.uid) throw new ApiError(409, 'Không thể thay đổi vai trò của admin đang đăng nhập.')
@@ -404,6 +407,9 @@ export async function manageEmployeeRole(actor: RequestActor, raw: unknown) {
   await adminDb.runTransaction(async (transaction) => {
     const employee = await transaction.get(employeeRef)
     if (!employee.exists) throw new ApiError(404, 'Không tìm thấy nhân viên.')
+    if (actor.role !== 'director' && String(employee.get('factoryId') || 'factory-1') !== actor.factoryId) {
+      throw new ApiError(403, 'Bạn chỉ được phân quyền nhân viên thuộc xưởng mình.')
+    }
     if (employee.get('role') === 'admin') throw new ApiError(409, 'Không thể thay đổi vai trò admin bằng luồng này.')
     transaction.set(employeeRef, {
       role,
@@ -486,7 +492,7 @@ export async function respondPenaltyConsent(actor: RequestActor, raw: unknown) {
   const accepted = body.accepted
   const leaveRef = adminDb.collection('leaveRequests').doc(id)
   const penaltyRef = adminDb.collection('penalties').doc(`leave-decision-${id}`)
-  const managerIds = await activeManagerIds()
+  const managerIds = await activeManagerIds(actor.factoryId)
   let amount = 0
 
   await adminDb.runTransaction(async (transaction) => {
@@ -556,6 +562,7 @@ function workflowRef(actor: RequestActor, id: string) {
 
 function penaltyData(params: {
   employeeId: string
+  factoryId?: string
   title: string
   description: string
   category: 'Late' | 'Other'
@@ -615,10 +622,12 @@ async function sendPenaltyPush(params: {
   })
 }
 
-async function activeManagerIds(): Promise<string[]> {
+async function activeManagerIds(factoryId?: string): Promise<string[]> {
   const snapshot = await adminDb.collection('employees').get()
   return snapshot.docs
-    .filter((item) => ['admin', 'manager'].includes(String(item.get('role'))))
+    .filter((item) => ['admin', 'manager'].includes(String(item.get('role'))) && (
+      !factoryId || String(item.get('factoryId') || 'factory-1') === factoryId
+    ))
     .map((item) => item.id)
 }
 
@@ -812,12 +821,13 @@ export async function submitScheduleModeChangeRequest(actor: RequestActor, raw: 
   const targetStart = new Date(`${effectiveWeekStart}T00:00:00+07:00`)
   const requestRef = adminDb.collection('staffRequests').doc()
   const workflow = workflowRef(actor, requestKey)
-  const managerIds = await activeManagerIds()
+  const managerIds = await activeManagerIds(actor.factoryId)
   await adminDb.runTransaction(async (transaction) => {
     if ((await transaction.get(workflow)).exists) throw new ApiError(409, 'Yêu cầu này đã được gửi trước đó.')
     const now = FieldValue.serverTimestamp()
     transaction.create(requestRef, {
       employeeId: actor.uid,
+      factoryId: actor.factoryId,
       type: 'scheduleModeChange',
       content: reason,
       previousScheduleMode: currentMode,
@@ -866,6 +876,10 @@ export async function ensureFixedSchedule(actor: RequestActor, raw: unknown) {
   const employeeSnapshot = await employeeRef.get()
   if (!employeeSnapshot.exists) throw new ApiError(404, 'Chưa tìm thấy hồ sơ nhân viên.')
   const employeeData = employeeSnapshot.data() as Record<string, unknown>
+  const employeeFactoryId = String(employeeData.factoryId || 'factory-1')
+  if (employeeId !== actor.uid && employeeFactoryId !== actor.factoryId) {
+    throw new ApiError(403, 'Bạn chỉ được đồng bộ lịch của nhân viên thuộc xưởng mình.')
+  }
   if (employeeScheduleMode(employeeData) !== 'fixed') return { created: false, ids: [], needsSetup: false }
 
   const effectiveWeekStart = String(employeeData.scheduleModeEffectiveWeekStart || '')
@@ -906,7 +920,7 @@ export async function ensureFixedSchedule(actor: RequestActor, raw: unknown) {
   const sourceRows = sourceWeekStart ? grouped.get(sourceWeekStart) || [] : []
   if (!sourceWeekStart || !sourceRows.length) return { created: false, ids: [], needsSetup: false }
 
-  const managerIds = await activeManagerIds()
+  const managerIds = await activeManagerIds(employeeFactoryId)
   const requestRef = adminDb.collection('workflowRequests').doc(`fixed-schedule-${employeeId}-${targetWeekStart}`)
   const scheduleRefs = sourceRows.map(() => adminDb.collection('workSchedules').doc())
   const targetMonday = new Date(`${targetWeekStart}T12:00:00+07:00`)
@@ -924,6 +938,7 @@ export async function ensureFixedSchedule(actor: RequestActor, raw: unknown) {
       targetDate.setUTCDate(targetDate.getUTCDate() + offset)
       transaction.create(scheduleRefs[index], {
         employeeId,
+        factoryId: employeeFactoryId,
         date: Timestamp.fromDate(targetDate),
         shift: data.shift,
         status: 'Approved',
@@ -1032,7 +1047,7 @@ export async function submitSchedules(actor: RequestActor, raw: unknown) {
   })
   const batchKey = scheduleBatchKey(actor.uid, weekStart)
   const [managerIds, existingSchedules, employeeSnapshot] = await Promise.all([
-    activeManagerIds(),
+    activeManagerIds(actor.factoryId),
     adminDb.collection('workSchedules').where('employeeId', '==', actor.uid).get(),
     adminDb.collection('employees').doc(actor.uid).get(),
   ])
@@ -1081,6 +1096,7 @@ export async function submitSchedules(actor: RequestActor, raw: unknown) {
     schedules.forEach((schedule, index) => {
       transaction.create(scheduleRefs[index], {
         employeeId: actor.uid,
+        factoryId: actor.factoryId,
         date: Timestamp.fromDate(schedule.date),
         shift: schedule.shift,
         status: 'Approved',
@@ -1212,7 +1228,7 @@ export async function submitStaffRequest(actor: RequestActor, raw: unknown) {
   const type = text(body.type, 'Loại yêu cầu', 30) as 'overtime' | 'note' | 'scheduleChange'
   if (!['overtime', 'note', 'scheduleChange'].includes(type)) throw new ApiError(400, 'Loại yêu cầu không hợp lệ.')
   const content = text(body.content ?? '', 'Nội dung', 1000, type === 'overtime' || type === 'scheduleChange')
-  const managerIds = await activeManagerIds()
+  const managerIds = await activeManagerIds(actor.factoryId)
   const requestRef = adminDb.collection('staffRequests').doc()
   const workflow = workflowRef(actor, id)
   let weekStart: Date | null = null
@@ -1323,6 +1339,7 @@ export async function submitStaffRequest(actor: RequestActor, raw: unknown) {
     const now = FieldValue.serverTimestamp()
     transaction.create(requestRef, {
       employeeId: actor.uid,
+      factoryId: actor.factoryId,
       type,
       content,
       ...(weekStart ? { weekStart: Timestamp.fromDate(weekStart) } : {}),
@@ -1359,6 +1376,7 @@ export async function submitStaffRequest(actor: RequestActor, raw: unknown) {
       const penaltyRef = adminDb.collection('penalties').doc(`schedule-change-${actor.uid}-${id}`)
       transaction.create(penaltyRef, penaltyData({
         employeeId: actor.uid,
+        factoryId: actor.factoryId,
         title: 'Đổi lịch trong ngày',
         description: 'Yêu cầu có hủy ca đã đăng ký của chính hôm nay. Đổi từ ngày mai trở đi không phát sinh khoản phạt này.',
         category: 'Late',
@@ -1449,7 +1467,7 @@ export async function replaceSchedules(actor: RequestActor, raw: unknown) {
   const oldRefs = scheduleIds.map((scheduleId) => adminDb.collection('workSchedules').doc(scheduleId))
   const newRefs = schedules.map(() => adminDb.collection('workSchedules').doc())
   const workflow = workflowRef(actor, id)
-  const managerIds = await activeManagerIds()
+  const managerIds = await activeManagerIds(actor.factoryId)
   const requestTime = new Date()
   let resultingEditDeadline = requestTime
   let resultingPenaltyAmount = 0
@@ -1487,11 +1505,19 @@ export async function replaceSchedules(actor: RequestActor, raw: unknown) {
       .sort((left, right) => left.getTime() - right.getTime())[0] || requestTime
     const editDeadlineAt = scheduleEditDeadline((oldData[0].date as Timestamp).toDate(), firstSubmittedAt)
     resultingEditDeadline = editDeadlineAt
-    if (requestTime.getTime() >= editDeadlineAt.getTime()) {
+    const rejectedByManager = oldData.every((schedule) => schedule.status === 'Rejected')
+    if (!rejectedByManager && requestTime.getTime() >= editDeadlineAt.getTime()) {
       throw new ApiError(409, 'Bảng lịch đã hết hạn điều chỉnh và hiện đã được khóa.')
     }
-    const retainedPenaltyId = oldData.map((schedule) => schedule.penaltyId).find(Boolean) || null
-    const retainedPenaltyAmount = Math.max(0, ...oldData.map((schedule) => Number(schedule.penaltyAmount || 0)))
+    const previousPenaltyId = oldData.map((schedule) => schedule.penaltyId).find(Boolean) || null
+    const waiverDeadline = new Date(scheduleDeadline((oldData[0].date as Timestamp).toDate()).getTime() + 24 * 60 * 60 * 1000)
+    const hasSundayWaiver = oldData.some((schedule) => schedule.allowSundayResubmissionWithoutPenalty === true) && requestTime < waiverDeadline
+    const lateRejectedResubmission = rejectedByManager && requestTime >= scheduleDeadline((oldData[0].date as Timestamp).toDate()) && !hasSundayWaiver
+    const retainedPenaltyId = previousPenaltyId || (lateRejectedResubmission ? `schedule-resubmit-${actor.uid}-${id}` : null)
+    const retainedPenaltyAmount = Math.max(
+      lateRejectedResubmission ? workflowPolicy.scheduleLatePenalty : 0,
+      ...oldData.map((schedule) => Number(schedule.penaltyAmount || 0))
+    )
     resultingPenaltyAmount = retainedPenaltyAmount
     const retainedFixedSchedule = oldData.some((schedule) => schedule.fixedSchedule === true)
 
@@ -1500,9 +1526,27 @@ export async function replaceSchedules(actor: RequestActor, raw: unknown) {
     const batchKey = scheduleBatchKey(actor.uid, weekStart)
     const revisionCount = Math.max(0, ...oldData.map((schedule) => Number(schedule.revisionCount || 0))) + 1
     oldRefs.forEach((ref) => transaction.delete(ref))
+    if (lateRejectedResubmission && !previousPenaltyId && retainedPenaltyId && workflowPolicy.scheduleLatePenalty > 0) {
+      transaction.create(adminDb.collection('penalties').doc(retainedPenaltyId), {
+        ...penaltyData({
+          employeeId: actor.uid,
+          factoryId: actor.factoryId,
+          title: 'Đăng ký lại lịch trễ hạn',
+          description: `Gửi lại lịch sau 00:00 Thứ Hai. Khấu trừ ${workflowPolicy.scheduleLatePenalty.toLocaleString('vi-VN')}đ.`,
+          category: 'Late',
+          amount: workflowPolicy.scheduleLatePenalty,
+          sourceType: 'scheduleResubmission',
+          sourceId: id,
+        }),
+        status: 'Active',
+        confirmedBy: 'system:auto-schedule',
+        confirmedAt: now,
+      })
+    }
     schedules.forEach((schedule, index) => {
       transaction.create(newRefs[index], {
         employeeId: actor.uid,
+        factoryId: actor.factoryId,
         date: Timestamp.fromDate(schedule.date),
         shift: schedule.shift,
         status: 'Approved',
@@ -1521,6 +1565,7 @@ export async function replaceSchedules(actor: RequestActor, raw: unknown) {
         reviewedAt: now,
         penaltyId: retainedPenaltyId,
         penaltyAmount: retainedPenaltyAmount,
+        allowSundayResubmissionWithoutPenalty: false,
         firstSubmittedAt: Timestamp.fromDate(firstSubmittedAt),
         editDeadlineAt: Timestamp.fromDate(editDeadlineAt),
         createdAt: now,
@@ -1670,7 +1715,7 @@ export async function submitLeave(actor: RequestActor, raw: unknown) {
 
   const workflow = workflowRef(actor, id)
   const leaveRef = adminDb.collection('leaveRequests').doc()
-  const managerIds = await activeManagerIds()
+  const managerIds = await activeManagerIds(actor.factoryId)
   let isLate = false
   let penaltyIfApproved = 0
   let penaltyIfRejected = workflowPolicy.leaveOnTimeRejectedPenalty
@@ -1853,7 +1898,7 @@ export async function submitLate(actor: RequestActor, raw: unknown) {
   }
   const workflow = workflowRef(actor, id)
   const lateRef = adminDb.collection('lateRequests').doc()
-  const managerIds = await activeManagerIds()
+  const managerIds = await activeManagerIds(actor.factoryId)
   let computedPenalty = 0
 
   await adminDb.runTransaction(async (transaction) => {
@@ -1956,7 +2001,7 @@ export async function submitSalaryAdvance(actor: RequestActor, raw: unknown) {
   }
   const workflow = workflowRef(actor, id)
   const advanceRef = adminDb.collection('salaryAdvances').doc()
-  const managerIds = await activeManagerIds()
+  const managerIds = await activeManagerIds(actor.factoryId)
 
   await adminDb.runTransaction(async (transaction) => {
     if ((await transaction.get(workflow)).exists) throw new ApiError(409, 'Yêu cầu ứng lương này đã được gửi.')
@@ -2015,7 +2060,7 @@ export async function cancelRequest(actor: RequestActor, raw: unknown) {
   if (!collectionName) throw new ApiError(400, 'Loại yêu cầu không hợp lệ.')
   const id = text(body.id, 'Mã yêu cầu', 128)
   const targetRef = adminDb.collection(collectionName).doc(id)
-  const managerIds = await activeManagerIds()
+  const managerIds = await activeManagerIds(actor.factoryId)
 
   await adminDb.runTransaction(async (transaction) => {
     const target = await transaction.get(targetRef)
@@ -2114,7 +2159,7 @@ export async function cancelScheduleBatch(actor: RequestActor, raw: unknown) {
   }
   const ids = body.ids.map((value, index) => text(value, `Mã ca ${index + 1}`, 128))
   const refs = ids.map((id) => adminDb.collection('workSchedules').doc(id))
-  const managerIds = await activeManagerIds()
+  const managerIds = await activeManagerIds(actor.factoryId)
 
   await adminDb.runTransaction(async (transaction) => {
     const snapshots = await Promise.all(refs.map((ref) => transaction.get(ref)))
@@ -2206,7 +2251,7 @@ export async function reviseRequest(actor: RequestActor, raw: unknown) {
   if (!collectionName) throw new ApiError(400, 'Loại yêu cầu không hợp lệ.')
   const id = text(body.id, 'Mã yêu cầu', 128)
   const targetRef = adminDb.collection(collectionName).doc(id)
-  const managerIds = await activeManagerIds()
+  const managerIds = await activeManagerIds(actor.factoryId)
 
   await adminDb.runTransaction(async (transaction) => {
     const target = await transaction.get(targetRef)
@@ -2615,7 +2660,7 @@ export async function reviewRequest(actor: RequestActor, raw: unknown) {
     : null
   const notificationRef = adminDb.collection('notifications').doc(`${config.collection}-${id}-${status}`)
   const dispatchRef = adminDb.collection('pushDispatches').doc(`${config.collection}-${id}-${status}`)
-  const managerIds = await activeManagerIds()
+  const managerIds = await activeManagerIds(actor.factoryId)
   let employeeId = ''
   let reviewedLabel: string = config.label
   let reviewedLink: string = config.link
@@ -2645,6 +2690,9 @@ export async function reviewRequest(actor: RequestActor, raw: unknown) {
     employeeId = data.employeeId
     const employeeSnapshot = await transaction.get(adminDb.collection('employees').doc(employeeId))
     if (!employeeSnapshot.exists) throw new ApiError(404, 'Chưa tìm thấy hồ sơ nhân viên.')
+    if (actor.role !== 'director' && String(employeeSnapshot.get('factoryId') || 'factory-1') !== actor.factoryId) {
+      throw new ApiError(403, 'Bạn chỉ được xử lý yêu cầu của nhân viên thuộc xưởng mình.')
+    }
     const employeeName = String(employeeSnapshot.get('fullName') || 'Nhân viên')
     const employeeCode = String(employeeSnapshot.get('employeeCode') || employeeId.slice(0, 8))
     reviewedEmployee = `${employeeName} · ${employeeCode}`
@@ -2961,16 +3009,16 @@ export async function reviewScheduleBatch(actor: RequestActor, raw: unknown) {
   if (!['Approved', 'Rejected'].includes(status)) {
     throw new ApiError(400, 'Trạng thái xử lý không hợp lệ.')
   }
-  const note = text(body.note ?? '', 'Phản hồi', 1000, true)
-  if (status === 'Rejected' && !note) throw new ApiError(400, 'Vui lòng nhập lý do từ chối.')
-  const allowSundayResubmissionWithoutPenalty = status === 'Rejected' && body.allowSundayResubmissionWithoutPenalty === true
+  const submittedNote = text(body.note ?? '', 'Phản hồi', 1000, true)
+  const note = status === 'Rejected' && !submittedNote ? 'Quản lý yêu cầu đăng ký lại lịch.' : submittedNote
+  let allowSundayResubmissionWithoutPenalty = false
   const waiveNewEmployeePenalty = status === 'Approved' && body.waiveNewEmployeePenalty === true
 
   const refs = ids.map((id) => adminDb.collection('workSchedules').doc(id))
   let employeeId = ''
   const notificationRef = adminDb.collection('notifications').doc(`schedule-status-${ids[0]}`)
   const dispatchRef = adminDb.collection('pushDispatches').doc(`schedule-batch-${ids[0]}-${status}`)
-  const managerIds = await activeManagerIds()
+  const managerIds = await activeManagerIds(actor.factoryId)
   let reviewedEmployee = 'Nhân viên'
 
   await adminDb.runTransaction(async (transaction) => {
@@ -2981,11 +3029,22 @@ export async function reviewScheduleBatch(actor: RequestActor, raw: unknown) {
     const schedules = snapshots.map((snapshot) => snapshot.data()!)
     employeeId = schedules[0].employeeId
     const employeeSnapshot = await transaction.get(adminDb.collection('employees').doc(employeeId))
+    if (!employeeSnapshot.exists) throw new ApiError(404, 'Chưa tìm thấy hồ sơ nhân viên.')
+    if (actor.role !== 'director' && String(employeeSnapshot.get('factoryId') || 'factory-1') !== actor.factoryId) {
+      throw new ApiError(403, 'Bạn chỉ được xử lý lịch của nhân viên thuộc xưởng mình.')
+    }
     const employeeName = String(employeeSnapshot.get('fullName') || 'Nhân viên')
     const employeeCode = String(employeeSnapshot.get('employeeCode') || employeeId.slice(0, 8))
     reviewedEmployee = `${employeeName} · ${employeeCode}`
     const week = mondayFor((schedules[0].date as Timestamp).toDate()).toISOString()
     const batchKey = schedules[0].batchKey || scheduleBatchKey(employeeId, mondayFor((schedules[0].date as Timestamp).toDate()))
+    const firstSubmittedAt = schedules
+      .map((schedule) => firestoreDate(schedule.firstSubmittedAt) || firestoreDate(schedule.createdAt))
+      .filter((value): value is Date => Boolean(value))
+      .sort((left, right) => left.getTime() - right.getTime())[0]
+    allowSundayResubmissionWithoutPenalty = status === 'Rejected' &&
+      vietnamWeekdayNumber(new Date()) === 7 &&
+      Boolean(firstSubmittedAt && vietnamWeekdayNumber(firstSubmittedAt) === 6)
     if (schedules.some((schedule) =>
       schedule.employeeId !== employeeId ||
       mondayFor((schedule.date as Timestamp).toDate()).toISOString() !== week ||

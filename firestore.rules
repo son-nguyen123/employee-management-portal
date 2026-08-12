@@ -81,6 +81,19 @@ service cloud.firestore {
       return isManagerOrAdmin() || isDirector();
     }
 
+    function currentFactoryId() {
+      let value = get(/databases/$(database)/documents/employees/$(request.auth.uid)).data.factoryId;
+      return value in ['factory-1', 'factory-2'] ? value : 'factory-1';
+    }
+
+    function resourceFactoryId() {
+      return ('factoryId' in resource.data) ? resource.data.factoryId : 'factory-1';
+    }
+
+    function canReadFactoryResource() {
+      return isDirector() || (isManagerOrAdmin() && resourceFactoryId() == currentFactoryId());
+    }
+
     function ownsResource(fieldName) {
       return isAuthenticated() &&
         resource.data[fieldName] == request.auth.uid;
@@ -146,7 +159,7 @@ service cloud.firestore {
     // ===============================================================
     function validEmployee(data) {
       return data.keys().hasAll([
-          'uid', 'employeeCode', 'fullName', 'phone', 'email',
+          'uid', 'employeeCode', 'fullName', 'phone', 'email', 'factoryId',
           'role', 'status', 'joinDate', 'createdAt', 'updatedAt'
         ]) &&
         data.keys().hasOnly([
@@ -165,6 +178,7 @@ service cloud.firestore {
         validOptionalUrl(data, 'facebookUrl') &&
         validOptionalBankAccount(data) &&
         validEmail(data.email) &&
+        data.factoryId in ['factory-1', 'factory-2'] &&
         data.role in ['admin', 'manager', 'director', 'employee'] &&
         data.status in ['pending', 'active', 'inactive'] &&
         (!('scheduleMode' in data) || data.scheduleMode in ['rotating', 'fixed']) &&
@@ -241,7 +255,7 @@ service cloud.firestore {
     // Collection access rules
     // ===============================================================
     match /employees/{uid} {
-      allow read: if isOwner(uid) || isManagementReader();
+      allow read: if isOwner(uid) || isDirector() || (isManagerOrAdmin() && resourceFactoryId() == currentFactoryId());
 
       // Account creation and employee-code reservation are atomic server workflows.
       allow create: if false;
@@ -261,10 +275,10 @@ service cloud.firestore {
             request.resource.data.role == resource.data.role &&
             request.resource.data.status == resource.data.status
           ) ||
-          isAdmin()
+          (isAdmin() && resourceFactoryId() == currentFactoryId())
         );
 
-      allow delete: if isAdmin();
+      allow delete: if isAdmin() && resourceFactoryId() == currentFactoryId();
     }
 
     match /employeeCodes/{code} {
@@ -272,7 +286,7 @@ service cloud.firestore {
     }
 
     match /workSchedules/{scheduleId} {
-      allow read: if ownsResource('employeeId') || isManagementReader();
+      allow read: if ownsResource('employeeId') || canReadFactoryResource();
       // Firebase Admin SDK bypasses Rules only inside the trusted Next.js backend.
       allow create, update, delete: if false;
     }

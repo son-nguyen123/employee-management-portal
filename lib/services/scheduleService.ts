@@ -1,6 +1,7 @@
 import { collection, getDocs, onSnapshot, query, where, orderBy } from 'firebase/firestore'
 import { db } from '@/lib/firebase'
 import { Penalty, WorkSchedule } from '@/lib/models/types'
+import type { FactoryId } from '@/lib/models/factory'
 import { callWorkflowApi, newWorkflowRequestId } from '@/lib/services/workflowApi'
 
 const SCHEDULES_COLLECTION = 'workSchedules'
@@ -235,9 +236,12 @@ function attachSchedulePenalties(schedules: WorkSchedule[], penalties: Penalty[]
 
 export function subscribeToAllSchedules(
   callback: (schedules: WorkSchedule[]) => void,
-  onError?: (error: Error) => void
+  onError?: (error: Error) => void,
+  factoryId?: FactoryId
 ): () => void {
-  const schedulesQuery = query(collection(db, SCHEDULES_COLLECTION), orderBy('date', 'desc'))
+  const schedulesQuery = factoryId
+    ? query(collection(db, SCHEDULES_COLLECTION), where('factoryId', '==', factoryId), orderBy('date', 'desc'))
+    : query(collection(db, SCHEDULES_COLLECTION), orderBy('date', 'desc'))
   const penaltiesQuery = query(collection(db, 'penalties'), orderBy('penaltyDate', 'desc'))
   let scheduleRows: WorkSchedule[] = []
   let penaltyRows: Penalty[] = []
