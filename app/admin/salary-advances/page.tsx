@@ -173,32 +173,27 @@ function DirectorSalaryAdvancesPanel({ isPreviewMode }: { isPreviewMode: boolean
     <main className="min-h-screen bg-[#f3f7fb] pb-28 dark:bg-slate-950 md:pb-32">
       <Header title="Danh sách ứng lương" subtitle="Danh sách đã duyệt · sẵn sàng chuyển khoản" />
       <PageContainer maxWidth="2xl">
-        <div className="mb-5 rounded-[2rem] bg-gradient-to-br from-slate-950 via-indigo-950 to-violet-900 p-5 text-white shadow-xl shadow-indigo-950/15 sm:p-6">
-          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-            <div>
-              <p className="text-xs font-black uppercase tracking-[0.18em] text-violet-200">Không gian của sếp</p>
-              <h2 className="mt-1 text-2xl font-black tracking-tight">Chuyển khoản thật gọn.</h2>
-              <p className="mt-1 text-sm font-medium text-indigo-100">Chỉ hiển thị những yêu cầu đã được admin duyệt.</p>
+        <section className="mb-6 overflow-hidden rounded-[2rem] bg-gradient-to-br from-sky-600 via-blue-600 to-indigo-700 p-5 text-white shadow-xl shadow-blue-900/20 sm:p-6">
+          <div className="flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex min-w-0 items-center gap-4">
+              <div className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-white/15">
+                <CircleDollarSign className="h-6 w-6" />
+              </div>
+              <div className="min-w-0">
+                <p className="text-xs font-black uppercase tracking-[0.16em] text-blue-100">Đã duyệt · sẵn sàng chuyển khoản</p>
+                <div className="mt-1 flex flex-wrap items-baseline gap-x-3 gap-y-0.5">
+                  <p className="text-3xl font-black tracking-tight">{items.length} yêu cầu</p>
+                  <p className="text-lg font-extrabold text-blue-100">{formatAmount(total)}</p>
+                </div>
+                <p className="mt-1 text-xs font-semibold text-blue-100">Chỉ hiển thị danh sách admin đã duyệt</p>
+              </div>
             </div>
-            <button type="button" onClick={() => void exportExcel()} disabled={exporting} className="flex min-h-12 items-center justify-center gap-2 rounded-2xl bg-white px-4 text-sm font-black text-slate-950 shadow-lg transition hover:bg-violet-50 active:scale-[0.98] disabled:opacity-60">
+            <button type="button" onClick={() => void exportExcel()} disabled={exporting} className="flex min-h-11 shrink-0 items-center justify-center gap-2 rounded-2xl bg-white px-4 text-sm font-black text-blue-700 shadow-lg transition hover:bg-blue-50 active:scale-[0.98] disabled:opacity-60">
               {exporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
-              {exporting ? 'Đang tạo Excel...' : 'Xuất Excel đã duyệt'}
+              {exporting ? 'Đang tạo Excel...' : 'Xuất Excel'}
             </button>
           </div>
-        </div>
-
-        <div className="mb-6 grid gap-3 sm:grid-cols-2">
-          <div className="rounded-[1.75rem] bg-gradient-to-br from-sky-500 to-indigo-600 p-5 text-white shadow-lg shadow-sky-900/15">
-            <p className="text-sm font-bold text-sky-100">Đã duyệt</p>
-            <p className="mt-2 text-4xl font-black tracking-tight">{items.length}</p>
-            <p className="mt-1 text-xs font-bold uppercase tracking-wider text-sky-100">yêu cầu sẵn sàng xử lý</p>
-          </div>
-          <div className="rounded-[1.75rem] border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
-            <p className="text-sm font-bold text-slate-500 dark:text-slate-400">Tổng tiền đã duyệt</p>
-            <p className="mt-2 text-4xl font-black tracking-tight text-slate-950 dark:text-white">{formatAmount(total)}</p>
-            <p className="mt-1 text-xs font-bold uppercase tracking-wider text-slate-400">theo danh sách hiện tại</p>
-          </div>
-        </div>
+        </section>
 
         {message && <p className="mb-4 rounded-2xl border border-amber-200 bg-amber-50 p-3 text-sm font-bold text-amber-800">{message}</p>}
         {!ready ? <div className="grid min-h-56 place-items-center"><Loader2 className="h-7 w-7 animate-spin text-indigo-600" /></div> : !items.length ? (

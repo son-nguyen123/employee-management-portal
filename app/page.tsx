@@ -253,6 +253,7 @@ export default function Page() {
   const displayName = employee?.fullName || authUser.displayName || 'Nhân viên'
   const avatarURL = profileImageUrl(employee?.photoURL || authUser.photoURL)
   const isAdmin = role === 'admin' || role === 'manager' || role === 'director'
+  const isDirector = role === 'director'
   const adminFeatures = [
     { title: 'Điều hành', note: `${Math.max(0, adminStats.actionable - adminStats.otherPending)} lịch · ${adminStats.otherPending} yêu cầu khác`, href: '/admin/dashboard#schedules', icon: ShieldCheck },
     { title: 'Nhân sự tuần này', note: 'Xem người làm và người trực trong tuần đang chạy', href: '/admin/next-week', icon: CalendarRange },
@@ -313,32 +314,51 @@ export default function Page() {
             </div>
           </div>
 
-          <div className="mt-6 rounded-3xl bg-gradient-to-br from-violet-600 via-fuchsia-600 to-rose-500 p-5 text-white shadow-xl shadow-fuchsia-950/20 md:mt-0 md:p-5 md:shadow-lg md:shadow-fuchsia-950/15 lg:p-6">
-            <div className="flex items-start justify-between gap-4">
-              <div>
-                <p className="text-xs font-semibold text-indigo-100">{isAdmin ? 'Tiến độ gửi lịch tuần này' : 'Lịch làm việc tuần này'}</p>
-                <p className="mt-1 text-2xl font-extrabold md:text-xl lg:text-2xl">
-                  {isAdmin ? `${adminStats.confirmed}/${adminStats.total} nhân viên` : '4 ca đã đăng ký'}
-                </p>
-                <p className="mt-1 text-sm text-indigo-100">
-                  {isAdmin ? 'nhân viên đã xác nhận bảng lịch' : 'Tự động xác nhận · có thể sửa lại'}
-                </p>
+          {isDirector ? (
+            <div className="mt-6 rounded-3xl bg-gradient-to-br from-blue-600 via-indigo-600 to-violet-600 p-5 text-white shadow-xl shadow-indigo-950/20 md:mt-0 md:p-5 md:shadow-lg md:shadow-indigo-950/15 lg:p-6">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <p className="text-xs font-semibold text-blue-100">Trung tâm điều hành</p>
+                  <p className="mt-1 text-2xl font-extrabold md:text-xl lg:text-2xl">Sẵn sàng quản lý</p>
+                  <p className="mt-1 text-sm text-blue-100">{adminStats.actionable} mục đang chờ xử lý</p>
+                </div>
+                <div className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-white/15">
+                  <ShieldCheck className="h-6 w-6" />
+                </div>
               </div>
-              <div className="rounded-2xl bg-white/15 px-3 py-2 text-center">
-                <span className="block text-xl font-black">{isAdmin ? String(adminStats.pending).padStart(2, '0') : '02'}</span>
-                <span className="text-[10px] font-semibold uppercase tracking-wider">{isAdmin ? 'Cần lưu ý' : 'Thông báo'}</span>
-              </div>
+              <Link href="/admin/dashboard" className="mt-5 flex min-h-11 items-center justify-between rounded-2xl bg-white px-4 text-sm font-bold text-indigo-700">
+                Mở trung tâm điều hành
+                <ChevronRight className="h-4 w-4" />
+              </Link>
             </div>
-            <Link href={isAdmin ? '/admin/dashboard#schedules' : '/schedule'} className="mt-5 flex min-h-11 items-center justify-between rounded-2xl bg-white px-4 text-sm font-bold text-indigo-700">
-              {isAdmin ? 'Mở bảng đăng ký lịch' : 'Xem lịch của tôi'}
-              <ChevronRight className="h-4 w-4" />
-            </Link>
-          </div>
+          ) : (
+            <div className="mt-6 rounded-3xl bg-gradient-to-br from-violet-600 via-fuchsia-600 to-rose-500 p-5 text-white shadow-xl shadow-fuchsia-950/20 md:mt-0 md:p-5 md:shadow-lg md:shadow-fuchsia-950/15 lg:p-6">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <p className="text-xs font-semibold text-indigo-100">{isAdmin ? 'Tiến độ gửi lịch tuần này' : 'Lịch làm việc tuần này'}</p>
+                  <p className="mt-1 text-2xl font-extrabold md:text-xl lg:text-2xl">
+                    {isAdmin ? `${adminStats.confirmed}/${adminStats.total} nhân viên` : '4 ca đã đăng ký'}
+                  </p>
+                  <p className="mt-1 text-sm text-indigo-100">
+                    {isAdmin ? 'nhân viên đã xác nhận bảng lịch' : 'Tự động xác nhận · có thể sửa lại'}
+                  </p>
+                </div>
+                <div className="rounded-2xl bg-white/15 px-3 py-2 text-center">
+                  <span className="block text-xl font-black">{isAdmin ? String(adminStats.pending).padStart(2, '0') : '02'}</span>
+                  <span className="text-[10px] font-semibold uppercase tracking-wider">{isAdmin ? 'Cần lưu ý' : 'Thông báo'}</span>
+                </div>
+              </div>
+              <Link href={isAdmin ? '/admin/dashboard#schedules' : '/schedule'} className="mt-5 flex min-h-11 items-center justify-between rounded-2xl bg-white px-4 text-sm font-bold text-indigo-700">
+                {isAdmin ? 'Mở bảng đăng ký lịch' : 'Xem lịch của tôi'}
+                <ChevronRight className="h-4 w-4" />
+              </Link>
+            </div>
+          )}
         </div>
       </section>
 
       <div className="mx-auto max-w-2xl px-3 py-5 sm:px-6 md:max-w-4xl md:py-7 lg:w-[calc(100%-2.5rem)] lg:max-w-6xl lg:px-0 lg:pb-12 lg:pt-7">
-        {schedulePrompt.visible && featureSettings?.schedule && (
+        {!isDirector && schedulePrompt.visible && featureSettings?.schedule && (
           <Link
             href={schedulePrompt.href}
             className="mb-5 flex items-center gap-3 rounded-3xl border border-indigo-200 bg-indigo-50 p-4 text-indigo-950 shadow-sm transition active:scale-[0.99] dark:border-indigo-500/30 dark:bg-indigo-500/10 dark:text-indigo-100"
@@ -382,7 +402,7 @@ export default function Page() {
           </section>
         )}
 
-        {isAdmin ? (
+        {isAdmin && !isDirector ? (
           <section>
             <button
               type="button"
@@ -423,7 +443,7 @@ export default function Page() {
               </div>
             </div>
           </section>
-        ) : (
+        ) : !isAdmin ? (
           <section>
             <div className="mb-4 flex items-center gap-3">
               <span className="h-2.5 w-2.5 shrink-0 rounded-full bg-gradient-to-br from-fuchsia-500 to-indigo-600 shadow-sm shadow-fuchsia-500/40" />
@@ -446,7 +466,7 @@ export default function Page() {
               </div>
             )}
           </section>
-        )}
+        ) : null}
       </div>
 
     </main>
