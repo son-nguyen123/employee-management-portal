@@ -117,7 +117,7 @@ export default function AdminSettingsPage() {
     }
   }
 
-  if ((!role || !['admin', 'manager'].includes(role)) && !isPreviewMode) return null
+  if ((!role || !['admin', 'manager', 'director'].includes(role)) && !isPreviewMode) return null
 
   return (
     <main className="min-h-screen pb-8">

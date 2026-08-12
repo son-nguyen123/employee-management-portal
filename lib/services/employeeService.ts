@@ -198,6 +198,10 @@ export async function setEmployeeAccountStatus(employeeId: string, status: 'acti
   return callWorkflowApi('manageEmployeeStatus', { employeeId, status })
 }
 
+export async function setEmployeeRole(employeeId: string, role: 'employee' | 'manager' | 'director'): Promise<{ employeeId: string; role: 'employee' | 'manager' | 'director' }> {
+  return callWorkflowApi('manageEmployeeRole', { employeeId, role })
+}
+
 export async function setInitialEmployeeScheduleMode(mode: EmployeeScheduleMode): Promise<{ mode: EmployeeScheduleMode }> {
   return callWorkflowApi('setInitialScheduleMode', { mode })
 }

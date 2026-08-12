@@ -235,8 +235,10 @@ export default function ProfilePage() {
             <p className="mt-1 text-sm text-slate-600">
               {employee?.role === 'admin'
                 ? 'Quản lý'
-                : employee?.role === 'manager'
-                  ? 'Quản lý ca'
+                : employee?.role === 'director'
+                  ? 'Sếp / Giám đốc'
+                  : employee?.role === 'manager'
+                    ? 'Quản lý ca'
                   : 'Nhân viên'}
             </p>
           </div>

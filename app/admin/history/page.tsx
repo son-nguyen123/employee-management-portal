@@ -162,7 +162,7 @@ export default function DecisionHistoryPage() {
     }
   }
 
-  if ((!role || !['admin', 'manager'].includes(role)) && !isPreviewMode) {
+  if ((!role || !['admin', 'manager', 'director'].includes(role)) && !isPreviewMode) {
     return <main className="min-h-screen"><Header title="Lịch sử xử lý" /><PageContainer><div className="mobile-card p-8 text-center font-bold">Tài khoản không có quyền xem lịch sử quản lý.</div></PageContainer></main>
   }
 

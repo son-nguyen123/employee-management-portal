@@ -73,6 +73,14 @@ service cloud.firestore {
         currentRole() in ['manager', 'admin'];
     }
 
+    function isDirector() {
+      return hasEmployeeProfile() && currentRole() == 'director';
+    }
+
+    function isManagementReader() {
+      return isManagerOrAdmin() || isDirector();
+    }
+
     function ownsResource(fieldName) {
       return isAuthenticated() &&
         resource.data[fieldName] == request.auth.uid;
@@ -147,7 +155,7 @@ service cloud.firestore {
           'role', 'status', 'joinDate', 'createdAt', 'updatedAt',
           'scheduleMode', 'scheduleModeEffectiveWeekStart', 'fixedScheduleNeedsSetupWeekStart', 'fixedScheduleTemplateWeekStart',
           'scheduleModeInitialSelectionDeadlineAt', 'scheduleModeInitialSelectionCompletedAt', 'scheduleModeChangeCooldownUntil',
-          'statusChangedBy', 'statusChangedAt'
+          'statusChangedBy', 'statusChangedAt', 'roleChangedBy', 'roleChangedAt'
         ]) &&
         validString(data.uid, 1, 128) &&
         validString(data.employeeCode, 3, 30) &&
@@ -157,7 +165,7 @@ service cloud.firestore {
         validOptionalUrl(data, 'facebookUrl') &&
         validOptionalBankAccount(data) &&
         validEmail(data.email) &&
-        data.role in ['admin', 'manager', 'employee'] &&
+        data.role in ['admin', 'manager', 'director', 'employee'] &&
         data.status in ['pending', 'active', 'inactive'] &&
         (!('scheduleMode' in data) || data.scheduleMode in ['rotating', 'fixed']) &&
         (!('scheduleModeEffectiveWeekStart' in data) || validString(data.scheduleModeEffectiveWeekStart, 10, 10)) &&
@@ -168,6 +176,8 @@ service cloud.firestore {
         (!('scheduleModeChangeCooldownUntil' in data) || data.scheduleModeChangeCooldownUntil is timestamp) &&
         (!('statusChangedBy' in data) || validString(data.statusChangedBy, 1, 128)) &&
         (!('statusChangedAt' in data) || data.statusChangedAt is timestamp) &&
+        (!('roleChangedBy' in data) || validString(data.roleChangedBy, 1, 128)) &&
+        (!('roleChangedAt' in data) || data.roleChangedAt is timestamp) &&
         data.joinDate is timestamp &&
         data.createdAt is timestamp &&
         data.updatedAt is timestamp;
@@ -231,7 +241,7 @@ service cloud.firestore {
     // Collection access rules
     // ===============================================================
     match /employees/{uid} {
-      allow read: if isOwner(uid) || isManagerOrAdmin();
+      allow read: if isOwner(uid) || isManagementReader();
 
       // Account creation and employee-code reservation are atomic server workflows.
       allow create: if false;
@@ -262,33 +272,34 @@ service cloud.firestore {
     }
 
     match /workSchedules/{scheduleId} {
-      allow read: if ownsResource('employeeId') || isManagerOrAdmin();
+      allow read: if ownsResource('employeeId') || isManagementReader();
       // Firebase Admin SDK bypasses Rules only inside the trusted Next.js backend.
       allow create, update, delete: if false;
     }
 
     match /leaveRequests/{leaveId} {
-      allow read: if ownsResource('employeeId') || isManagerOrAdmin();
+      allow read: if ownsResource('employeeId') || isManagementReader();
       allow create, update, delete: if false;
     }
 
     match /lateRequests/{lateId} {
-      allow read: if ownsResource('employeeId') || isManagerOrAdmin();
+      allow read: if ownsResource('employeeId') || isManagementReader();
       allow create, update, delete: if false;
     }
 
     match /salaryAdvances/{advanceId} {
+      // Director salary data is served through the approved-only backend endpoint.
       allow read: if ownsResource('employeeId') || isManagerOrAdmin();
       allow create, update, delete: if false;
     }
 
     match /staffRequests/{requestId} {
-      allow read: if ownsResource('employeeId') || isManagerOrAdmin();
+      allow read: if ownsResource('employeeId') || isManagementReader();
       allow create, update, delete: if false;
     }
 
     match /penalties/{penaltyId} {
-      allow read: if ownsResource('employeeId') || isManagerOrAdmin();
+      allow read: if ownsResource('employeeId') || isManagementReader();
       allow create, update, delete: if false;
     }
 
@@ -328,7 +339,7 @@ service cloud.firestore {
     }
 
     match /auditEvents/{eventId} {
-      allow read: if ownsResource('subjectEmployeeId') || isManagerOrAdmin();
+      allow read: if ownsResource('subjectEmployeeId') || isManagementReader();
       allow create, update, delete: if false;
     }
 

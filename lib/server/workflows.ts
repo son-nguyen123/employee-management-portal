@@ -381,6 +381,33 @@ export async function manageEmployeeStatus(actor: RequestActor, raw: unknown) {
   return { employeeId, status, releasedSchedules, deletedProfileImages, profileCleanupPending }
 }
 
+export async function manageEmployeeRole(actor: RequestActor, raw: unknown) {
+  requireManager(actor)
+  if (actor.role !== 'admin') throw new ApiError(403, 'Chỉ admin được phân quyền tài khoản.')
+  const body = objectBody(raw)
+  const employeeId = text(body.employeeId, 'Nhân viên', 128)
+  const role = text(body.role, 'Vai trò', 20) as 'employee' | 'manager' | 'director'
+  if (!['employee', 'manager', 'director'].includes(role)) {
+    throw new ApiError(400, 'Vai trò tài khoản không hợp lệ.')
+  }
+  if (employeeId === actor.uid) throw new ApiError(409, 'Không thể thay đổi vai trò của admin đang đăng nhập.')
+
+  const employeeRef = adminDb.collection('employees').doc(employeeId)
+  await adminDb.runTransaction(async (transaction) => {
+    const employee = await transaction.get(employeeRef)
+    if (!employee.exists) throw new ApiError(404, 'Không tìm thấy nhân viên.')
+    if (employee.get('role') === 'admin') throw new ApiError(409, 'Không thể thay đổi vai trò admin bằng luồng này.')
+    transaction.set(employeeRef, {
+      role,
+      updatedAt: FieldValue.serverTimestamp(),
+      roleChangedBy: actor.uid,
+      roleChangedAt: FieldValue.serverTimestamp(),
+    }, { merge: true })
+  })
+
+  return { employeeId, role }
+}
+
 export async function getAccountRegistrationWindow(actor: RequestActor) {
   requireManager(actor)
   const snapshot = await adminDb.collection('managementSettings').doc('accountRegistration').get()

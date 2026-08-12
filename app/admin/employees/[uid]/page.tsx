@@ -3,9 +3,9 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useParams } from 'next/navigation'
 import Image from 'next/image'
-import { CalendarDays, CalendarPlus, CircleDollarSign, Clock3, ExternalLink, FileText, Loader2, MessageSquareText, Phone, Power, ShieldCheck, ShieldX, UserRound } from 'lucide-react'
+import { CalendarDays, CalendarPlus, CircleDollarSign, Clock3, ExternalLink, FileText, Loader2, MessageSquareText, Phone, Power, ShieldCheck, ShieldX, UserRound, Crown } from 'lucide-react'
 import { useAuth, useUserRole } from '@/lib/hooks/useAuth'
-import { getEmployeeByUID, setEmployeeAccountStatus } from '@/lib/services/employeeService'
+import { getEmployeeByUID, setEmployeeAccountStatus, setEmployeeRole } from '@/lib/services/employeeService'
 import { getEmployeeSchedules } from '@/lib/services/scheduleService'
 import { getEmployeeLeaves } from '@/lib/services/leaveService'
 import { getEmployeeLateRequests } from '@/lib/services/lateService'
@@ -123,6 +123,7 @@ export default function EmployeeDetailPage() {
   const [message, setMessage] = useState('')
   const [changingStatus, setChangingStatus] = useState(false)
   const [confirmingStatus, setConfirmingStatus] = useState<'active' | 'inactive' | null>(null)
+  const [changingRole, setChangingRole] = useState(false)
 
   useEffect(() => {
     if (!authUser) return
@@ -186,6 +187,21 @@ export default function EmployeeDetailPage() {
       setChangingStatus(false)
     }
   }
+
+  const changeAccountRole = async (nextRole: 'employee' | 'manager' | 'director') => {
+    if (!employee || employee.role === 'admin' || nextRole === employee.role || changingRole) return
+    setChangingRole(true)
+    setMessage('')
+    try {
+      await setEmployeeRole(employee.uid, nextRole)
+      setEmployee((current) => current ? { ...current, role: nextRole } : current)
+      setMessage(`Đã cập nhật vai trò ${employee.fullName}.`)
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'Chưa thể cập nhật vai trò tài khoản.')
+    } finally {
+      setChangingRole(false)
+    }
+  }
   const activityMeta = {
     schedule: { icon: CalendarDays, color: 'bg-indigo-50 text-indigo-600 dark:bg-indigo-500/10' },
     leave: { icon: FileText, color: 'bg-emerald-50 text-emerald-600 dark:bg-emerald-500/10' },
@@ -223,6 +239,25 @@ export default function EmployeeDetailPage() {
                 {changingStatus ? <Loader2 className="h-4 w-4 animate-spin" /> : employee.status === 'active' ? <ShieldX className="h-4 w-4" /> : <Power className="h-4 w-4" />}
                 {employee.status === 'active' ? 'Vô hiệu hóa tài khoản' : employee.status === 'pending' ? 'Chấp nhận tài khoản' : 'Bật lại tài khoản'}
               </button>
+            )}
+            {role === 'admin' && employee.role !== 'admin' && (
+              <div className="mt-3 rounded-3xl border border-violet-200/80 bg-white/75 p-4 shadow-sm">
+                <div className="flex items-start gap-3">
+                  <div className="grid h-10 w-10 shrink-0 place-items-center rounded-2xl bg-violet-100 text-violet-700"><Crown className="h-5 w-5" /></div>
+                  <div className="min-w-0 flex-1"><p className="text-sm font-black">Vai trò truy cập</p><p className="mt-1 text-xs leading-5 text-slate-600">Sếp/giám đốc xem danh sách ứng lương đã duyệt, không có nút duyệt hoặc từ chối.</p></div>
+                </div>
+                <select
+                  value={employee.role}
+                  disabled={changingRole}
+                  onChange={(event) => void changeAccountRole(event.target.value as 'employee' | 'manager' | 'director')}
+                  className="mt-3 min-h-11 w-full rounded-2xl border border-violet-200 bg-white px-3 text-sm font-extrabold text-slate-900 outline-none ring-violet-500 transition focus:ring-2"
+                >
+                  <option value="employee">Nhân viên</option>
+                  <option value="manager">Quản lý</option>
+                  <option value="director">Sếp / Giám đốc</option>
+                </select>
+                {changingRole && <p className="mt-2 flex items-center gap-2 text-xs font-bold text-violet-700"><Loader2 className="h-3.5 w-3.5 animate-spin" /> Đang cập nhật quyền...</p>}
+              </div>
             )}
           </section>
           {message && <p className="mt-4 rounded-2xl bg-amber-50 p-3 text-sm font-semibold text-amber-900">{message}</p>}

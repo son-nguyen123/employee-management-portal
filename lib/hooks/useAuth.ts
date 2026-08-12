@@ -165,7 +165,7 @@ export function useIsAuthenticated(): boolean {
 /**
  * Custom hook to get current employee role
  */
-export function useUserRole(): 'admin' | 'manager' | 'employee' | null {
+export function useUserRole(): 'admin' | 'manager' | 'director' | 'employee' | null {
   const { employee } = useAuth()
   return employee?.role || null
 }

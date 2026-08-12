@@ -242,10 +242,10 @@ export default function ProfileSetupPage() {
   const isInitialSelectionOpen = Boolean(initialDeadline && now < initialDeadline.getTime())
 
   return (
-    <main className="min-h-screen bg-gradient-to-b from-indigo-50 via-background to-background px-3 py-7 dark:from-indigo-950/30">
-      <section className="mx-auto max-w-md overflow-hidden rounded-[2rem] border border-white/80 bg-white shadow-xl shadow-indigo-950/10 dark:border-white/10 dark:bg-slate-900">
+    <main className="min-h-screen bg-[radial-gradient(circle_at_top_left,_rgba(217,70,239,.14),_transparent_34%),linear-gradient(180deg,_#f5f3ff_0%,_#f8fafc_48%,_#eef7ff_100%)] px-3 py-7 dark:bg-slate-950 dark:bg-none">
+      <section className="mx-auto max-w-md overflow-hidden rounded-[2.25rem] border border-white/90 bg-white/95 shadow-[0_28px_80px_-35px_rgba(76,29,149,.55)] backdrop-blur-xl dark:border-white/10 dark:bg-slate-900">
         <div
-          className="relative overflow-hidden bg-pink-50 p-6 text-center text-slate-950"
+          className="relative overflow-hidden bg-gradient-to-br from-white via-fuchsia-50 to-violet-100 p-6 text-center text-slate-950"
           style={{
             backgroundImage: "linear-gradient(115deg, rgba(255,255,255,.96), rgba(253,230,245,.82)), url('/tricandy-logo-hd.png')",
             backgroundPosition: 'center, right -55px center',
@@ -260,16 +260,16 @@ export default function ProfileSetupPage() {
           <p className="mt-1 text-sm leading-6 text-slate-600">Chỉ cần làm một lần để quản lý nhận diện đúng tài khoản của bạn.</p>
         </div>
 
-        <form onSubmit={submit} className="space-y-4 p-5">
+        <form onSubmit={submit} className="space-y-4 p-5 sm:p-6">
           {message && <p className="rounded-2xl border border-rose-200 bg-rose-50 p-3 text-sm font-semibold text-rose-700">{message}</p>}
-          <div className="rounded-3xl border border-indigo-100 bg-indigo-50/70 p-4 dark:border-indigo-500/20 dark:bg-indigo-500/10">
+          <div className="rounded-3xl border border-indigo-100/90 bg-gradient-to-br from-indigo-50 to-sky-50/70 p-4 shadow-sm dark:border-indigo-500/20 dark:from-indigo-500/10 dark:to-sky-500/5">
             <div className="flex items-center gap-3">
               <div className="grid h-12 w-12 shrink-0 place-items-center overflow-hidden rounded-2xl bg-white text-indigo-600 shadow-sm dark:bg-slate-900">
                 {form.photoURL ? <img src={profileImageUrl(form.photoURL)} alt="" className="h-full w-full object-cover" /> : <Camera className="h-5 w-5" />}
               </div>
               <div className="min-w-0 flex-1"><h2 className="font-extrabold">Ảnh đại diện</h2><p className="mt-1 text-xs leading-5 text-muted-foreground">JPG, PNG hoặc WebP · tối đa 5 MB. Ảnh lưu trên Google Drive, Firebase chỉ giữ đường dẫn.</p></div>
             </div>
-            <label className="mt-3 flex min-h-12 cursor-pointer items-center justify-center gap-2 rounded-2xl bg-indigo-600 px-4 text-sm font-bold text-white">
+            <label className="mt-3 flex min-h-12 cursor-pointer items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-violet-600 via-fuchsia-600 to-rose-500 px-4 text-sm font-black text-white shadow-lg shadow-fuchsia-600/20 transition hover:brightness-105 active:scale-[0.98]">
               {uploadingImage ? <Loader2 className="h-4 w-4 animate-spin" /> : <ImageUp className="h-4 w-4" />}
               {uploadingImage ? 'Đang tải lên...' : form.photoURL ? 'Đổi ảnh' : 'Chọn ảnh'}
               <input
@@ -285,34 +285,34 @@ export default function ProfileSetupPage() {
             </label>
           </div>
           {fields.map(({ key, label, placeholder, icon: Icon }) => (
-            <label key={key} className="block text-sm font-bold">
+            <label key={key} className="block text-sm font-black text-slate-950 dark:text-slate-100">
               {label}
               <div className="relative mt-2">
                 <Icon className="absolute left-4 top-3.5 h-5 w-5 text-muted-foreground" />
-                <input value={form[key]} onChange={(event) => setValue(key, event.target.value)} className="mobile-field !pl-12" placeholder={placeholder} disabled={saving || signingOut || (key === 'employeeCode' && Boolean(employee))} required />
+                <input value={form[key]} onChange={(event) => setValue(key, event.target.value)} className="mobile-field !rounded-2xl !border-slate-200 !bg-slate-50/60 !pl-12 !font-semibold focus:!border-fuchsia-400 focus:!ring-fuchsia-200" placeholder={placeholder} disabled={saving || signingOut || (key === 'employeeCode' && Boolean(employee))} required />
               </div>
             </label>
           ))}
-          <div className="rounded-3xl border border-indigo-100 bg-gradient-to-b from-indigo-50/80 to-white p-4 dark:border-indigo-500/20 dark:from-indigo-500/10 dark:to-slate-900">
+          <div className="rounded-3xl border border-violet-100 bg-gradient-to-br from-violet-50 via-white to-sky-50/80 p-4 shadow-sm dark:border-violet-500/20 dark:from-violet-500/10 dark:via-slate-900 dark:to-sky-500/5">
             <div className="mb-4 flex items-center gap-2">
               <Landmark className="h-5 w-5 text-indigo-600" />
               <div className="min-w-0 flex-1"><div className="flex flex-wrap items-center gap-2"><h2 className="font-extrabold">Tài khoản nhận lương</h2><span className="rounded-full bg-white px-2 py-1 text-[10px] font-bold text-indigo-600 shadow-sm dark:bg-slate-900">Không bắt buộc</span></div><p className="mt-1 text-xs text-muted-foreground">Chỉ cần nhập khi bạn muốn nhận lương hoặc ứng lương qua ngân hàng.</p></div>
             </div>
-            <label className="block text-sm font-bold">
+            <label className="block text-sm font-black text-slate-950 dark:text-slate-100">
               Ngân hàng
-              <select value={form.bankName} onChange={(event) => setValue('bankName', event.target.value)} className="mobile-field mt-2" disabled={saving || signingOut}>
+              <select value={form.bankName} onChange={(event) => setValue('bankName', event.target.value)} className="mobile-field mt-2 !rounded-2xl !border-violet-100 !bg-white !font-semibold focus:!border-violet-400 focus:!ring-violet-200" disabled={saving || signingOut}>
                 <option value="">Chọn ngân hàng</option>
                 {bankOptions.map((bank) => <option key={bank} value={bank}>{bank}</option>)}
               </select>
             </label>
-            <label className="mt-4 block text-sm font-bold">
+            <label className="mt-4 block text-sm font-black text-slate-950 dark:text-slate-100">
               Tên chủ tài khoản
               <div className="relative mt-2">
                 <UserRound className="absolute left-4 top-3.5 h-5 w-5 text-muted-foreground" />
                 <input value={form.bankAccountName} onChange={(event) => setValue('bankAccountName', event.target.value)} className="mobile-field !pl-12 uppercase" placeholder="NGUYỄN VĂN AN" disabled={saving || signingOut} />
               </div>
             </label>
-            <label className="mt-4 block text-sm font-bold">
+            <label className="mt-4 block text-sm font-black text-slate-950 dark:text-slate-100">
               Số tài khoản
               <div className="relative mt-2">
                 <CreditCard className="absolute left-4 top-3.5 h-5 w-5 text-muted-foreground" />
@@ -320,7 +320,7 @@ export default function ProfileSetupPage() {
               </div>
             </label>
           </div>
-          <section className="rounded-3xl border border-violet-100 bg-violet-50/70 p-4 dark:border-violet-500/20 dark:bg-violet-500/10">
+          <section className="rounded-3xl border border-fuchsia-100 bg-gradient-to-br from-fuchsia-50 to-violet-50/80 p-4 shadow-sm dark:border-fuchsia-500/20 dark:from-fuchsia-500/10 dark:to-violet-500/10">
             <div className="flex items-start gap-3">
               <div className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-violet-600 text-white"><CalendarDays className="h-5 w-5" /></div>
               <div className="min-w-0 flex-1"><h2 className="font-extrabold">Cách xếp lịch làm</h2><p className="mt-1 text-xs leading-5 text-muted-foreground">Lịch cố định được tự động xác nhận và lặp lại theo tuần. Xoay ca sẽ đăng ký lại từng tuần.</p></div>
@@ -335,7 +335,7 @@ export default function ProfileSetupPage() {
             {employee && !isInitialSelectionOpen && <p className="mt-3 rounded-2xl bg-amber-50 px-3 py-2 text-xs font-bold leading-5 text-amber-800 dark:bg-amber-500/10 dark:text-amber-200">Chế độ đã khóa. Vào mục Cá nhân để gửi yêu cầu quản lý; thay đổi chỉ áp dụng từ tuần kế tiếp.</p>}
             {employee && isInitialSelectionOpen && initialDeadline && <p className="mt-3 rounded-2xl bg-white/75 px-3 py-2 text-xs font-bold leading-5 text-violet-800 dark:bg-slate-900/60 dark:text-violet-200">Bạn có thể chọn chế độ ban đầu đến {initialDeadline.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })} ngày {initialDeadline.toLocaleDateString('vi-VN')}.</p>}
           </section>
-          <button type="submit" disabled={saving} className="mobile-primary-button mt-2">
+          <button type="submit" disabled={saving} className="mobile-primary-button mt-2 !bg-gradient-to-r !from-violet-600 !via-fuchsia-600 !to-rose-500 shadow-xl shadow-fuchsia-600/20">
             {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
             {saving ? 'Đang lưu...' : 'Lưu và tiếp tục'}
           </button>

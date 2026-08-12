@@ -344,7 +344,7 @@ export default function NextWeekStaffPage() {
     }
   }
 
-  if ((!role || !['admin', 'manager'].includes(role)) && !isPreviewMode) {
+  if ((!role || !['admin', 'manager', 'director'].includes(role)) && !isPreviewMode) {
     return (
       <main className="min-h-screen">
         <Header title="Nhân sự tuần tới" />

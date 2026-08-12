@@ -314,7 +314,7 @@ export default function NotificationsPage() {
   const router = useRouter()
   const { authUser, isPreviewMode } = useAuth()
   const role = useUserRole()
-  const isManagement = role === 'admin' || role === 'manager'
+  const isManagement = role === 'admin' || role === 'manager' || role === 'director'
   const [items, setItems] = useState<Notification[]>([])
   const [pendingItems, setPendingItems] = useState<ManagementPendingItem[]>([])
   const [loading, setLoading] = useState(true)
@@ -422,6 +422,12 @@ export default function NotificationsPage() {
           createdAt: new Date(),
         }])
       }
+      setLoading(false)
+      return
+    }
+
+    if (role === 'director') {
+      setPendingItems([])
       setLoading(false)
       return
     }

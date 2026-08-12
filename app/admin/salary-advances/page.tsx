@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useMemo, useState } from 'react'
-import { Check, ChevronDown, CircleDollarSign, Download, Loader2, MessageCircle, Phone, RotateCcw, X } from 'lucide-react'
+import { Check, ChevronDown, CircleDollarSign, Copy, Download, Landmark, Loader2, MessageCircle, Phone, RotateCcw, X } from 'lucide-react'
 import { Header } from '@/components/layout/header'
 import { PageContainer } from '@/components/layout/page-container'
 import { RequestIdentityAvatar } from '@/components/admin/request-identity-avatar'
@@ -14,6 +14,20 @@ import { mockSalaryAdvances } from '@/lib/services/mockData'
 import { auth } from '@/lib/firebase'
 
 type SalaryFilter = 'all' | 'Pending' | 'Approved' | 'Rejected' | 'Cancelled'
+
+type DirectorSalaryAdvance = {
+  id: string
+  employeeId: string
+  employeeName: string
+  employeeCode: string
+  photoURL?: string
+  amount: number
+  reason: string
+  bankName: string
+  bankAccountName: string
+  bankAccountNumber: string
+  approvedAt: string | null
+}
 
 function formatAmount(value: number) {
   return `${Number(value || 0).toLocaleString('vi-VN')}đ`
@@ -44,6 +58,195 @@ function avatarColor(status: SalaryAdvance['status']) {
   if (status === 'Rejected') return 'bg-rose-500'
   if (status === 'Cancelled') return 'bg-slate-500'
   return 'bg-sky-500'
+}
+
+function directorDate(value: string | null) {
+  if (!value) return 'Chưa cập nhật'
+  const date = new Date(value)
+  return Number.isNaN(date.getTime()) ? 'Chưa cập nhật' : date.toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' })
+}
+
+function DirectorSalaryAdvancesPanel({ isPreviewMode }: { isPreviewMode: boolean }) {
+  const { authUser } = useAuth()
+  const [items, setItems] = useState<DirectorSalaryAdvance[]>([])
+  const [ready, setReady] = useState(false)
+  const [message, setMessage] = useState('')
+  const [exporting, setExporting] = useState(false)
+  const [copiedId, setCopiedId] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!authUser) return
+    if (isPreviewMode) {
+      const demoEmployee = DEMO_EMPLOYEE as Employee
+      setItems((mockSalaryAdvances as SalaryAdvance[])
+        .filter((item) => item.status === 'Approved')
+        .map((item) => ({
+          id: item.id || 'demo-approved-advance',
+          employeeId: demoEmployee.uid,
+          employeeName: demoEmployee.fullName,
+          employeeCode: demoEmployee.employeeCode,
+          photoURL: demoEmployee.photoURL,
+          amount: Number(item.amount || 0),
+          reason: item.reason || '',
+          bankName: demoEmployee.bankName || '',
+          bankAccountName: demoEmployee.bankAccountName || '',
+          bankAccountNumber: demoEmployee.bankAccountNumber || '',
+          approvedAt: null,
+        })))
+      setReady(true)
+      return
+    }
+
+    let active = true
+    setReady(false)
+    void (async () => {
+      try {
+        const token = await auth.currentUser?.getIdToken()
+        if (!token) throw new Error('Bạn cần đăng nhập lại.')
+        const response = await fetch('/api/director/salary-advances', {
+          headers: { authorization: `Bearer ${token}` },
+          cache: 'no-store',
+        })
+        const data = await response.json().catch(() => null) as { items?: DirectorSalaryAdvance[]; error?: string } | null
+        if (!response.ok) throw new Error(data?.error || 'Chưa thể tải danh sách ứng lương đã duyệt.')
+        if (active) setItems(data?.items || [])
+      } catch (error) {
+        if (active) setMessage(error instanceof Error ? error.message : 'Chưa thể tải danh sách ứng lương đã duyệt.')
+      } finally {
+        if (active) setReady(true)
+      }
+    })()
+    return () => { active = false }
+  }, [authUser, isPreviewMode])
+
+  const copyAccountNumber = async (item: DirectorSalaryAdvance) => {
+    if (!item.bankAccountNumber) return
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(item.bankAccountNumber)
+      } else {
+        const input = document.createElement('textarea')
+        input.value = item.bankAccountNumber
+        input.style.position = 'fixed'
+        input.style.opacity = '0'
+        document.body.appendChild(input)
+        input.select()
+        document.execCommand('copy')
+        input.remove()
+      }
+      setCopiedId(item.id)
+      window.setTimeout(() => setCopiedId((current) => current === item.id ? null : current), 1800)
+    } catch {
+      setMessage('Chưa thể copy số tài khoản. Hãy thử lại.')
+    }
+  }
+
+  const exportExcel = async () => {
+    if (isPreviewMode) {
+      setMessage('Chế độ xem thử không tạo file Excel.')
+      return
+    }
+    setExporting(true)
+    setMessage('')
+    try {
+      const token = await auth.currentUser?.getIdToken()
+      if (!token) throw new Error('Bạn cần đăng nhập lại.')
+      const response = await fetch('/api/exports/salary-advances', { headers: { authorization: `Bearer ${token}` } })
+      if (!response.ok) throw new Error('Chưa thể xuất file Excel ứng lương.')
+      const blob = await response.blob()
+      const url = URL.createObjectURL(blob)
+      const anchor = document.createElement('a')
+      anchor.href = url
+      anchor.download = `danh-sach-ung-luong-da-duyet-${new Date().toISOString().slice(0, 10)}.xlsx`
+      anchor.click()
+      URL.revokeObjectURL(url)
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'Chưa thể xuất file Excel.')
+    } finally {
+      setExporting(false)
+    }
+  }
+
+  const total = items.reduce((sum, item) => sum + item.amount, 0)
+
+  return (
+    <main className="min-h-screen bg-[#f3f7fb] pb-28 dark:bg-slate-950 md:pb-32">
+      <Header title="Danh sách ứng lương" subtitle="Danh sách đã duyệt · sẵn sàng chuyển khoản" />
+      <PageContainer maxWidth="2xl">
+        <div className="mb-5 rounded-[2rem] bg-gradient-to-br from-slate-950 via-indigo-950 to-violet-900 p-5 text-white shadow-xl shadow-indigo-950/15 sm:p-6">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <p className="text-xs font-black uppercase tracking-[0.18em] text-violet-200">Không gian của sếp</p>
+              <h2 className="mt-1 text-2xl font-black tracking-tight">Chuyển khoản thật gọn.</h2>
+              <p className="mt-1 text-sm font-medium text-indigo-100">Chỉ hiển thị những yêu cầu đã được admin duyệt.</p>
+            </div>
+            <button type="button" onClick={() => void exportExcel()} disabled={exporting} className="flex min-h-12 items-center justify-center gap-2 rounded-2xl bg-white px-4 text-sm font-black text-slate-950 shadow-lg transition hover:bg-violet-50 active:scale-[0.98] disabled:opacity-60">
+              {exporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
+              {exporting ? 'Đang tạo Excel...' : 'Xuất Excel đã duyệt'}
+            </button>
+          </div>
+        </div>
+
+        <div className="mb-6 grid gap-3 sm:grid-cols-2">
+          <div className="rounded-[1.75rem] bg-gradient-to-br from-sky-500 to-indigo-600 p-5 text-white shadow-lg shadow-sky-900/15">
+            <p className="text-sm font-bold text-sky-100">Đã duyệt</p>
+            <p className="mt-2 text-4xl font-black tracking-tight">{items.length}</p>
+            <p className="mt-1 text-xs font-bold uppercase tracking-wider text-sky-100">yêu cầu sẵn sàng xử lý</p>
+          </div>
+          <div className="rounded-[1.75rem] border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+            <p className="text-sm font-bold text-slate-500 dark:text-slate-400">Tổng tiền đã duyệt</p>
+            <p className="mt-2 text-4xl font-black tracking-tight text-slate-950 dark:text-white">{formatAmount(total)}</p>
+            <p className="mt-1 text-xs font-bold uppercase tracking-wider text-slate-400">theo danh sách hiện tại</p>
+          </div>
+        </div>
+
+        {message && <p className="mb-4 rounded-2xl border border-amber-200 bg-amber-50 p-3 text-sm font-bold text-amber-800">{message}</p>}
+        {!ready ? <div className="grid min-h-56 place-items-center"><Loader2 className="h-7 w-7 animate-spin text-indigo-600" /></div> : !items.length ? (
+          <div className="rounded-[2rem] border border-dashed border-slate-300 bg-white p-10 text-center shadow-sm dark:border-slate-700 dark:bg-slate-900">
+            <div className="mx-auto grid h-14 w-14 place-items-center rounded-2xl bg-indigo-50 text-indigo-600 dark:bg-indigo-500/10"><CircleDollarSign className="h-7 w-7" /></div>
+            <h2 className="mt-4 text-xl font-black text-slate-950 dark:text-white">Chưa có khoản ứng lương đã duyệt</h2>
+            <p className="mt-2 text-sm text-slate-500">Danh sách sẽ tự cập nhật sau khi admin duyệt yêu cầu.</p>
+          </div>
+        ) : (
+          <section className="grid gap-4 md:grid-cols-2">
+            {items.map((item) => (
+              <article key={item.id} className="overflow-hidden rounded-[2rem] border border-slate-200/90 bg-white p-4 shadow-[0_18px_45px_-30px_rgba(30,64,175,.45)] transition hover:-translate-y-0.5 hover:shadow-xl dark:border-slate-800 dark:bg-slate-900 sm:p-5">
+                <div className="flex items-start gap-3">
+                  <RequestIdentityAvatar name={item.employeeName} photoURL={item.photoURL} icon={CircleDollarSign} iconColor="bg-sky-600" />
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-lg font-black tracking-tight text-slate-950 dark:text-white">{item.employeeName}</p>
+                    <p className="mt-0.5 text-sm font-bold text-slate-500 dark:text-slate-400">{item.employeeCode} · Đã duyệt {directorDate(item.approvedAt)}</p>
+                  </div>
+                  <span className="shrink-0 rounded-full bg-emerald-100 px-3 py-1.5 text-xs font-black text-emerald-700">Đã duyệt</span>
+                </div>
+                <div className="mt-5 border-t border-slate-100 pt-4 dark:border-white/10">
+                  <p className="text-3xl font-black tracking-tight text-sky-700 dark:text-sky-300">{formatAmount(item.amount)}</p>
+                  <p className="mt-1 line-clamp-2 text-sm font-medium text-slate-500 dark:text-slate-400">{item.reason || 'Không có ghi chú.'}</p>
+                </div>
+                <div className="mt-4 rounded-[1.5rem] bg-gradient-to-br from-slate-50 to-indigo-50/80 p-4 dark:from-slate-800 dark:to-indigo-950/40">
+                  <div className="flex items-start gap-3">
+                    <div className="grid h-10 w-10 shrink-0 place-items-center rounded-2xl bg-white text-indigo-600 shadow-sm dark:bg-slate-900"><Landmark className="h-5 w-5" /></div>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-xs font-black uppercase tracking-[0.13em] text-slate-500 dark:text-slate-400">Tài khoản nhận tiền</p>
+                      <p className="mt-2 truncate text-base font-black text-slate-950 dark:text-white">{item.bankName || 'Chưa cập nhật ngân hàng'}</p>
+                      <p className="mt-1 truncate text-xs font-bold text-slate-500 dark:text-slate-400">{item.bankAccountName || 'Chưa cập nhật tên chủ tài khoản'}</p>
+                      <div className="mt-2 flex flex-wrap items-center gap-3">
+                        <p className="text-lg font-black tracking-[0.08em] text-slate-800 dark:text-slate-100">{item.bankAccountNumber || 'Chưa có số tài khoản'}</p>
+                        <button type="button" onClick={() => void copyAccountNumber(item)} disabled={!item.bankAccountNumber} className="ml-auto flex min-h-10 shrink-0 items-center gap-2 rounded-xl border border-sky-300 bg-white px-3 text-sm font-black text-sky-700 transition hover:bg-sky-50 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-45 dark:border-sky-500/40 dark:bg-slate-900 dark:text-sky-300">
+                          {copiedId === item.id ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
+                          {copiedId === item.id ? 'Đã copy' : 'Copy'}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </article>
+            ))}
+          </section>
+        )}
+      </PageContainer>
+    </main>
+  )
 }
 
 export default function AdminSalaryAdvancesPage() {
@@ -96,6 +299,10 @@ export default function AdminSalaryAdvancesPage() {
       setReady({ employees: true, requests: true })
       return
     }
+    if (role === 'director') {
+      setReady({ employees: true, requests: true })
+      return
+    }
     const fail = () => setMessage('Chưa tải được danh sách ứng lương.')
     const unsubscribeEmployees = subscribeToAllEmployees((items) => {
       setEmployees(items)
@@ -109,7 +316,7 @@ export default function AdminSalaryAdvancesPage() {
       unsubscribeEmployees()
       unsubscribeRequests()
     }
-  }, [authUser, isPreviewMode])
+  }, [authUser, isPreviewMode, role])
 
   const filteredRequests = useMemo(
     () => requests.filter((request) => filter === 'all' || request.status === filter),
@@ -171,7 +378,8 @@ export default function AdminSalaryAdvancesPage() {
     setRejectReason('')
   }
 
-  if ((!role || !['admin', 'manager'].includes(role)) && !isPreviewMode) return null
+  if ((!role || !['admin', 'manager', 'director'].includes(role)) && !isPreviewMode) return null
+  if (role === 'director') return <DirectorSalaryAdvancesPanel isPreviewMode={isPreviewMode} />
 
   return (
     <main className="min-h-screen bg-slate-50/70 pb-28 dark:bg-slate-950 md:pb-32">

@@ -17,7 +17,7 @@ export function PersistentBottomNav() {
   const pathname = usePathname()
   const { authUser, employee, isLoading, isPreviewMode } = useAuth()
   const role = useUserRole()
-  const isManagement = role === 'admin' || role === 'manager'
+  const isManagement = role === 'admin' || role === 'manager' || role === 'director'
   const [pendingNotificationCount, setPendingNotificationCount] = useState(0)
   const hidden = hiddenPrefixes.some((prefix) => pathname.startsWith(prefix))
   const showNavigation = !isLoading && !!authUser && !hidden && !(employee?.role === 'employee' && employee.status !== 'active')
@@ -30,6 +30,11 @@ export function PersistentBottomNav() {
 
     if (isPreviewMode) {
       setPendingNotificationCount(isManagement ? 5 : 1)
+      return
+    }
+
+    if (role === 'director') {
+      setPendingNotificationCount(0)
       return
     }
 

@@ -3,7 +3,7 @@ import 'server-only'
 import type { DecodedIdToken } from 'firebase-admin/auth'
 import { adminAuth, adminDb } from '@/lib/server/firebase-admin'
 
-export type AppRole = 'admin' | 'manager' | 'employee'
+export type AppRole = 'admin' | 'manager' | 'director' | 'employee'
 
 export interface RequestActor {
   token: DecodedIdToken
@@ -39,11 +39,11 @@ export async function authenticateRequest(request: Request): Promise<RequestActo
   }
 
   const role = profile.get('role')
-  if (!['admin', 'manager', 'employee'].includes(role)) {
+  if (!['admin', 'manager', 'director', 'employee'].includes(role)) {
     throw new ApiError(403, 'Tài khoản không hoạt động hoặc chưa được phân quyền.')
   }
 
-  if (role === 'employee' && profile.get('status') !== 'active') {
+  if (['employee', 'director'].includes(role) && profile.get('status') !== 'active') {
     throw new ApiError(403, profile.get('status') === 'inactive'
       ? 'Tài khoản đã bị vô hiệu hóa. Vui lòng liên hệ quản lý.'
       : 'Hồ sơ đang chờ admin duyệt. Tiện ích sẽ mở sau khi được chấp nhận.')
@@ -53,13 +53,13 @@ export async function authenticateRequest(request: Request): Promise<RequestActo
 }
 
 export function requireStaff(actor: RequestActor): void {
-  if (!['employee', 'manager', 'admin'].includes(actor.role)) {
+  if (!['employee', 'manager', 'director', 'admin'].includes(actor.role)) {
     throw new ApiError(403, 'Bạn không có quyền gửi yêu cầu.')
   }
 }
 
 export function requireManager(actor: RequestActor): void {
-  if (!['manager', 'admin'].includes(actor.role)) {
+  if (!['manager', 'director', 'admin'].includes(actor.role)) {
     throw new ApiError(403, 'Chỉ quản lý hoặc admin được xử lý yêu cầu.')
   }
 }

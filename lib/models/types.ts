@@ -14,7 +14,7 @@ export interface Employee {
   bankAccountName?: string
   bankAccountNumber?: string
   email: string
-  role: 'admin' | 'manager' | 'employee'
+  role: 'admin' | 'manager' | 'director' | 'employee'
   status: 'pending' | 'active' | 'inactive'
   joinDate: Timestamp | Date
   createdAt: Timestamp | Date

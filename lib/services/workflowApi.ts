@@ -28,6 +28,7 @@ type WorkflowAction =
   | 'getAuditReceiptSettings'
   | 'updateAuditReceiptSettings'
   | 'manageEmployeeStatus'
+  | 'manageEmployeeRole'
   | 'setInitialScheduleMode'
   | 'submitScheduleModeChangeRequest'
   | 'ensureFixedSchedule'

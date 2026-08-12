@@ -206,7 +206,7 @@ export default function AdminDashboardPage() {
     return (!effective || effective <= targetWeek) && (!needsSetup || targetWeek < needsSetup)
   }), [activeEmployees])
   useEffect(() => {
-    if (isPreviewMode || !authUser || !['admin', 'manager'].includes(role || '') || !fixedForNextWeek.length) return
+    if (isPreviewMode || !authUser || !['admin', 'manager', 'director'].includes(role || '') || !fixedForNextWeek.length) return
     const targetWeek = nextMondayKey()
     fixedForNextWeek.forEach((employee) => {
       const syncKey = `${employee.uid}-${targetWeek}`
@@ -380,7 +380,7 @@ export default function AdminDashboardPage() {
     return referenceNow - joined.getTime() <= 45 * 24 * 60 * 60 * 1000 && !hasPreviousSchedule
   }
 
-  if ((!role || !['admin', 'manager'].includes(role)) && !isPreviewMode) {
+  if ((!role || !['admin', 'manager', 'director'].includes(role)) && !isPreviewMode) {
     return (
       <main className="min-h-screen">
         <Header title="Điều hành" />

@@ -17,7 +17,7 @@ function toDate(value: unknown): Date | null {
 export async function GET(request: Request) {
   try {
     const actor = await authenticateRequest(request)
-    if (!['admin', 'manager'].includes(actor.role)) {
+    if (!['admin', 'manager', 'director'].includes(actor.role)) {
       return NextResponse.json({ error: 'Bạn không có quyền xuất lịch sử ứng lương.' }, { status: 403 })
     }
 

@@ -19,6 +19,7 @@ import {
   getAuditReceiptSettings,
   updateAuditReceiptSettings,
   manageEmployeeStatus,
+  manageEmployeeRole,
   setInitialScheduleMode,
   submitScheduleModeChangeRequest,
   ensureFixedSchedule,
