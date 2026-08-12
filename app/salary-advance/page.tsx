@@ -2,9 +2,10 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
-import { AlertCircle, ChevronDown, CircleDollarSign, DollarSign, Loader2, Pencil, RotateCcw, Trash2 } from 'lucide-react'
+import { AlertCircle, Building2, CheckCircle2, ChevronDown, CircleDollarSign, CreditCard, DollarSign, Landmark, Loader2, Pencil, RotateCcw, Trash2, UserRound, X } from 'lucide-react'
 import { useAuth } from '@/lib/hooks/useAuth'
 import { cancelSalaryAdvance, createSalaryAdvance, reviseSalaryAdvance, subscribeToEmployeeSalaryAdvances } from '@/lib/services/salaryService'
+import { updateEmployee } from '@/lib/services/employeeService'
 import { mockSalaryAdvances } from '@/lib/services/mockData'
 import { Header } from '@/components/layout/header'
 import { PageContainer } from '@/components/layout/page-container'
@@ -51,6 +52,28 @@ function avatarColor(status: SalaryAdvance['status']) {
   return 'bg-sky-500'
 }
 
+type BankForm = {
+  bankName: string
+  bankAccountName: string
+  bankAccountNumber: string
+}
+
+const BANK_OPTIONS = [
+  'Vietcombank', 'VietinBank', 'BIDV', 'Agribank', 'Techcombank', 'MB Bank',
+  'ACB', 'VPBank', 'TPBank', 'Sacombank', 'HDBank', 'VIB', 'MSB', 'OCB',
+  'SeABank', 'SHB', 'Eximbank', 'LienVietPostBank', 'Nam A Bank', 'VietBank',
+  'VietABank', 'Bac A Bank', 'BaoViet Bank', 'KienlongBank', 'PVcomBank',
+  'NCB', 'PGBank', 'SaigonBank', 'GPBank', 'OceanBank', 'Shinhan Bank',
+]
+
+function hasCompleteBankInfo(values: BankForm): boolean {
+  return Boolean(
+    values.bankName.trim() &&
+    values.bankAccountName.trim() &&
+    /^\d{6,24}$/.test(values.bankAccountNumber.replace(/\s/g, '')),
+  )
+}
+
 export default function SalaryAdvancePage() {
   const { authUser, employee, isLoading, isPreviewMode } = useAuth()
   const [loading, setLoading] = useState(true)
@@ -60,6 +83,20 @@ export default function SalaryAdvancePage() {
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
   const [editingId, setEditingId] = useState<string | null>(null)
   const [expandedProcessedId, setExpandedProcessedId] = useState<string | null>(null)
+  const [bankModalOpen, setBankModalOpen] = useState(false)
+  const [bankForm, setBankForm] = useState<BankForm>({ bankName: '', bankAccountName: '', bankAccountNumber: '' })
+  const [savedBankInfo, setSavedBankInfo] = useState<BankForm | null>(null)
+  const [bankError, setBankError] = useState('')
+  const [savingBank, setSavingBank] = useState(false)
+
+  useEffect(() => {
+    if (!bankModalOpen) return
+    const previousOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    return () => {
+      document.body.style.overflow = previousOverflow
+    }
+  }, [bankModalOpen])
 
   useEffect(() => {
     if (!authUser) return
@@ -83,6 +120,55 @@ export default function SalaryAdvancePage() {
     )
   }, [authUser, isPreviewMode])
 
+  const submitAdvanceRequest = async (amount: number, reason: string) => {
+    if (!authUser) return
+    const requestEditingId = editingId
+    setSubmitting(true)
+    setMessage(null)
+    try {
+      if (isPreviewMode) {
+        const id = requestEditingId || `preview-salary-${Date.now()}`
+        setPreviousAdvances((prev) => requestEditingId
+          ? prev.map((item) => item.id === requestEditingId ? { ...item, amount, reason, status: 'Pending' } : item)
+          : [{ id, employeeId: authUser.uid, amount, reason, status: 'Pending', createdAt: new Date(), updatedAt: new Date() }, ...prev])
+        setMessage({ type: 'success', text: requestEditingId ? 'Đã gửi bản điều chỉnh trong chế độ xem thử.' : 'Đã gửi yêu cầu ứng lương trong chế độ xem thử.' })
+        setEditingId(null)
+        setFormData({ amount: '', reason: '' })
+        return
+      }
+
+      const id = requestEditingId || await createSalaryAdvance({
+        employeeId: authUser.uid,
+        amount,
+        reason,
+        status: 'Pending',
+      })
+      if (requestEditingId) await reviseSalaryAdvance(requestEditingId, amount, reason)
+
+      setPreviousAdvances((prev) => requestEditingId
+        ? prev.map((item) => item.id === requestEditingId ? { ...item, amount, reason, status: 'Pending' } : item)
+        : [{ id, employeeId: authUser.uid, amount, reason, status: 'Pending', createdAt: new Date(), updatedAt: new Date() }, ...prev])
+      setMessage({ type: 'success', text: requestEditingId ? 'Đã gửi bản điều chỉnh cho quản lý.' : 'Đã gửi yêu cầu ứng lương!' })
+      setEditingId(null)
+      setFormData({ amount: '', reason: '' })
+    } catch (error) {
+      setMessage({ type: 'error', text: error instanceof Error ? error.message : 'Không thể gửi yêu cầu.' })
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  const openBankModal = () => {
+    const currentBank = savedBankInfo || {
+      bankName: employee?.bankName || '',
+      bankAccountName: employee?.bankAccountName || employee?.fullName || authUser?.displayName || '',
+      bankAccountNumber: employee?.bankAccountNumber || '',
+    }
+    setBankForm(currentBank)
+    setBankError('')
+    setBankModalOpen(true)
+  }
+
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault()
     if (!authUser) return
@@ -98,39 +184,54 @@ export default function SalaryAdvancePage() {
       return
     }
 
-    setSubmitting(true)
-    setMessage(null)
+    const currentBank = savedBankInfo || {
+      bankName: employee?.bankName || '',
+      bankAccountName: employee?.bankAccountName || '',
+      bankAccountNumber: employee?.bankAccountNumber || '',
+    }
+    if (!hasCompleteBankInfo(currentBank)) {
+      openBankModal()
+      return
+    }
 
+    await submitAdvanceRequest(amount, formData.reason.trim())
+  }
+
+  const saveBankAndSubmit = async () => {
+    const normalizedBank: BankForm = {
+      bankName: bankForm.bankName.trim(),
+      bankAccountName: bankForm.bankAccountName.trim(),
+      bankAccountNumber: bankForm.bankAccountNumber.replace(/\s/g, ''),
+    }
+    if (!normalizedBank.bankName || !normalizedBank.bankAccountName) {
+      setBankError('Vui lòng nhập đủ ngân hàng và tên chủ tài khoản.')
+      return
+    }
+    if (!/^\d{6,24}$/.test(normalizedBank.bankAccountNumber)) {
+      setBankError('Số tài khoản phải gồm 6–24 chữ số.')
+      return
+    }
+
+    const amount = Number(formData.amount.replace(/\D/g, ''))
+    if (!Number.isSafeInteger(amount) || amount <= 0) {
+      setBankModalOpen(false)
+      setMessage({ type: 'error', text: 'Số tiền chưa hợp lệ.' })
+      return
+    }
+
+    setSavingBank(true)
+    setBankError('')
     try {
-      if (isPreviewMode) {
-        const id = editingId || `preview-salary-${Date.now()}`
-        setPreviousAdvances((prev) => editingId
-          ? prev.map((item) => item.id === editingId ? { ...item, amount, reason: formData.reason.trim(), status: 'Pending' } : item)
-          : [{ id, employeeId: authUser.uid, amount, reason: formData.reason.trim(), status: 'Pending', createdAt: new Date(), updatedAt: new Date() }, ...prev])
-        setMessage({ type: 'success', text: editingId ? 'Đã gửi bản điều chỉnh trong chế độ xem thử.' : 'Đã gửi yêu cầu ứng lương trong chế độ xem thử.' })
-        setEditingId(null)
-        setFormData({ amount: '', reason: '' })
-        return
+      if (!isPreviewMode) {
+        await updateEmployee(authUser!.uid, normalizedBank)
       }
-
-      const id = editingId || await createSalaryAdvance({
-        employeeId: authUser.uid,
-        amount,
-        reason: formData.reason.trim(),
-        status: 'Pending',
-      })
-      if (editingId) await reviseSalaryAdvance(editingId, amount, formData.reason.trim())
-
-      setPreviousAdvances((prev) => editingId
-        ? prev.map((item) => item.id === editingId ? { ...item, amount, reason: formData.reason.trim(), status: 'Pending' } : item)
-        : [{ id, employeeId: authUser.uid, amount, reason: formData.reason.trim(), status: 'Pending', createdAt: new Date(), updatedAt: new Date() }, ...prev])
-      setMessage({ type: 'success', text: editingId ? 'Đã gửi bản điều chỉnh cho quản lý.' : 'Đã gửi yêu cầu ứng lương!' })
-      setEditingId(null)
-      setFormData({ amount: '', reason: '' })
+      setSavedBankInfo(normalizedBank)
+      setBankModalOpen(false)
+      await submitAdvanceRequest(amount, formData.reason.trim())
     } catch (error) {
-      setMessage({ type: 'error', text: error instanceof Error ? error.message : 'Không thể gửi yêu cầu.' })
+      setBankError(error instanceof Error ? error.message : 'Chưa thể lưu thông tin ngân hàng.')
     } finally {
-      setSubmitting(false)
+      setSavingBank(false)
     }
   }
 
@@ -212,6 +313,80 @@ export default function SalaryAdvancePage() {
           </div></section>
         </div>}
       </PageContainer>
+
+      {bankModalOpen && (
+        <div
+          className="fixed inset-0 z-[90] grid place-items-center bg-slate-950/55 px-4 py-6 backdrop-blur-sm"
+          role="presentation"
+          onClick={() => !savingBank && setBankModalOpen(false)}
+        >
+          <section
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="salary-bank-modal-title"
+            className="max-h-[min(700px,92dvh)] w-full max-w-md overflow-y-auto rounded-[2rem] border border-white/80 bg-white p-5 shadow-2xl shadow-slate-950/25 dark:border-white/10 dark:bg-slate-900 sm:p-6"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="flex items-start gap-3">
+              <div className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-gradient-to-br from-sky-500 to-indigo-600 text-white shadow-lg shadow-sky-500/20">
+                <Landmark className="h-5 w-5" />
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="text-[10px] font-black uppercase tracking-[0.16em] text-sky-600 dark:text-sky-300">Cần bổ sung trước khi gửi</p>
+                <h2 id="salary-bank-modal-title" className="mt-1 text-xl font-black text-slate-950 dark:text-white">Tài khoản nhận tiền</h2>
+                <p className="mt-1 text-sm leading-5 text-slate-500 dark:text-slate-400">Thông tin này sẽ được lưu vào hồ sơ cá nhân của bạn.</p>
+              </div>
+              <button type="button" onClick={() => setBankModalOpen(false)} disabled={savingBank} aria-label="Đóng" className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-slate-100 text-slate-500 transition hover:bg-slate-200 disabled:opacity-50 dark:bg-slate-800 dark:text-slate-300">
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            {bankError && <p className="mt-4 rounded-2xl border border-rose-200 bg-rose-50 px-3 py-2.5 text-sm font-semibold leading-5 text-rose-700 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-200">{bankError}</p>}
+
+            <div className="mt-5 space-y-4">
+              <label className="block text-sm font-black text-slate-950 dark:text-slate-100">
+                Ngân hàng
+                <div className="relative mt-2">
+                  <Building2 className="pointer-events-none absolute left-4 top-3.5 h-5 w-5 text-sky-600" />
+                  <select value={bankForm.bankName} onChange={(event) => setBankForm((current) => ({ ...current, bankName: event.target.value }))} disabled={savingBank} className="mobile-field !rounded-2xl !border-sky-100 !bg-sky-50/40 !pl-12 !font-semibold focus:!border-sky-400 focus:!ring-sky-200 dark:!border-sky-500/20 dark:!bg-sky-500/5">
+                    <option value="">Chọn ngân hàng</option>
+                    {BANK_OPTIONS.map((bank) => <option key={bank} value={bank}>{bank}</option>)}
+                  </select>
+                </div>
+              </label>
+
+              <label className="block text-sm font-black text-slate-950 dark:text-slate-100">
+                Tên chủ tài khoản
+                <div className="relative mt-2">
+                  <UserRound className="pointer-events-none absolute left-4 top-3.5 h-5 w-5 text-sky-600" />
+                  <input value={bankForm.bankAccountName} onChange={(event) => setBankForm((current) => ({ ...current, bankAccountName: event.target.value }))} disabled={savingBank} autoCapitalize="characters" placeholder="NGUYỄN VĂN AN" className="mobile-field !rounded-2xl !border-sky-100 !bg-sky-50/40 !pl-12 !font-semibold uppercase focus:!border-sky-400 focus:!ring-sky-200 dark:!border-sky-500/20 dark:!bg-sky-500/5" />
+                </div>
+              </label>
+
+              <label className="block text-sm font-black text-slate-950 dark:text-slate-100">
+                Số tài khoản
+                <div className="relative mt-2">
+                  <CreditCard className="pointer-events-none absolute left-4 top-3.5 h-5 w-5 text-sky-600" />
+                  <input value={bankForm.bankAccountNumber} onChange={(event) => setBankForm((current) => ({ ...current, bankAccountNumber: event.target.value.replace(/[^\d\s]/g, '') }))} disabled={savingBank} inputMode="numeric" placeholder="Nhập 6–24 chữ số" className="mobile-field !rounded-2xl !border-sky-100 !bg-sky-50/40 !pl-12 !font-semibold tracking-wide focus:!border-sky-400 focus:!ring-sky-200 dark:!border-sky-500/20 dark:!bg-sky-500/5" />
+                </div>
+              </label>
+            </div>
+
+            <div className="mt-5 flex items-start gap-2 rounded-2xl bg-emerald-50 px-3 py-2.5 text-xs font-semibold leading-5 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-200">
+              <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
+              <span>Sau khi lưu, hệ thống sẽ tự gửi yêu cầu ứng lương đang chờ của bạn.</span>
+            </div>
+
+            <div className="mt-5 grid grid-cols-2 gap-2">
+              <button type="button" onClick={() => setBankModalOpen(false)} disabled={savingBank} className="min-h-12 rounded-2xl bg-slate-100 px-3 text-sm font-black text-slate-600 transition hover:bg-slate-200 disabled:opacity-50 dark:bg-slate-800 dark:text-slate-300">Để sau</button>
+              <button type="button" onClick={() => void saveBankAndSubmit()} disabled={savingBank || submitting} className="flex min-h-12 items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-sky-600 to-indigo-600 px-3 text-sm font-black text-white shadow-lg shadow-sky-500/20 transition hover:brightness-105 disabled:opacity-50">
+                {savingBank ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
+                {savingBank ? 'Đang lưu...' : 'Lưu và gửi'}
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
     </div>
   )
 }

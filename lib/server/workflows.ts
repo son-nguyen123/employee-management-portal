@@ -381,6 +381,14 @@ export async function manageEmployeeStatus(actor: RequestActor, raw: unknown) {
   return { employeeId, status, releasedSchedules, deletedProfileImages, profileCleanupPending }
 }
 
+function hasCompleteBankAccount(data: Record<string, unknown> | undefined): boolean {
+  return Boolean(
+    typeof data?.bankName === 'string' && data.bankName.trim() &&
+    typeof data?.bankAccountName === 'string' && data.bankAccountName.trim() &&
+    typeof data?.bankAccountNumber === 'string' && /^\d{6,24}$/.test(data.bankAccountNumber.replace(/\s/g, '')),
+  )
+}
+
 export async function manageEmployeeRole(actor: RequestActor, raw: unknown) {
   requireManager(actor)
   if (actor.role !== 'admin') throw new ApiError(403, 'Chỉ admin được phân quyền tài khoản.')
@@ -1942,6 +1950,10 @@ export async function submitSalaryAdvance(actor: RequestActor, raw: unknown) {
   const id = requestId(body)
   const amount = numberValue(body.amount, 'Số tiền', 1, 1_000_000_000)
   const reason = text(body.reason ?? '', 'Ghi chú', 1000, true)
+  const employeeSnapshot = await adminDb.collection('employees').doc(actor.uid).get()
+  if (!employeeSnapshot.exists || !hasCompleteBankAccount(employeeSnapshot.data() as Record<string, unknown> | undefined)) {
+    throw new ApiError(409, 'Bạn cần cập nhật đủ thông tin tài khoản ngân hàng trước khi ứng lương.')
+  }
   const workflow = workflowRef(actor, id)
   const advanceRef = adminDb.collection('salaryAdvances').doc()
   const managerIds = await activeManagerIds()
