@@ -27,6 +27,8 @@ import {
   updateAccountRegistrationWindow,
   getUserFeatureSettings,
   updateUserFeatureSetting,
+  getSalaryAdvancePolicy,
+  updateSalaryAdvancePolicy,
   respondPenaltyConsent,
   replaceSchedules,
   reviseRequest,
@@ -79,6 +81,8 @@ const handlers = {
   updateAccountRegistrationWindow,
   getUserFeatureSettings,
   updateUserFeatureSetting,
+  getSalaryAdvancePolicy,
+  updateSalaryAdvancePolicy,
   respondPenaltyConsent,
 } as const
 

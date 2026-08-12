@@ -36,6 +36,8 @@ type WorkflowAction =
   | 'updateAccountRegistrationWindow'
   | 'getUserFeatureSettings'
   | 'updateUserFeatureSetting'
+  | 'getSalaryAdvancePolicy'
+  | 'updateSalaryAdvancePolicy'
   | 'respondPenaltyConsent'
 
 export async function callWorkflowApi<T>(

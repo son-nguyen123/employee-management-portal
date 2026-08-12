@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { Check, Clock3, Loader2, MailCheck, Power, ShieldCheck, UserPlus } from 'lucide-react'
+import { CalendarClock, Check, Clock3, Loader2, MailCheck, Power, ShieldCheck, UserPlus } from 'lucide-react'
 import { Header } from '@/components/layout/header'
 import { PageContainer } from '@/components/layout/page-container'
 import { useAuth, useUserRole } from '@/lib/hooks/useAuth'
@@ -9,9 +9,12 @@ import {
   getAuditReceiptSettings,
   getAccountRegistrationWindow,
   getUserFeatureSettings,
+  getSalaryAdvancePolicy,
   updateAuditReceiptSettings,
   updateAccountRegistrationWindow,
   updateUserFeatureSetting,
+  updateSalaryAdvancePolicy,
+  type SalaryAdvancePolicy,
 } from '@/lib/services/managementSettingsService'
 import { defaultUserFeatureSettings, type UserFeatureKey, type UserFeatureSettings } from '@/lib/models/userFeatureSettings'
 
@@ -48,6 +51,8 @@ export default function AdminSettingsPage() {
   const [registrationSaving, setRegistrationSaving] = useState(false)
   const [userFeatures, setUserFeatures] = useState<UserFeatureSettings>({ ...defaultUserFeatureSettings })
   const [userFeatureSaving, setUserFeatureSaving] = useState<UserFeatureKey | null>(null)
+  const [salaryPolicy, setSalaryPolicy] = useState<SalaryAdvancePolicy>({ restrictionEnabled: false, canSubmit: true, vietnamDay: 1, allowedDays: [24, 25] })
+  const [salaryPolicySaving, setSalaryPolicySaving] = useState(false)
 
   useEffect(() => {
     if (!authUser) return
@@ -55,9 +60,9 @@ export default function AdminSettingsPage() {
       setLoading(false)
       return
     }
-      void Promise.all([getAuditReceiptSettings(), getAccountRegistrationWindow(), getUserFeatureSettings({ force: true })])
-      .then(([receipt, accountWindow, features]) => { setSettings(receipt); setRegistration(accountWindow); setUserFeatures(features) })
-      .catch(() => setMessage('Chưa tải được cài đặt email biên nhận.'))
+      void Promise.all([getAuditReceiptSettings(), getAccountRegistrationWindow(), getUserFeatureSettings({ force: true }), getSalaryAdvancePolicy()])
+      .then(([receipt, accountWindow, features, nextSalaryPolicy]) => { setSettings(receipt); setRegistration(accountWindow); setUserFeatures(features); setSalaryPolicy(nextSalaryPolicy) })
+      .catch(() => setMessage('Chưa tải được đầy đủ cài đặt quản lý.'))
       .finally(() => setLoading(false))
   }, [authUser, isPreviewMode])
 
@@ -117,6 +122,25 @@ export default function AdminSettingsPage() {
     }
   }
 
+  const toggleSalaryPolicy = async () => {
+    const restrictionEnabled = !salaryPolicy.restrictionEnabled
+    setSalaryPolicySaving(true)
+    setMessage('')
+    try {
+      const next = isPreviewMode
+        ? { ...salaryPolicy, restrictionEnabled, canSubmit: !restrictionEnabled || [24, 25].includes(salaryPolicy.vietnamDay) }
+        : await updateSalaryAdvancePolicy(restrictionEnabled)
+      setSalaryPolicy(next)
+      setMessage(restrictionEnabled
+        ? 'Đã giới hạn ứng lương vào ngày 24 và 25 hằng tháng.'
+        : 'Đã tắt giới hạn ngày gửi ứng lương.')
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'Chưa thể lưu giới hạn ứng lương.')
+    } finally {
+      setSalaryPolicySaving(false)
+    }
+  }
+
   if ((!role || !['admin', 'manager', 'director'].includes(role)) && !isPreviewMode) return null
 
   return (
@@ -166,6 +190,25 @@ export default function AdminSettingsPage() {
               <Clock3 className="mt-0.5 h-4 w-4 shrink-0 text-fuchsia-600" />
               <span>Trong thời gian mở, mọi người có thể tạo hồ sơ. Tài khoản vẫn chờ admin duyệt trước khi dùng tiện ích.</span>
             </div>
+          </section>
+        )}
+        {role === 'admin' && (
+          <section className="mobile-card mt-4 overflow-hidden p-4">
+            <div className="flex items-center gap-3">
+              <div className={`grid h-12 w-12 shrink-0 place-items-center rounded-2xl ${salaryPolicy.restrictionEnabled ? 'bg-sky-100 text-sky-700 dark:bg-sky-500/15 dark:text-sky-300' : 'bg-slate-100 text-slate-500 dark:bg-slate-800'}`}>
+                {salaryPolicySaving ? <Loader2 className="h-5 w-5 animate-spin" /> : <CalendarClock className="h-5 w-5" />}
+              </div>
+              <div className="min-w-0 flex-1">
+                <h2 className="font-extrabold">Giới hạn ngày ứng lương</h2>
+                <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                  {salaryPolicy.restrictionEnabled ? 'Đang bật · user chỉ gửi ngày 24–25' : 'Đang tắt · user gửi như bình thường'}
+                </p>
+              </div>
+              <button type="button" role="switch" aria-checked={salaryPolicy.restrictionEnabled} aria-label="Giới hạn ứng lương ngày 24 và 25" disabled={loading || salaryPolicySaving} onClick={() => void toggleSalaryPolicy()} className={`relative h-7 w-12 shrink-0 rounded-full p-1 transition-colors disabled:opacity-50 ${salaryPolicy.restrictionEnabled ? 'bg-sky-500' : 'bg-slate-300 dark:bg-slate-700'}`}>
+                <span className={`block h-5 w-5 rounded-full bg-white shadow-sm transition-transform ${salaryPolicy.restrictionEnabled ? 'translate-x-5' : 'translate-x-0'}`} />
+              </button>
+            </div>
+            <p className="mt-3 rounded-2xl bg-sky-50 px-3 py-2.5 text-xs font-semibold leading-5 text-sky-800 dark:bg-sky-500/10 dark:text-sky-200">Công tắc chỉ áp dụng cho nhân viên gửi mới hoặc gửi lại; admin vẫn xử lý yêu cầu bình thường.</p>
           </section>
         )}
         {role === 'admin' && (

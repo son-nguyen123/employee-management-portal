@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
-import { AlertCircle, Building2, CheckCircle2, ChevronDown, CircleDollarSign, CreditCard, DollarSign, Landmark, Loader2, Pencil, RotateCcw, Trash2, UserRound, X } from 'lucide-react'
+import { AlertCircle, Building2, CalendarClock, CheckCircle2, ChevronDown, CircleDollarSign, CreditCard, DollarSign, Landmark, Loader2, Pencil, RotateCcw, Trash2, UserRound, X } from 'lucide-react'
 import { useAuth } from '@/lib/hooks/useAuth'
 import { cancelSalaryAdvance, createSalaryAdvance, reviseSalaryAdvance, subscribeToEmployeeSalaryAdvances } from '@/lib/services/salaryService'
 import { updateEmployee } from '@/lib/services/employeeService'
@@ -14,6 +14,7 @@ import { Card } from '@/components/ui/card'
 import { RequestIdentityAvatar } from '@/components/admin/request-identity-avatar'
 import { SkeletonLoader } from '@/components/ui/skeleton-loader'
 import type { SalaryAdvance } from '@/lib/models/types'
+import { getSalaryAdvancePolicy, type SalaryAdvancePolicy } from '@/lib/services/managementSettingsService'
 
 function formatVietnameseCurrency(value: string | number): string {
   const digits = String(value).replace(/\D/g, '')
@@ -88,6 +89,8 @@ export default function SalaryAdvancePage() {
   const [savedBankInfo, setSavedBankInfo] = useState<BankForm | null>(null)
   const [bankError, setBankError] = useState('')
   const [savingBank, setSavingBank] = useState(false)
+  const [salaryPolicy, setSalaryPolicy] = useState<SalaryAdvancePolicy>({ restrictionEnabled: false, canSubmit: true, vietnamDay: 1, allowedDays: [24, 25] })
+  const [policyLoading, setPolicyLoading] = useState(true)
 
   useEffect(() => {
     if (!bankModalOpen) return
@@ -104,8 +107,14 @@ export default function SalaryAdvancePage() {
     if (isPreviewMode) {
       setPreviousAdvances(mockSalaryAdvances as SalaryAdvance[])
       setLoading(false)
+      setPolicyLoading(false)
       return
     }
+
+    void getSalaryAdvancePolicy()
+      .then(setSalaryPolicy)
+      .catch(() => setMessage({ type: 'error', text: 'Chưa tải được lịch mở ứng lương; hệ thống sẽ kiểm tra lại khi gửi.' }))
+      .finally(() => setPolicyLoading(false))
 
     return subscribeToEmployeeSalaryAdvances(
       authUser.uid,
@@ -173,6 +182,11 @@ export default function SalaryAdvancePage() {
     event.preventDefault()
     if (!authUser) return
 
+    if (!salaryPolicy.canSubmit) {
+      setMessage({ type: 'error', text: 'Ứng lương chỉ mở vào ngày 24 và 25 hằng tháng.' })
+      return
+    }
+
     if (!formData.amount) {
       setMessage({ type: 'error', text: 'Vui lòng nhập số tiền muốn ứng.' })
       return
@@ -236,7 +250,7 @@ export default function SalaryAdvancePage() {
   }
 
   const editAdvance = (advance: SalaryAdvance) => {
-    if (advance.status !== 'Pending' || !advance.id) return
+    if (advance.status !== 'Pending' || !advance.id || !salaryPolicy.canSubmit) return
     setEditingId(advance.id)
     setFormData({ amount: formatVietnameseCurrency(advance.amount || ''), reason: advance.reason || '' })
     setMessage({ type: 'success', text: 'Bạn đang điều chỉnh yêu cầu đang chờ duyệt.' })
@@ -261,7 +275,7 @@ export default function SalaryAdvancePage() {
   const employeeName = employee?.fullName || authUser?.displayName || 'Nhân viên'
   const employeeCode = employee?.employeeCode || 'Chưa có mã'
 
-  if (isLoading || loading) {
+  if (isLoading || loading || policyLoading) {
     return (
       <div className="min-h-screen bg-background">
         <Header title="Ứng lương / yêu cầu" subtitle="Gửi đề nghị cho quản lý" />
@@ -275,18 +289,24 @@ export default function SalaryAdvancePage() {
       <Header title="Ứng lương / yêu cầu" subtitle="Gửi đề nghị cho quản lý" />
       <PageContainer>
         <StaffBanner icon={DollarSign} tone="sky" eyebrow="Ứng lương" title="Bạn cần hỗ trợ khoản nào?" description="Nhập số tiền muốn ứng và ghi chú ngắn để quản lý xem xét nhanh hơn." note="Bạn chỉ có thể điều chỉnh khi yêu cầu còn chờ duyệt. Sau khi quản lý xác nhận, yêu cầu sẽ được khóa để giữ đúng lịch sử." action={<Link href="/staff-note" className="rounded-xl bg-white/15 px-3 py-2 text-xs font-extrabold text-white backdrop-blur">Gửi yêu cầu khác</Link>} />
+        {salaryPolicy.restrictionEnabled && (
+          <div className={`mb-6 flex items-start gap-3 rounded-2xl border p-4 ${salaryPolicy.canSubmit ? 'border-emerald-200 bg-emerald-50 text-emerald-800 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-200' : 'border-amber-200 bg-amber-50 text-amber-800 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200'}`}>
+            <CalendarClock className="mt-0.5 h-5 w-5 shrink-0" />
+            <div><p className="text-sm font-black">{salaryPolicy.canSubmit ? 'Đang mở nhận ứng lương' : 'Chưa đến ngày nhận ứng lương'}</p><p className="mt-1 text-xs font-semibold leading-5">Chỉ gửi vào ngày 24–25 hằng tháng. Hôm nay là ngày {salaryPolicy.vietnamDay}.</p></div>
+          </div>
+        )}
         {message && <div className={`mb-6 flex items-start gap-2 rounded-2xl border p-4 ${message.type === 'success' ? 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-900/20 dark:text-emerald-300' : 'border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-800 dark:bg-rose-900/20 dark:text-rose-300'}`}><AlertCircle className="mt-0.5 h-4 w-4 shrink-0" /><p className="text-sm font-semibold">{message.text}</p></div>}
 
         {(!hasPendingRequest || editingId) && <Card variant="elevated" className="mb-8 rounded-3xl border-sky-100 p-4 shadow-[0_14px_35px_-28px_rgba(14,116,144,0.8)] dark:border-sky-500/20 sm:p-6">
           <div className="mb-5 flex items-center gap-3"><RequestIdentityAvatar name={employeeName} photoURL={employee?.photoURL} icon={CircleDollarSign} iconColor="bg-sky-500" /><div><h2 className="text-xl font-black">Tạo yêu cầu ứng lương</h2><p className="text-xs font-semibold text-muted-foreground">Mã nhân viên · {employeeCode}</p></div></div>
           <form onSubmit={handleSubmit} className="space-y-5">
             <label className="block text-sm font-bold">Số tiền muốn ứng
-              <div className="mt-2"><input type="text" inputMode="numeric" value={formData.amount} onChange={(event) => setFormData({ ...formData, amount: formatVietnameseCurrency(event.target.value) })} placeholder="Ví dụ: 2.000.000" className="mobile-field" disabled={submitting} /></div>
+              <div className="mt-2"><input type="text" inputMode="numeric" value={formData.amount} onChange={(event) => setFormData({ ...formData, amount: formatVietnameseCurrency(event.target.value) })} placeholder="Ví dụ: 2.000.000" className="mobile-field" disabled={submitting || !salaryPolicy.canSubmit} /></div>
             </label>
             <label className="block text-sm font-bold">Ghi chú <span className="font-normal text-muted-foreground">(không bắt buộc)</span>
-              <textarea value={formData.reason} onChange={(event) => setFormData({ ...formData, reason: event.target.value })} placeholder="Bạn có thể ghi thêm để quản lý dễ xem xét..." rows={4} className="mobile-field mt-2 resize-none py-3" disabled={submitting} />
+              <textarea value={formData.reason} onChange={(event) => setFormData({ ...formData, reason: event.target.value })} placeholder="Bạn có thể ghi thêm để quản lý dễ xem xét..." rows={4} className="mobile-field mt-2 resize-none py-3" disabled={submitting || !salaryPolicy.canSubmit} />
             </label>
-            <button type="submit" disabled={submitting} className="flex min-h-12 w-full items-center justify-center gap-2 rounded-2xl bg-sky-600 px-4 font-black text-white shadow-lg shadow-sky-500/20 transition active:scale-[0.99] disabled:opacity-50">{submitting && <Loader2 className="h-4 w-4 animate-spin" />}{submitting ? 'Đang gửi...' : editingId ? 'Gửi điều chỉnh' : 'Gửi yêu cầu'}</button>
+            <button type="submit" disabled={submitting || !salaryPolicy.canSubmit} className="flex min-h-12 w-full items-center justify-center gap-2 rounded-2xl bg-sky-600 px-4 font-black text-white shadow-lg shadow-sky-500/20 transition active:scale-[0.99] disabled:opacity-50">{submitting && <Loader2 className="h-4 w-4 animate-spin" />}{submitting ? 'Đang gửi...' : !salaryPolicy.canSubmit ? 'Chỉ mở ngày 24–25' : editingId ? 'Gửi điều chỉnh' : 'Gửi yêu cầu'}</button>
           </form>
         </Card>}
 
@@ -298,7 +318,7 @@ export default function SalaryAdvancePage() {
               <article key={advance.id} className="overflow-hidden rounded-3xl border border-sky-100 bg-white p-4 shadow-sm dark:border-sky-500/20 dark:bg-slate-900">
                 <div className="flex items-start gap-3"><RequestIdentityAvatar name={employeeName} photoURL={employee?.photoURL} icon={CircleDollarSign} iconColor="bg-sky-500" /><div className="min-w-0 flex-1"><h3 className="truncate font-black">{employeeName}</h3><p className="text-xs font-bold text-slate-500 dark:text-slate-400">Mã nhân viên · {employeeCode}</p></div><span className={`rounded-full px-2.5 py-1 text-[11px] font-black ring-1 ${statusClasses(advance.status)}`}>{statusLabel(advance.status)}</span></div>
                 <div className="mt-4 rounded-2xl bg-sky-50/80 p-3 dark:bg-sky-500/10"><div className="flex items-end justify-between gap-3"><p className="text-2xl font-black text-sky-700 dark:text-sky-300">{formatAmount(advance.amount)}</p><p className="text-xs font-semibold text-slate-500">Gửi {formatDate(advance.createdAt)}</p></div><p className="mt-2 text-sm leading-6 text-slate-700 dark:text-slate-200">{advance.reason || 'Không có ghi chú.'}</p></div>
-                <div className="mt-3 grid grid-cols-2 gap-2"><button type="button" onClick={() => editAdvance(advance)} className="flex min-h-11 items-center justify-center gap-2 rounded-2xl bg-indigo-50 text-xs font-black text-indigo-700 dark:bg-indigo-500/10 dark:text-indigo-200"><Pencil className="h-4 w-4" /> Điều chỉnh</button><button type="button" onClick={() => void cancelAdvance(advance.id)} className="flex min-h-11 items-center justify-center gap-2 rounded-2xl bg-rose-50 text-xs font-black text-rose-700 dark:bg-rose-500/10 dark:text-rose-200"><Trash2 className="h-4 w-4" /> Hủy yêu cầu</button></div>
+                <div className="mt-3 grid grid-cols-2 gap-2"><button type="button" disabled={!salaryPolicy.canSubmit} onClick={() => editAdvance(advance)} className="flex min-h-11 items-center justify-center gap-2 rounded-2xl bg-indigo-50 text-xs font-black text-indigo-700 disabled:cursor-not-allowed disabled:opacity-45 dark:bg-indigo-500/10 dark:text-indigo-200"><Pencil className="h-4 w-4" /> Điều chỉnh</button><button type="button" onClick={() => void cancelAdvance(advance.id)} className="flex min-h-11 items-center justify-center gap-2 rounded-2xl bg-rose-50 text-xs font-black text-rose-700 dark:bg-rose-500/10 dark:text-rose-200"><Trash2 className="h-4 w-4" /> Hủy yêu cầu</button></div>
               </article>
             ))}
             {!pendingAdvances.length && <div className="rounded-3xl border border-dashed border-slate-300 p-6 text-center text-sm font-semibold text-slate-500 dark:border-slate-700">Chưa có yêu cầu chờ duyệt.</div>}
@@ -379,7 +399,7 @@ export default function SalaryAdvancePage() {
 
             <div className="mt-5 grid grid-cols-2 gap-2">
               <button type="button" onClick={() => setBankModalOpen(false)} disabled={savingBank} className="min-h-12 rounded-2xl bg-slate-100 px-3 text-sm font-black text-slate-600 transition hover:bg-slate-200 disabled:opacity-50 dark:bg-slate-800 dark:text-slate-300">Để sau</button>
-              <button type="button" onClick={() => void saveBankAndSubmit()} disabled={savingBank || submitting} className="flex min-h-12 items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-sky-600 to-indigo-600 px-3 text-sm font-black text-white shadow-lg shadow-sky-500/20 transition hover:brightness-105 disabled:opacity-50">
+              <button type="button" onClick={() => void saveBankAndSubmit()} disabled={savingBank || submitting || !salaryPolicy.canSubmit} className="flex min-h-12 items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-sky-600 to-indigo-600 px-3 text-sm font-black text-white shadow-lg shadow-sky-500/20 transition hover:brightness-105 disabled:opacity-50">
                 {savingBank ? <Loader2 className="h-4 w-4 animate-spin" /> : <CheckCircle2 className="h-4 w-4" />}
                 {savingBank ? 'Đang lưu...' : 'Lưu và gửi'}
               </button>

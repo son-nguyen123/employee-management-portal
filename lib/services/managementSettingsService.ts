@@ -43,6 +43,21 @@ export interface AccountRegistrationWindow {
   closesAt: string | null
 }
 
+export interface SalaryAdvancePolicy {
+  restrictionEnabled: boolean
+  canSubmit: boolean
+  vietnamDay: number
+  allowedDays: readonly [24, 25]
+}
+
+export function getSalaryAdvancePolicy(): Promise<SalaryAdvancePolicy> {
+  return callWorkflowApi('getSalaryAdvancePolicy', {})
+}
+
+export function updateSalaryAdvancePolicy(restrictionEnabled: boolean): Promise<SalaryAdvancePolicy> {
+  return callWorkflowApi('updateSalaryAdvancePolicy', { restrictionEnabled })
+}
+
 const USER_FEATURE_CACHE_TTL_MS = 60_000
 let userFeatureSettingsCache: { value: UserFeatureSettings; cachedAt: number } | null = null
 let userFeatureSettingsRequest: { uid: string; promise: Promise<UserFeatureSettings> } | null = null

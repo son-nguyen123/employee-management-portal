@@ -12,6 +12,9 @@ const READ_ONLY_ACTIONS = new Set([
   'normalizeLeaveRequests',
   'getManagementContact',
   'getAuditReceiptSettings',
+  'getAccountRegistrationWindow',
+  'getUserFeatureSettings',
+  'getSalaryAdvancePolicy',
 ])
 
 const EMAIL_RECEIPT_ACTIONS = new Set([

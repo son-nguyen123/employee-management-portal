@@ -11,6 +11,7 @@ import { defaultUserFeatureSettings, userFeatureKeys, type UserFeatureKey, type 
 import { vietnamWeekContaining } from '@/lib/archive/retention'
 import { decisionReviewIsEditable } from '@/lib/review/decision-policy'
 import { isPastRegistrationDate, reactivationWaiverApplies, restrictPastRegistration } from '@/lib/schedule/registration-policy'
+import { salaryAdvanceWindowState } from '@/lib/salary/advance-policy'
 
 type Shift = 'Morning' | 'Afternoon' | 'Evening'
 type ReviewStatus = 'Approved' | 'Rejected' | 'ChangesRequested'
@@ -494,6 +495,37 @@ export async function updateUserFeatureSetting(actor: RequestActor, raw: unknown
     updatedAt: FieldValue.serverTimestamp(),
   }, { merge: true })
   return enabled
+}
+
+function salaryAdvanceRestrictionEnabled(data: FirebaseFirestore.DocumentData | undefined): boolean {
+  return data?.restrictionEnabled === true
+}
+
+function assertSalaryAdvanceWindow(data: FirebaseFirestore.DocumentData | undefined): void {
+  const window = salaryAdvanceWindowState(salaryAdvanceRestrictionEnabled(data))
+  if (!window.canSubmit) {
+    throw new ApiError(409, 'Ứng lương chỉ được gửi vào ngày 24 và 25 hằng tháng.')
+  }
+}
+
+export async function getSalaryAdvancePolicy(actor: RequestActor) {
+  requireStaff(actor)
+  const snapshot = await adminDb.collection('managementSettings').doc('salaryAdvancePolicy').get()
+  return salaryAdvanceWindowState(salaryAdvanceRestrictionEnabled(snapshot.data()))
+}
+
+export async function updateSalaryAdvancePolicy(actor: RequestActor, raw: unknown) {
+  requireManager(actor)
+  if (actor.role !== 'admin') throw new ApiError(403, 'Chỉ admin được thay đổi ngày gửi ứng lương.')
+  const body = objectBody(raw)
+  if (typeof body.restrictionEnabled !== 'boolean') throw new ApiError(400, 'Trạng thái giới hạn ứng lương không hợp lệ.')
+  await adminDb.collection('managementSettings').doc('salaryAdvancePolicy').set({
+    restrictionEnabled: body.restrictionEnabled,
+    allowedDays: [24, 25],
+    updatedBy: actor.uid,
+    updatedAt: FieldValue.serverTimestamp(),
+  }, { merge: true })
+  return salaryAdvanceWindowState(body.restrictionEnabled)
 }
 
 export async function respondPenaltyConsent(actor: RequestActor, raw: unknown) {
@@ -2045,10 +2077,16 @@ export async function submitSalaryAdvance(actor: RequestActor, raw: unknown) {
   }
   const workflow = workflowRef(actor, id)
   const advanceRef = adminDb.collection('salaryAdvances').doc()
+  const policyRef = adminDb.collection('managementSettings').doc('salaryAdvancePolicy')
   const managerIds = await activeManagerIds(actor.factoryId)
 
   await adminDb.runTransaction(async (transaction) => {
-    if ((await transaction.get(workflow)).exists) throw new ApiError(409, 'Yêu cầu ứng lương này đã được gửi.')
+    const [existingWorkflow, policy] = await Promise.all([
+      transaction.get(workflow),
+      transaction.get(policyRef),
+    ])
+    if (existingWorkflow.exists) throw new ApiError(409, 'Yêu cầu ứng lương này đã được gửi.')
+    assertSalaryAdvanceWindow(policy.data())
     const now = FieldValue.serverTimestamp()
     transaction.create(advanceRef, {
       employeeId: actor.uid,
@@ -2296,10 +2334,16 @@ export async function reviseRequest(actor: RequestActor, raw: unknown) {
   if (!collectionName) throw new ApiError(400, 'Loại yêu cầu không hợp lệ.')
   const id = text(body.id, 'Mã yêu cầu', 128)
   const targetRef = adminDb.collection(collectionName).doc(id)
+  const salaryPolicyRef = resource === 'salary'
+    ? adminDb.collection('managementSettings').doc('salaryAdvancePolicy')
+    : null
   const managerIds = await activeManagerIds(actor.factoryId)
 
   await adminDb.runTransaction(async (transaction) => {
-    const target = await transaction.get(targetRef)
+    const [target, salaryPolicy] = await Promise.all([
+      transaction.get(targetRef),
+      salaryPolicyRef ? transaction.get(salaryPolicyRef) : Promise.resolve(null),
+    ])
     if (!target.exists) throw new ApiError(404, 'Không tìm thấy yêu cầu.')
     const current = target.data()!
     if (current.employeeId !== actor.uid) throw new ApiError(403, 'Bạn không thể điều chỉnh yêu cầu này.')
@@ -2307,6 +2351,7 @@ export async function reviseRequest(actor: RequestActor, raw: unknown) {
 
     const updates: Record<string, unknown> = {}
     if (resource === 'salary') {
+      assertSalaryAdvanceWindow(salaryPolicy?.data())
       updates.amount = numberValue(body.amount, 'Số tiền', 1, 1_000_000_000)
       updates.reason = text(body.reason ?? '', 'Ghi chú', 1000, true)
     } else if (resource === 'leave') {
