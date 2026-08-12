@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import Link from 'next/link'
 import { AlertTriangle, CalendarPlus, Check, ChevronDown, ChevronLeft, ChevronRight, CircleDollarSign, Clock3, Download, ExternalLink, FileText, Loader2, MessageSquareText, Phone, Plus, UsersRound, X } from 'lucide-react'
 import { useAuth } from '@/lib/hooks/useAuth'
@@ -138,6 +139,7 @@ export default function AdminRequestsPage() {
   const [managedAmount, setManagedAmount] = useState('')
   const [manageReason, setManageReason] = useState('')
   const [managingPenalty, setManagingPenalty] = useState(false)
+
   const [rejectingRow, setRejectingRow] = useState<RequestRow | null>(null)
   const [rejectReason, setRejectReason] = useState('')
   const [penaltiesOpen, setPenaltiesOpen] = useState(false)
@@ -146,6 +148,22 @@ export default function AdminRequestsPage() {
   const [penaltyTab, setPenaltyTab] = useState<'employees' | 'list'>('employees')
   const [penaltyExportMonth, setPenaltyExportMonth] = useState(new Date().toISOString().slice(0, 7))
   const [exportingPenalties, setExportingPenalties] = useState(false)
+
+  useEffect(() => {
+    if (!rejectingRow && !editingPenalty) return
+    const previousOverflow = document.body.style.overflow
+    const bottomNavigation = document.querySelector<HTMLElement>('[data-app-bottom-navigation]')
+    const previousAriaHidden = bottomNavigation?.getAttribute('aria-hidden')
+    document.body.style.overflow = 'hidden'
+    bottomNavigation?.setAttribute('aria-hidden', 'true')
+    bottomNavigation?.setAttribute('inert', '')
+    return () => {
+      document.body.style.overflow = previousOverflow
+      bottomNavigation?.removeAttribute('inert')
+      if (previousAriaHidden === null) bottomNavigation?.removeAttribute('aria-hidden')
+      else if (previousAriaHidden !== undefined) bottomNavigation?.setAttribute('aria-hidden', previousAriaHidden)
+    }
+  }, [editingPenalty, rejectingRow])
 
   useEffect(() => {
     setPageMode(new URLSearchParams(window.location.search).get('view') === 'penalties' ? 'penalties' : 'requests')
@@ -688,11 +706,12 @@ export default function AdminRequestsPage() {
         </section>
         </div>
       </PageContainer>
-      {rejectingRow && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 p-3 backdrop-blur-sm" onClick={() => setRejectingRow(null)}>
-          <div className="w-full max-w-md rounded-[2rem] bg-white p-5 shadow-2xl dark:bg-slate-900" onClick={(event) => event.stopPropagation()}>
+      {rejectingRow && createPortal(
+        <div className="fixed inset-0 z-[100] overflow-y-auto bg-slate-950/60 px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-[max(0.75rem,env(safe-area-inset-top))] backdrop-blur-sm">
+          <div className="flex min-h-full items-center justify-center">
+          <div role="dialog" aria-modal="true" aria-labelledby="reject-request-title" className="max-h-[calc(100dvh-1.5rem)] w-full max-w-md overflow-y-auto rounded-[2rem] bg-white p-5 shadow-2xl dark:bg-slate-900">
             <p className="text-xs font-bold uppercase tracking-wider text-rose-600">Từ chối yêu cầu</p>
-            <h2 className="mt-1 text-xl font-black">{rejectingRow.title}</h2>
+            <h2 id="reject-request-title" className="mt-1 text-xl font-black">{rejectingRow.title}</h2>
             <p className="mt-1 text-sm text-muted-foreground">Lý do này sẽ được gửi trực tiếp cho nhân viên.</p>
             <textarea value={rejectReason} onChange={(event) => setRejectReason(event.target.value)} className="mobile-field mt-4 min-h-28 py-3" placeholder="Nhập lý do từ chối..." autoFocus />
             <div className="mt-4 grid grid-cols-2 gap-2">
@@ -700,15 +719,17 @@ export default function AdminRequestsPage() {
               <button type="button" disabled={!rejectReason.trim()} onClick={() => process(rejectingRow, 'Rejected', rejectReason)} className="min-h-12 rounded-2xl bg-rose-600 font-bold text-white disabled:opacity-50">Xác nhận từ chối</button>
             </div>
           </div>
+          </div>
         </div>
-      )}
-      {editingPenalty && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 p-3 backdrop-blur-sm" onClick={() => setEditingPenalty(null)}>
-          <form onSubmit={submitPenaltyChange} className="w-full max-w-md rounded-[2rem] bg-white p-5 shadow-2xl dark:bg-slate-900" onClick={(event) => event.stopPropagation()}>
+      , document.body)}
+      {editingPenalty && createPortal(
+        <div className="fixed inset-0 z-[100] overflow-y-auto bg-slate-950/60 px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-[max(0.75rem,env(safe-area-inset-top))] backdrop-blur-sm">
+          <div className="flex min-h-full items-center justify-center">
+          <form role="dialog" aria-modal="true" aria-labelledby="penalty-change-title" onSubmit={submitPenaltyChange} className="max-h-[calc(100dvh-1.5rem)] w-full max-w-md overflow-y-auto rounded-[2rem] bg-white p-5 shadow-2xl dark:bg-slate-900">
             <p className="text-xs font-bold uppercase tracking-wider text-rose-600">
               {editingPenalty.mode === 'adjust' ? 'Điều chỉnh khoản phạt' : 'Hủy khoản phạt'}
             </p>
-            <h2 className="mt-1 text-xl font-black">{editingPenalty.penalty.title}</h2>
+            <h2 id="penalty-change-title" className="mt-1 text-xl font-black">{editingPenalty.penalty.title}</h2>
             <p className="mt-1 text-sm text-muted-foreground">Nhân viên sẽ nhận thông báo ngay sau khi bạn xác nhận.</p>
             {editingPenalty.mode === 'adjust' && (
               <label className="mt-4 block text-sm font-bold">Số tiền mới
@@ -726,8 +747,9 @@ export default function AdminRequestsPage() {
               </button>
             </div>
           </form>
+          </div>
         </div>
-      )}
+      , document.body)}
     </main>
   )
 }
