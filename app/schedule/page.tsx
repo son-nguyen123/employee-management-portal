@@ -42,6 +42,7 @@ import { submitStaffRequest } from '@/lib/services/staffRequestService'
 import { subscribeToEmployeeLeaves } from '@/lib/services/leaveService'
 import { subscribeToEmployeePenalties } from '@/lib/services/penaltyService'
 import type { LeaveRequest, Penalty } from '@/lib/models/types'
+import { isPastRegistrationDate } from '@/lib/schedule/registration-policy'
 
 type Shift = 'Morning' | 'Afternoon' | 'Evening' | 'Custom'
 type DayItem = { key: string; name: string; shortName: string; date: Date }
@@ -267,17 +268,22 @@ export default function SchedulePage() {
       .catch(() => setHasExistingSchedules(false))
   }, [authUser, isPreviewMode])
 
-  const isNewEmployee = useMemo(() => {
-    if (!employee || hasExistingSchedules !== false || overtimeMode || changeMode) return false
-    const joined = employee.joinDate instanceof Date ? employee.joinDate : employee.joinDate.toDate()
-    return referenceNow - joined.getTime() <= 45 * 24 * 60 * 60 * 1000
-  }, [employee, hasExistingSchedules, overtimeMode, changeMode, referenceNow])
+  const isNewEmployee = employee?.hasSubmittedSchedule !== true && hasExistingSchedules === false && !overtimeMode && !changeMode
+
+  const currentWeekKey = useMemo(() => {
+    const now = new Date(referenceNow)
+    const weekday = now.getDay() || 7
+    now.setDate(now.getDate() - weekday + 1)
+    now.setHours(0, 0, 0, 0)
+    return localDateKey(now)
+  }, [referenceNow])
+  const reactivationWaiverWeekActive = employee?.reactivationScheduleWaiverWeekStart === currentWeekKey
 
   const days = useMemo<DayItem[]>(() => {
     const now = new Date()
     const currentDay = now.getDay()
     const regularRegistration = !overtimeMode && !changeMode
-    const useCurrentWeek = currentWeekMode || (regularRegistration && currentDay >= 1 && currentDay <= 5)
+    const useCurrentWeek = currentWeekMode || (regularRegistration && (reactivationWaiverWeekActive || (currentDay >= 1 && currentDay <= 5)))
     const daysUntilNextMonday = useCurrentWeek
       ? -((currentDay || 7) - 1)
       : ((8 - currentDay) % 7) || 7
@@ -291,7 +297,7 @@ export default function SchedulePage() {
       date.setDate(monday.getDate() + index)
       return { key: localDateKey(date), name, shortName: shortNames[index], date }
     })
-  }, [changeMode, currentWeekMode, overtimeMode])
+  }, [changeMode, currentWeekMode, overtimeMode, reactivationWaiverWeekActive])
 
   const targetIsCurrentWeek = useMemo(() => {
     if (!days.length) return false
@@ -302,6 +308,14 @@ export default function SchedulePage() {
     monday.setHours(0, 0, 0, 0)
     return days[0].key === localDateKey(monday)
   }, [days])
+
+  const reactivationWaiverActive = reactivationWaiverWeekActive && targetIsCurrentWeek
+  const restrictPastRegistration = targetIsCurrentWeek && !isNewEmployee && employee?.scheduleMode !== 'fixed'
+  const todayKey = localDateKey(new Date(referenceNow))
+  const isPastRegistrationDay = useCallback(
+    (dayKey: string) => isPastRegistrationDate(dayKey, todayKey, restrictPastRegistration),
+    [restrictPastRegistration, todayKey]
+  )
 
   useEffect(() => {
     if (!authUser || isPreviewMode || employee?.scheduleMode !== 'fixed' || !days.length) return
@@ -352,6 +366,12 @@ export default function SchedulePage() {
 
   const selectDutyCandidate = () => {
     if (!dutyCandidate) return
+    if (isPastRegistrationDay(dutyCandidate) && dutyDay !== dutyCandidate) {
+      setDutyPickerOpen(false)
+      setMessage('Bạn chỉ được đăng ký lịch từ hôm nay đến Chủ Nhật. Ngày trực này đã khóa.')
+      window.scrollTo({ top: 0, behavior: 'smooth' })
+      return
+    }
     if (dutyTeamCount(dutyCandidate) > DUTY_TEAM_CAPACITY) {
       setDutyPickerOpen(false)
       setDutyOverloadCandidate(dutyCandidate)
@@ -480,6 +500,11 @@ export default function SchedulePage() {
   }, [authUser, days, isPreviewMode, overtimeMode, changeMode])
 
   const chooseShift = (dayKey: string, shift: Shift) => {
+    if (isPastRegistrationDay(dayKey) && !original[dayKey]?.includes(shift)) {
+      setMessage('Bạn chỉ được đăng ký lịch từ hôm nay đến Chủ Nhật. Ngày này đã khóa.')
+      window.scrollTo({ top: 0, behavior: 'smooth' })
+      return
+    }
     if (overtimeMode && original[dayKey]?.includes(shift)) return
     if (shift === 'Custom') {
       setCustomFor(dayKey)
@@ -547,7 +572,7 @@ export default function SchedulePage() {
     if (!rows.length) {
       rows.push({
         employeeId: authUser!.uid,
-        date: new Date(`${days[0].key}T12:00:00`),
+        date: new Date(`${restrictPastRegistration ? todayKey : days[0].key}T12:00:00`),
         shift: 'Morning',
         status: 'Pending',
         note: '[NO_SHIFTS]',
@@ -784,12 +809,12 @@ export default function SchedulePage() {
     total + selectedShifts.filter((shift) => Boolean(returnableLeaveShifts[`${dayKey}-${shift}`])).length, 0)
   const removedCount = Object.entries(original).reduce((total, [dayKey, originalShifts]) =>
     total + originalShifts.filter((shift) => !selected[dayKey]?.includes(shift)).length, 0)
-  const missingDays = days.filter((day) => !selected[day.key]?.length && dutyDay !== day.key)
+  const missingDays = days.filter((day) => !isPastRegistrationDay(day.key) && !selected[day.key]?.length && dutyDay !== day.key)
   const compactMode = submittedIds.length > 0 && !editing && !overtimeMode && !changeMode
   const canEditStatus = ['Pending', 'Rejected', 'Approved'].includes(submittedStatus || '')
   const editWindowOpen = !submittedEditDeadline || clockNow < submittedEditDeadline.getTime()
   const canEdit = canEditStatus && editWindowOpen
-  const lateScheduleWarning = !overtimeMode && !changeMode && !editing && !submittedIds.length && targetIsCurrentWeek && !isNewEmployee && employee?.scheduleMode !== 'fixed'
+  const lateScheduleWarning = !overtimeMode && !changeMode && !editing && !submittedIds.length && targetIsCurrentWeek && !isNewEmployee && !reactivationWaiverActive && employee?.scheduleMode !== 'fixed'
   const scheduleWeekEnd = new Date(days[days.length - 1]?.date || days[0]?.date || new Date())
   scheduleWeekEnd.setHours(23, 59, 59, 999)
   const fallbackSchedulePenalty = employeePenalties.find((item) => {
@@ -1012,6 +1037,11 @@ export default function SchedulePage() {
             {message}
           </div>
         )}
+        {reactivationWaiverActive && !submittedIds.length && (
+          <div className="mb-4 rounded-2xl border border-emerald-200 bg-emerald-50 p-3 text-sm font-bold leading-6 text-emerald-800 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-100">
+            Tuần mở lại tài khoản: không trừ phí đăng ký muộn · chỉ chọn từ hôm nay đến Chủ Nhật.
+          </div>
+        )}
         {lateScheduleWarning && (
           <div className="mb-4 flex items-start gap-3 rounded-3xl border border-rose-200 bg-rose-50 p-4 text-rose-900 shadow-sm dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-100">
             <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-rose-600 dark:text-rose-300" />
@@ -1204,6 +1234,7 @@ export default function SchedulePage() {
                       const today = new Date()
                       today.setHours(0, 0, 0, 0)
                       const isPastDay = changeMode && day.date < today
+                      const registrationLocked = isPastRegistrationDay(day.key) && !original[day.key]?.includes(shift.value)
                       const active = selected[day.key]?.includes(shift.value)
                       const requestedLeave = leaveMarks[day.key]?.fullDay || leaveMarks[day.key]?.shifts.includes(shift.value)
                       const returnable = changeMode && Boolean(returnableLeaveShifts[`${day.key}-${shift.value}`])
@@ -1221,11 +1252,14 @@ export default function SchedulePage() {
                           type="button"
                           onClick={() => chooseShift(day.key, shift.value)}
                           disabled={(overtimeMode && (wasSaved || !submittedIds.length)) || (changeMode && (!submittedIds.length || isPastDay))}
-                          className={`min-h-[58px] rounded-2xl border px-3 text-left transition active:scale-[0.98] ${
+                          aria-disabled={registrationLocked}
+                          className={`min-h-[58px] rounded-2xl border px-3 text-left transition active:scale-[0.98] ${registrationLocked
+                            ? 'border-slate-200 bg-slate-100 text-slate-400 dark:border-slate-700 dark:bg-slate-800/60 dark:text-slate-500'
+                            :
                             active ? activeClass : returnable ? 'border-rose-400 bg-rose-50 text-rose-700 dark:border-rose-500/50 dark:bg-rose-500/10 dark:text-rose-200' : requestedLeave ? 'border-rose-400 bg-rose-50 text-rose-700 dark:border-rose-500/50 dark:bg-rose-500/10 dark:text-rose-200' : 'border-slate-200 bg-slate-50 dark:border-slate-700 dark:bg-slate-800'
                           } disabled:cursor-not-allowed disabled:active:scale-100`}
                         >
-                          <span className="flex items-center justify-between text-sm font-bold">{shift.label}{active ? <Check className="h-4 w-4" /> : returnable ? <span className="text-[10px]">Đã nghỉ · chạm để đi làm lại</span> : requestedLeave ? <span className="text-[10px]">{leaveMarks[day.key].status === 'Approved' ? 'Đã duyệt nghỉ' : 'Đang chờ duyệt'}</span> : null}</span>
+                          <span className="flex items-center justify-between text-sm font-bold">{shift.label}{registrationLocked ? <span className="text-[10px]">Đã khóa</span> : active ? <Check className="h-4 w-4" /> : returnable ? <span className="text-[10px]">Đã nghỉ · chạm để đi làm lại</span> : requestedLeave ? <span className="text-[10px]">{leaveMarks[day.key].status === 'Approved' ? 'Đã duyệt nghỉ' : 'Đang chờ duyệt'}</span> : null}</span>
                           <span className={`mt-0.5 block text-[11px] ${active ? 'text-white/80' : 'text-muted-foreground'}`}>
                             {shift.value === 'Custom' && customData[day.key]
                               ? `${customData[day.key].start}–${customData[day.key].end}`
@@ -1343,16 +1377,26 @@ export default function SchedulePage() {
                  {days.map((day, index) => {
                    const active = dutyCandidate === day.key
                    const count = dutyTeamCount(day.key)
+                   const registrationLocked = isPastRegistrationDay(day.key) && dutyDay !== day.key
                    return (
                      <button
                        key={day.key}
                        type="button"
-                       onClick={() => setDutyCandidate(day.key)}
-                       className={`min-h-[74px] rounded-2xl border px-3 py-2.5 text-left transition active:scale-[0.98] ${index === days.length - 1 ? 'col-span-2' : ''} ${active ? 'border-rose-500 bg-white text-rose-700 shadow-md shadow-rose-950/10 ring-2 ring-rose-100 dark:bg-slate-900 dark:text-rose-300 dark:ring-rose-500/15' : 'border-transparent bg-white/70 text-slate-700 dark:bg-slate-900/60 dark:text-slate-200'}`}
+                       onClick={() => {
+                         if (registrationLocked) {
+                           setDutyPickerOpen(false)
+                           setMessage('Bạn chỉ được đăng ký lịch từ hôm nay đến Chủ Nhật. Ngày trực này đã khóa.')
+                           window.scrollTo({ top: 0, behavior: 'smooth' })
+                           return
+                         }
+                         setDutyCandidate(day.key)
+                       }}
+                       aria-disabled={registrationLocked}
+                       className={`min-h-[74px] rounded-2xl border px-3 py-2.5 text-left transition active:scale-[0.98] ${index === days.length - 1 ? 'col-span-2' : ''} ${registrationLocked ? 'border-transparent bg-slate-100 text-slate-400 dark:bg-slate-800/60 dark:text-slate-500' : active ? 'border-rose-500 bg-white text-rose-700 shadow-md shadow-rose-950/10 ring-2 ring-rose-100 dark:bg-slate-900 dark:text-rose-300 dark:ring-rose-500/15' : 'border-transparent bg-white/70 text-slate-700 dark:bg-slate-900/60 dark:text-slate-200'}`}
                      >
                        <span className="flex items-center justify-between gap-2">
                          <span className="font-extrabold">{day.shortName}</span>
-                         {active && <Check className="h-4 w-4" />}
+                         {registrationLocked ? <span className="text-[10px]">Đã khóa</span> : active && <Check className="h-4 w-4" />}
                        </span>
                        <span className="mt-1 block text-xs font-semibold tabular-nums opacity-75">{day.date.toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit' })} · {count}/{DUTY_TEAM_CAPACITY} người</span>
                      </button>

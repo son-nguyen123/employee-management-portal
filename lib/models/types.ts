@@ -28,6 +28,9 @@ export interface Employee {
   scheduleModeInitialSelectionDeadlineAt?: Timestamp | Date
   scheduleModeInitialSelectionCompletedAt?: Timestamp | Date
   scheduleModeChangeCooldownUntil?: Timestamp | Date
+  hasSubmittedSchedule?: boolean
+  reactivatedAt?: Timestamp | Date
+  reactivationScheduleWaiverWeekStart?: string
 }
 
 // Work Schedule Document
@@ -71,6 +74,8 @@ export interface WorkSchedule {
   underMinimumWarning?: boolean
   autoApproved?: boolean
   fixedSchedule?: boolean
+  firstScheduleException?: boolean
+  pastDateRestricted?: boolean
   createdAt: Timestamp | Date
   updatedAt: Timestamp | Date
 }

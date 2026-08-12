@@ -168,6 +168,7 @@ service cloud.firestore {
           'role', 'status', 'joinDate', 'createdAt', 'updatedAt',
           'scheduleMode', 'scheduleModeEffectiveWeekStart', 'fixedScheduleNeedsSetupWeekStart', 'fixedScheduleTemplateWeekStart',
           'scheduleModeInitialSelectionDeadlineAt', 'scheduleModeInitialSelectionCompletedAt', 'scheduleModeChangeCooldownUntil',
+          'hasSubmittedSchedule', 'reactivatedAt', 'reactivationScheduleWaiverWeekStart',
           'statusChangedBy', 'statusChangedAt', 'roleChangedBy', 'roleChangedAt'
         ]) &&
         validString(data.uid, 1, 128) &&
@@ -188,6 +189,9 @@ service cloud.firestore {
         (!('scheduleModeInitialSelectionDeadlineAt' in data) || data.scheduleModeInitialSelectionDeadlineAt is timestamp) &&
         (!('scheduleModeInitialSelectionCompletedAt' in data) || data.scheduleModeInitialSelectionCompletedAt is timestamp) &&
         (!('scheduleModeChangeCooldownUntil' in data) || data.scheduleModeChangeCooldownUntil is timestamp) &&
+        (!('hasSubmittedSchedule' in data) || data.hasSubmittedSchedule is bool) &&
+        (!('reactivatedAt' in data) || data.reactivatedAt is timestamp) &&
+        (!('reactivationScheduleWaiverWeekStart' in data) || validString(data.reactivationScheduleWaiverWeekStart, 10, 10)) &&
         (!('statusChangedBy' in data) || validString(data.statusChangedBy, 1, 128)) &&
         (!('statusChangedAt' in data) || data.statusChangedAt is timestamp) &&
         (!('roleChangedBy' in data) || validString(data.roleChangedBy, 1, 128)) &&

@@ -9,6 +9,7 @@ import { cancelQueuedAuditEmails } from '@/lib/server/audit-email'
 import { deleteAllProfileImages } from '@/lib/server/google-drive-archive'
 import { defaultUserFeatureSettings, userFeatureKeys, type UserFeatureKey, type UserFeatureSettings } from '@/lib/models/userFeatureSettings'
 import { vietnamWeekContaining } from '@/lib/archive/retention'
+import { isPastRegistrationDate, reactivationWaiverApplies, restrictPastRegistration } from '@/lib/schedule/registration-policy'
 
 type Shift = 'Morning' | 'Afternoon' | 'Evening'
 type ReviewStatus = 'Approved' | 'Rejected' | 'ChangesRequested'
@@ -331,10 +332,19 @@ export async function manageEmployeeStatus(actor: RequestActor, raw: unknown) {
       ['Registered', 'Draft', 'Pending', 'Editing', 'ChangesRequested', 'Approved'].includes(String(schedule.get('status')))
     ) || []
     releasedSchedules = schedulesToRelease.length
+    const isReactivation = status === 'active' && employee.get('status') === 'inactive'
+    const reactivationFields = isReactivation
+      ? {
+          reactivatedAt: now,
+          reactivationScheduleWaiverWeekStart: vietnamWeekStartKey(new Date()),
+        }
+      : status === 'inactive'
+        ? { reactivationScheduleWaiverWeekStart: FieldValue.delete() }
+        : {}
     const firstSelectionFields = status === 'active' && !employee.get('scheduleModeInitialSelectionDeadlineAt') && !employee.get('scheduleModeInitialSelectionCompletedAt')
       ? { scheduleModeInitialSelectionDeadlineAt: Timestamp.fromDate(new Date(Date.now() + 24 * 60 * 60 * 1000)) }
       : {}
-    transaction.set(employeeRef, { status, statusChangedBy: actor.uid, statusChangedAt: now, updatedAt: now, ...firstSelectionFields }, { merge: true })
+    transaction.set(employeeRef, { status, statusChangedBy: actor.uid, statusChangedAt: now, updatedAt: now, ...firstSelectionFields, ...reactivationFields }, { merge: true })
     schedulesToRelease.forEach((schedule) => transaction.set(schedule.ref, {
       status: 'Cancelled',
       lockedAt: null,
@@ -1056,10 +1066,22 @@ export async function submitSchedules(actor: RequestActor, raw: unknown) {
   const scheduleMode = employeeData ? employeeScheduleMode(employeeData) : 'rotating'
   const effectiveWeekStart = String(employeeData?.scheduleModeEffectiveWeekStart || '')
   const fixedModeActive = scheduleMode === 'fixed' && (!effectiveWeekStart || scheduleWeekStartKey >= effectiveWeekStart)
+  // A "new employee" means an employee who has never submitted a schedule.
+  // The durable profile marker remains reliable after old schedule rows move
+  // to Drive; legacy rows are retained as a fallback during migration.
+  const hasPreviousSchedule = employeeData?.hasSubmittedSchedule === true || !existingSchedules.empty
+  const firstScheduleException = !hasPreviousSchedule
+  const currentWeekStartKey = vietnamWeekStartKey(requestTime)
+  const reactivationWaiverActive = reactivationWaiverApplies({
+    hasPreviousSchedule,
+    waiverWeekStart: employeeData?.reactivationScheduleWaiverWeekStart,
+    currentWeekStart: currentWeekStartKey,
+    scheduleWeekStart: scheduleWeekStartKey,
+  })
   const openWeekStartKey = vietnamWeekdayNumber(requestTime) >= 6
     ? vietnamWeekStartKey(requestTime, 1)
     : vietnamWeekStartKey(requestTime)
-  if (!fixedModeActive && scheduleWeekStartKey !== openWeekStartKey) {
+  if (!fixedModeActive && !reactivationWaiverActive && scheduleWeekStartKey !== openWeekStartKey) {
     throw new ApiError(409, vietnamWeekdayNumber(requestTime) >= 6
       ? 'Tuần đăng ký mới đã được mở từ Thứ Bảy. Hãy chọn tuần kế tiếp.'
       : 'Từ Thứ Hai đến Thứ Sáu, bạn chỉ được nhập lịch tuần hiện tại. Lịch tuần sau sẽ mở vào Thứ Bảy.')
@@ -1067,15 +1089,12 @@ export async function submitSchedules(actor: RequestActor, raw: unknown) {
   if (schedules.some((schedule) => vietnamWeekStartKey(schedule.date) !== scheduleWeekStartKey)) {
     throw new ApiError(400, 'Các ca đăng ký phải thuộc cùng một tuần.')
   }
-  // A "new employee" means an employee who has never submitted a schedule,
-  // not simply someone whose account was created recently. Pending/legacy
-  // schedules still prove that the employee has already had a registration
-  // opportunity and must therefore follow the late-submission rule.
-  const hasPreviousSchedule = existingSchedules.docs.some((snapshot) => {
-    const data = snapshot.data()
-    return data.status !== 'Cancelled'
-  })
-  const shouldPenalize = isLate && !hasCoveringLongLeave && !fixedModeActive && hasPreviousSchedule
+  const pastDateRestricted = restrictPastRegistration({ fixedModeActive, hasPreviousSchedule, currentWeekStart: currentWeekStartKey, scheduleWeekStart: scheduleWeekStartKey })
+  const todayKey = vietnamDateKey(requestTime)
+  if (schedules.some((schedule) => isPastRegistrationDate(vietnamDateKey(schedule.date), todayKey, pastDateRestricted))) {
+    throw new ApiError(409, 'Bạn chỉ được đăng ký lịch từ hôm nay đến Chủ Nhật. Các ngày trước hôm nay đã khóa.')
+  }
+  const shouldPenalize = isLate && !hasCoveringLongLeave && !fixedModeActive && hasPreviousSchedule && !reactivationWaiverActive
   const alreadyHasWeek = existingSchedules.docs.some((snapshot) => {
     const data = snapshot.data()
     if (data.status === 'Cancelled') return false
@@ -1104,6 +1123,8 @@ export async function submitSchedules(actor: RequestActor, raw: unknown) {
         note: schedule.note,
         batchKey,
         fixedSchedule: fixedModeActive,
+        firstScheduleException,
+        pastDateRestricted,
         requiresReapproval: false,
         revisionCount: 0,
         weeklyShiftCount: actualShiftCount,
@@ -1134,6 +1155,10 @@ export async function submitSchedules(actor: RequestActor, raw: unknown) {
         updatedAt: now,
       }, { merge: true })
     }
+    transaction.set(adminDb.collection('employees').doc(actor.uid), {
+      hasSubmittedSchedule: true,
+      updatedAt: now,
+    }, { merge: true })
 
     if (shouldPenalize && workflowPolicy.scheduleLatePenalty > 0) {
       transaction.create(penaltyRef, {
@@ -1474,8 +1499,9 @@ export async function replaceSchedules(actor: RequestActor, raw: unknown) {
   let resultingPenaltyAmount = 0
 
   await adminDb.runTransaction(async (transaction) => {
-    const [workflowSnapshot, ...oldSnapshots] = await Promise.all([
+    const [workflowSnapshot, employeeSnapshot, ...oldSnapshots] = await Promise.all([
       transaction.get(workflow),
+      transaction.get(adminDb.collection('employees').doc(actor.uid)),
       ...oldRefs.map((ref) => transaction.get(ref)),
     ])
     if (workflowSnapshot.exists) throw new ApiError(409, 'Bản điều chỉnh này đã được gửi trước đó.')
@@ -1499,6 +1525,19 @@ export async function replaceSchedules(actor: RequestActor, raw: unknown) {
     if (!newWeeks.has(oldWeekStart.toISOString())) {
       throw new ApiError(409, 'Bản điều chỉnh phải giữ nguyên tuần làm việc ban đầu.')
     }
+    const retainedFixedSchedule = oldData.some((schedule) => schedule.fixedSchedule === true)
+    const retainedFirstScheduleException = oldData.some((schedule) => schedule.firstScheduleException === true)
+    const oldWeekStartKey = vietnamWeekStartKey((oldData[0].date as Timestamp).toDate())
+    const restrictPastDates = !retainedFixedSchedule && !retainedFirstScheduleException && oldWeekStartKey === vietnamWeekStartKey(requestTime)
+    const existingPastShiftKeys = new Set(oldData.map((schedule) =>
+      `${vietnamDateKey((schedule.date as Timestamp).toDate())}-${schedule.shift}`
+    ))
+    if (restrictPastDates && schedules.some((schedule) =>
+      vietnamDateKey(schedule.date) < vietnamDateKey(requestTime) &&
+      !existingPastShiftKeys.has(`${vietnamDateKey(schedule.date)}-${schedule.shift}`)
+    )) {
+      throw new ApiError(409, 'Bạn chỉ được đăng ký lịch từ hôm nay đến Chủ Nhật. Các ngày trước hôm nay đã khóa.')
+    }
 
     const firstSubmittedAt = oldData
       .map((schedule) => firestoreDate(schedule.firstSubmittedAt) || firestoreDate(schedule.createdAt))
@@ -1513,14 +1552,15 @@ export async function replaceSchedules(actor: RequestActor, raw: unknown) {
     const previousPenaltyId = oldData.map((schedule) => schedule.penaltyId).find(Boolean) || null
     const waiverDeadline = new Date(scheduleDeadline((oldData[0].date as Timestamp).toDate()).getTime() + 24 * 60 * 60 * 1000)
     const hasSundayWaiver = oldData.some((schedule) => schedule.allowSundayResubmissionWithoutPenalty === true) && requestTime < waiverDeadline
-    const lateRejectedResubmission = rejectedByManager && requestTime >= scheduleDeadline((oldData[0].date as Timestamp).toDate()) && !hasSundayWaiver
+    const reactivationWaiverActive = employeeSnapshot.get('reactivationScheduleWaiverWeekStart') === vietnamWeekStartKey(requestTime) &&
+      oldWeekStartKey === vietnamWeekStartKey(requestTime)
+    const lateRejectedResubmission = rejectedByManager && requestTime >= scheduleDeadline((oldData[0].date as Timestamp).toDate()) && !hasSundayWaiver && !reactivationWaiverActive
     const retainedPenaltyId = previousPenaltyId || (lateRejectedResubmission ? `schedule-resubmit-${actor.uid}-${id}` : null)
     const retainedPenaltyAmount = Math.max(
       lateRejectedResubmission ? workflowPolicy.scheduleLatePenalty : 0,
       ...oldData.map((schedule) => Number(schedule.penaltyAmount || 0))
     )
     resultingPenaltyAmount = retainedPenaltyAmount
-    const retainedFixedSchedule = oldData.some((schedule) => schedule.fixedSchedule === true)
 
     const now = FieldValue.serverTimestamp()
     const weekStart = mondayFor(schedules[0].date)
@@ -1554,6 +1594,8 @@ export async function replaceSchedules(actor: RequestActor, raw: unknown) {
         note: schedule.note,
         batchKey,
         fixedSchedule: retainedFixedSchedule,
+        firstScheduleException: retainedFirstScheduleException,
+        pastDateRestricted: restrictPastDates,
         requiresReapproval: false,
         revisionCount,
         weeklyShiftCount: revisedShiftCount,
