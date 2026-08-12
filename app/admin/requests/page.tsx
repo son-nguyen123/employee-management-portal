@@ -19,7 +19,7 @@ import { subscribeToPendingStaffRequests, updateStaffRequestStatus } from '@/lib
 import type { Employee, Penalty, StaffRequest } from '@/lib/models/types'
 import { FACTORY_LABELS } from '@/lib/models/factory'
 import { MonthNavigator } from '@/components/ui/month-navigator'
-import { invalidateMonthData, readPenaltyMonth, type MonthDataSource } from '@/lib/services/monthDataService'
+import { invalidateMonthData, readPenaltyMonth } from '@/lib/services/monthDataService'
 import { currentVietnamMonth } from '@/lib/archive/retention'
 
 type RequestType = 'leave' | 'late' | 'salary' | 'overtime' | 'note' | 'scheduleChange' | 'scheduleModeChange' | 'factoryChange'
@@ -155,7 +155,6 @@ export default function AdminRequestsPage() {
   const [penaltyExportMonth, setPenaltyExportMonth] = useState(currentVietnamMonth(new Date()).key)
   const [exportingPenalties, setExportingPenalties] = useState(false)
   const [penaltyMonthLoading, setPenaltyMonthLoading] = useState(false)
-  const [penaltyMonthSource, setPenaltyMonthSource] = useState<MonthDataSource>('firestore')
 
   useEffect(() => {
     if (!rejectingRow && !editingPenalty) return
@@ -258,7 +257,6 @@ export default function AdminRequestsPage() {
       .then((result) => {
         if (!active) return
         setPenalties(result.records)
-        setPenaltyMonthSource(result.source)
         setEmployees((current) => {
           const byId = new Map(current.map((employee) => [employee.uid, employee]))
           result.employees.forEach((employee) => byId.set(employee.uid || (employee as Employee & { id?: string }).id || '', employee))
@@ -344,7 +342,6 @@ export default function AdminRequestsPage() {
         invalidateMonthData('penalties', penaltyExportMonth)
         const refreshed = await readPenaltyMonth(penaltyExportMonth)
         setPenalties(refreshed.records)
-        setPenaltyMonthSource(refreshed.source)
       } else {
         setPenalties((current) => [createdPenalty, ...current])
       }
@@ -457,7 +454,7 @@ export default function AdminRequestsPage() {
     <main className="min-h-screen pb-8">
       <Header title={pageMode === 'penalties' ? 'Quản lý phạt' : 'Yêu cầu khác'} subtitle={pageMode === 'penalties' ? 'Theo dõi theo nhân viên và từng khoản phạt' : 'Tất cả yêu cầu ngoài lịch đăng ký tuần'} />
       <PageContainer>
-        {pageMode === 'penalties' && <MonthNavigator value={penaltyExportMonth} onChange={setPenaltyExportMonth} loading={penaltyMonthLoading} count={penalties.length} countLabel="khoản phạt" source={penaltyMonthSource} />}
+        {pageMode === 'penalties' && <MonthNavigator value={penaltyExportMonth} onChange={setPenaltyExportMonth} loading={penaltyMonthLoading} count={penalties.length} countLabel="khoản phạt" />}
         {pageMode === 'requests' && <ManagementOverview employees={employees} />}
         <div className="flex flex-col">
         {pageMode === 'penalties' && (

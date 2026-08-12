@@ -1,7 +1,6 @@
 'use client'
 
-import { Archive, ChevronLeft, ChevronRight, Database, Layers3, Loader2 } from 'lucide-react'
-import type { MonthDataSource } from '@/lib/services/monthDataService'
+import { ChevronLeft, ChevronRight, Loader2 } from 'lucide-react'
 
 function shiftMonth(value: string, offset: number): string {
   const [year, month] = value.split('-').map(Number)
@@ -9,16 +8,13 @@ function shiftMonth(value: string, offset: number): string {
   return `${next.getFullYear()}-${String(next.getMonth() + 1).padStart(2, '0')}`
 }
 
-export function MonthNavigator({ value, onChange, loading = false, count, countLabel, source = 'firestore' }: {
+export function MonthNavigator({ value, onChange, loading = false, count, countLabel }: {
   value: string
   onChange: (month: string) => void
   loading?: boolean
   count?: number
   countLabel?: string
-  source?: MonthDataSource
 }) {
-  const SourceIcon = source === 'merged' ? Layers3 : source === 'drive' ? Archive : Database
-  const sourceLabel = source === 'merged' ? 'Firebase + Drive' : source === 'drive' ? 'Drive' : 'Firebase'
   return (
     <div className="mb-4 rounded-2xl border border-slate-200 bg-white p-1.5 shadow-sm dark:border-slate-700 dark:bg-slate-900">
       <div className="flex items-center justify-between">
@@ -32,8 +28,7 @@ export function MonthNavigator({ value, onChange, loading = false, count, countL
       </div>
       {typeof count === 'number' && (
         <div className="mt-1 flex items-center justify-between gap-2 rounded-xl bg-slate-50 px-3 py-2 dark:bg-slate-800/70">
-          <span className="flex min-w-0 items-center gap-2 text-xs font-bold text-slate-500 dark:text-slate-300"><SourceIcon className="h-3.5 w-3.5 shrink-0 text-indigo-500" />{loading ? 'Đang tải dữ liệu' : sourceLabel}</span>
-          <span className="shrink-0 rounded-full bg-indigo-100 px-2.5 py-1 text-xs font-black text-indigo-700 dark:bg-indigo-500/15 dark:text-indigo-200">{loading ? '…' : `${count} ${countLabel || 'mục'}`}</span>
+          <span className="ml-auto shrink-0 rounded-full bg-indigo-100 px-2.5 py-1 text-xs font-black text-indigo-700 dark:bg-indigo-500/15 dark:text-indigo-200">{loading ? 'Đang tải…' : `${count} ${countLabel || 'mục'}`}</span>
         </div>
       )}
     </div>

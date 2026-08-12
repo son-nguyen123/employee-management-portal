@@ -14,7 +14,7 @@ import { mockSalaryAdvances } from '@/lib/services/mockData'
 import { auth } from '@/lib/firebase'
 import { employeeFactoryId } from '@/lib/models/factory'
 import { MonthNavigator } from '@/components/ui/month-navigator'
-import { readSalaryAdvanceMonth, type MonthDataSource } from '@/lib/services/monthDataService'
+import { readSalaryAdvanceMonth } from '@/lib/services/monthDataService'
 import { currentVietnamMonth } from '@/lib/archive/retention'
 
 type SalaryFilter = 'all' | 'Pending' | 'Approved' | 'Rejected' | 'Cancelled'
@@ -80,7 +80,6 @@ function DirectorSalaryAdvancesPanel({ isPreviewMode }: { isPreviewMode: boolean
   const [exporting, setExporting] = useState(false)
   const [copiedId, setCopiedId] = useState<string | null>(null)
   const [month, setMonth] = useState(currentVietnamMonth(new Date()).key)
-  const [monthSource, setMonthSource] = useState<MonthDataSource>('firestore')
 
   useEffect(() => {
     if (!authUser) return
@@ -134,7 +133,7 @@ function DirectorSalaryAdvancesPanel({ isPreviewMode }: { isPreviewMode: boolean
             approvedAt: item.reviewedAt instanceof Date ? item.reviewedAt.toISOString() : null,
           }
         })
-        if (active) { setItems(nextItems); setMonthSource(result.source) }
+        if (active) setItems(nextItems)
       } catch (error) {
         if (active) setMessage(error instanceof Error ? error.message : 'Chưa thể tải danh sách ứng lương đã duyệt.')
       } finally {
@@ -198,7 +197,7 @@ function DirectorSalaryAdvancesPanel({ isPreviewMode }: { isPreviewMode: boolean
     <main className="min-h-screen bg-[#f3f7fb] pb-28 dark:bg-slate-950 md:pb-32">
       <Header title="Danh sách ứng lương" subtitle="Danh sách đã duyệt · sẵn sàng chuyển khoản" />
       <PageContainer maxWidth="2xl">
-        <MonthNavigator value={month} onChange={setMonth} loading={!ready} count={items.length} countLabel="yêu cầu" source={monthSource} />
+        <MonthNavigator value={month} onChange={setMonth} loading={!ready} count={items.length} countLabel="yêu cầu" />
         <section className="mb-5 overflow-hidden rounded-3xl bg-gradient-to-br from-sky-600 via-blue-600 to-indigo-700 p-4 text-white shadow-lg shadow-blue-900/15 sm:p-5">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div className="flex min-w-0 items-center gap-4">
@@ -294,7 +293,6 @@ export default function AdminSalaryAdvancesPage() {
   const [liveRequests, setLiveRequests] = useState<SalaryAdvance[]>([])
   const [month, setMonth] = useState(currentVietnamMonth(new Date()).key)
   const [monthLoading, setMonthLoading] = useState(false)
-  const [monthSource, setMonthSource] = useState<MonthDataSource>('firestore')
   const [ready, setReady] = useState({ employees: false, requests: false })
   const [filter, setFilter] = useState<SalaryFilter>('all')
   const [message, setMessage] = useState('')
@@ -364,7 +362,6 @@ export default function AdminSalaryAdvancesPage() {
     const currentMonth = currentVietnamMonth(new Date()).key
     if (month === currentMonth) {
       setRequests(liveRequests)
-      setMonthSource('firestore')
       return
     }
     let active = true
@@ -373,7 +370,6 @@ export default function AdminSalaryAdvancesPage() {
       .then((result) => {
         if (!active) return
         setRequests(result.records)
-        setMonthSource(result.source)
         setEmployees((current) => {
           const byId = new Map(current.map((employee) => [employee.uid, employee]))
           result.employees.forEach((employee) => byId.set(employee.uid || (employee as Employee & { id?: string }).id || '', employee))
@@ -460,7 +456,7 @@ export default function AdminSalaryAdvancesPage() {
     <main className="min-h-screen bg-slate-50/70 pb-28 dark:bg-slate-950 md:pb-32">
       <Header title="Quản lý ứng lương" subtitle="Duyệt nhanh, theo dõi rõ và gửi đúng danh sách đã duyệt" />
       <PageContainer maxWidth="2xl">
-        <MonthNavigator value={month} onChange={setMonth} loading={monthLoading} count={operationalRequests.length} countLabel="yêu cầu" source={monthSource} />
+        <MonthNavigator value={month} onChange={setMonth} loading={monthLoading} count={operationalRequests.length} countLabel="yêu cầu" />
         <div className="mb-4 rounded-2xl border border-sky-500/20 bg-gradient-to-r from-sky-600 to-blue-700 p-3 text-white shadow-md shadow-sky-950/10">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div className="flex min-w-0 items-center gap-3">
