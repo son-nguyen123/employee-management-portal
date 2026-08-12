@@ -209,53 +209,51 @@ function DirectorSalaryAdvancesPanel({ isPreviewMode }: { isPreviewMode: boolean
         ) : (
           <section className="grid gap-4 md:grid-cols-2">
             {items.map((item) => (
-              <article key={item.id} className="overflow-hidden rounded-[2rem] border border-slate-200/90 bg-white p-4 shadow-[0_18px_45px_-30px_rgba(30,64,175,.45)] transition hover:-translate-y-0.5 hover:shadow-xl dark:border-slate-800 dark:bg-slate-900 sm:p-5">
+              <article key={item.id} className="overflow-hidden rounded-3xl border border-slate-200/90 bg-white p-3 shadow-[0_14px_35px_-28px_rgba(30,64,175,.45)] transition hover:-translate-y-0.5 hover:shadow-xl dark:border-slate-800 dark:bg-slate-900 sm:p-4">
                 <div className="flex items-start gap-3">
-                  <RequestIdentityAvatar name={item.employeeName} photoURL={item.photoURL} icon={CircleDollarSign} iconColor="bg-sky-600" />
+                  <RequestIdentityAvatar name={item.employeeName} photoURL={item.photoURL} icon={CircleDollarSign} iconColor="bg-sky-600" compact />
                   <div className="min-w-0 flex-1">
-                    <p className="truncate text-lg font-black tracking-tight text-slate-950 dark:text-white">{item.employeeName}</p>
-                    <p className="mt-0.5 text-sm font-bold text-slate-500 dark:text-slate-400">{item.employeeCode} · Đã duyệt {directorDate(item.approvedAt)}</p>
+                    <p className="truncate text-base font-black tracking-tight text-slate-950 dark:text-white">{item.employeeName}</p>
+                    <p className="mt-0.5 truncate text-xs font-bold text-slate-500 dark:text-slate-400">{item.employeeCode} · Đã duyệt {directorDate(item.approvedAt)}</p>
                   </div>
-                  <span className="shrink-0 rounded-full bg-emerald-100 px-3 py-1.5 text-xs font-black text-emerald-700">Đã duyệt</span>
+                  <span className="shrink-0 rounded-full bg-emerald-100 px-2.5 py-1 text-[10px] font-black text-emerald-700">Đã duyệt</span>
                 </div>
-                <div className="mt-5 border-t border-slate-100 pt-4 dark:border-white/10">
-                  <p className="text-3xl font-black tracking-tight text-sky-700 dark:text-sky-300">{formatAmount(item.amount)}</p>
-                  <p className="mt-1 line-clamp-2 text-sm font-medium text-slate-500 dark:text-slate-400">{item.reason || 'Không có ghi chú.'}</p>
-                </div>
-                <div className="mt-3 grid grid-cols-2 gap-2">
-                  <a
-                    href={item.phone ? `tel:${item.phone}` : undefined}
-                    aria-disabled={!item.phone}
-                    className="flex min-h-9 items-center justify-center gap-1.5 rounded-xl border border-slate-200 bg-white px-2 text-xs font-black text-slate-700 transition active:scale-[0.98] aria-disabled:pointer-events-none aria-disabled:opacity-45 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200"
-                  >
-                    <Phone className="h-3.5 w-3.5" /> Gọi điện
-                  </a>
-                  <a
-                    href={item.facebookUrl || undefined}
-                    target={item.facebookUrl ? '_blank' : undefined}
-                    rel={item.facebookUrl ? 'noreferrer' : undefined}
-                    aria-disabled={!item.facebookUrl}
-                    className="flex min-h-9 items-center justify-center gap-1.5 rounded-xl bg-blue-600 px-2 text-xs font-black text-white transition active:scale-[0.98] aria-disabled:pointer-events-none aria-disabled:opacity-45"
-                  >
-                    <MessageCircle className="h-3.5 w-3.5" /> Mở Facebook
-                  </a>
-                </div>
-                <div className="mt-4 rounded-[1.5rem] bg-gradient-to-br from-slate-50 to-indigo-50/80 p-4 dark:from-slate-800 dark:to-indigo-950/40">
-                  <div className="flex items-start gap-3">
-                    <div className="grid h-10 w-10 shrink-0 place-items-center rounded-2xl bg-white text-indigo-600 shadow-sm dark:bg-slate-900"><Landmark className="h-5 w-5" /></div>
-                    <div className="min-w-0 flex-1">
-                      <p className="text-xs font-black uppercase tracking-[0.13em] text-slate-500 dark:text-slate-400">Tài khoản nhận tiền</p>
-                      <p className="mt-2 truncate text-base font-black text-slate-950 dark:text-white">{item.bankName || 'Chưa cập nhật ngân hàng'}</p>
-                      <p className="mt-1 truncate text-xs font-bold text-slate-500 dark:text-slate-400">{item.bankAccountName || 'Chưa cập nhật tên chủ tài khoản'}</p>
-                      <div className="mt-2 flex flex-wrap items-center gap-3">
-                        <p className="text-lg font-black tracking-[0.08em] text-slate-800 dark:text-slate-100">{item.bankAccountNumber || 'Chưa có số tài khoản'}</p>
-                        <button type="button" onClick={() => void copyAccountNumber(item)} disabled={!item.bankAccountNumber} className="ml-auto flex min-h-10 shrink-0 items-center gap-2 rounded-xl border border-sky-300 bg-white px-3 text-sm font-black text-sky-700 transition hover:bg-sky-50 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-45 dark:border-sky-500/40 dark:bg-slate-900 dark:text-sky-300">
-                          {copiedId === item.id ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
-                          {copiedId === item.id ? 'Đã copy' : 'Copy'}
-                        </button>
-                      </div>
-                    </div>
+                <div className="mt-3 flex items-center justify-between gap-3 border-t border-slate-100 pt-3 dark:border-white/10">
+                  <div className="min-w-0">
+                    <p className="text-2xl font-black tracking-tight text-sky-700 dark:text-sky-300">{formatAmount(item.amount)}</p>
+                    <p className="truncate text-xs font-medium text-slate-500 dark:text-slate-400">{item.reason || 'Không có ghi chú.'}</p>
                   </div>
+                  <div className="flex shrink-0 gap-1.5">
+                    <a
+                      href={item.phone ? `tel:${item.phone}` : undefined}
+                      aria-disabled={!item.phone}
+                      aria-label="Gọi điện"
+                      className="flex h-8 items-center gap-1 rounded-lg border border-slate-200 px-2 text-[10px] font-black text-slate-600 transition active:scale-[0.98] aria-disabled:pointer-events-none aria-disabled:opacity-45 dark:border-slate-700 dark:text-slate-300"
+                    >
+                      <Phone className="h-3 w-3" /> Gọi
+                    </a>
+                    <a
+                      href={item.facebookUrl || undefined}
+                      target={item.facebookUrl ? '_blank' : undefined}
+                      rel={item.facebookUrl ? 'noreferrer' : undefined}
+                      aria-disabled={!item.facebookUrl}
+                      aria-label="Mở Facebook"
+                      className="flex h-8 items-center gap-1 rounded-lg bg-blue-600 px-2 text-[10px] font-black text-white transition active:scale-[0.98] aria-disabled:pointer-events-none aria-disabled:opacity-45"
+                    >
+                      <MessageCircle className="h-3 w-3" /> FB
+                    </a>
+                  </div>
+                </div>
+                <div className="mt-3 flex items-center gap-2 rounded-2xl bg-gradient-to-br from-slate-50 to-indigo-50/80 px-3 py-2.5 dark:from-slate-800 dark:to-indigo-950/40">
+                  <Landmark className="h-4 w-4 shrink-0 text-indigo-600" />
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-xs font-black text-slate-950 dark:text-white">{item.bankName || 'Chưa cập nhật ngân hàng'} · {item.bankAccountName || 'Chưa có chủ tài khoản'}</p>
+                    <p className="truncate text-sm font-black tracking-[0.08em] text-slate-700 dark:text-slate-100">{item.bankAccountNumber || 'Chưa có số tài khoản'}</p>
+                  </div>
+                  <button type="button" onClick={() => void copyAccountNumber(item)} disabled={!item.bankAccountNumber} aria-label="Copy số tài khoản" className="flex h-8 shrink-0 items-center gap-1 rounded-lg border border-sky-300 bg-white px-2 text-xs font-black text-sky-700 transition hover:bg-sky-50 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-45 dark:border-sky-500/40 dark:bg-slate-900 dark:text-sky-300">
+                    {copiedId === item.id ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+                    {copiedId === item.id ? 'Đã copy' : 'Copy'}
+                  </button>
                 </div>
               </article>
             ))}
