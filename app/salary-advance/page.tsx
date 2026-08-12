@@ -56,6 +56,57 @@ function avatarColor(status: SalaryAdvance['status']) {
   return 'bg-sky-500'
 }
 
+function monthLabel(value: string) {
+  const [year, month] = value.split('-')
+  return `Tháng ${Number(month)}/${year}`
+}
+
+function SalaryAdvanceHistoryItem({
+  advance,
+  employeeName,
+  employeeCode,
+  photoURL,
+  expanded,
+  onToggle,
+}: {
+  advance: SalaryAdvance
+  employeeName: string
+  employeeCode: string
+  photoURL?: string | null
+  expanded: boolean
+  onToggle: () => void
+}) {
+  return (
+    <article className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900">
+      <button type="button" onClick={onToggle} aria-expanded={expanded} className="flex min-h-20 w-full items-center gap-3 p-4 text-left transition hover:bg-slate-50 dark:hover:bg-slate-800/60">
+        <RequestIdentityAvatar name={employeeName} photoURL={photoURL || undefined} icon={CircleDollarSign} iconColor={avatarColor(advance.status)} />
+        <span className="min-w-0 flex-1">
+          <span className="block truncate font-black">{employeeName}</span>
+          <span className="mt-0.5 block text-xs font-bold text-slate-500 dark:text-slate-400">Mã nhân viên · {employeeCode}</span>
+        </span>
+        <span className="flex shrink-0 items-center gap-2">
+          <span className="text-right">
+            <span className={`block rounded-full px-2.5 py-1 text-[11px] font-black ring-1 ${statusClasses(advance.status)}`}>{statusLabel(advance.status)}</span>
+            <span className="mt-1 block text-xs font-black text-sky-700 dark:text-sky-300">{formatAmount(advance.amount)}</span>
+          </span>
+          <ChevronDown className={`h-5 w-5 text-slate-400 transition-transform ${expanded ? 'rotate-180' : ''}`} />
+        </span>
+      </button>
+      {expanded && (
+        <div className="border-t border-slate-100 p-4 dark:border-white/10">
+          <div className="flex items-end justify-between gap-3">
+            <p className="text-xl font-black">{formatAmount(advance.amount)}</p>
+            <p className="text-right text-xs font-semibold text-slate-500">Gửi {formatDate(advance.createdAt)} · Xử lý {formatDate(advance.reviewedAt)}</p>
+          </div>
+          <p className="mt-2 text-sm leading-6 text-slate-600 dark:text-slate-300">{advance.reason || 'Không có ghi chú.'}</p>
+          {advance.reviewNote && <p className="mt-3 rounded-2xl bg-slate-50 p-3 text-xs font-semibold leading-5 text-slate-600 dark:bg-slate-800 dark:text-slate-300"><span className="font-black">Phản hồi quản lý:</span> {advance.reviewNote}</p>}
+          {advance.status === 'Rejected' && <div className="mt-4 flex items-center gap-2 rounded-2xl bg-rose-50 p-3 text-xs font-bold text-rose-700 dark:bg-rose-500/10 dark:text-rose-300"><RotateCcw className="h-4 w-4" /> Bạn có thể gửi một yêu cầu mới ở tháng hiện tại.</div>}
+        </div>
+      )}
+    </article>
+  )
+}
+
 type BankForm = {
   bankName: string
   bankAccountName: string
@@ -143,6 +194,8 @@ export default function SalaryAdvancePage() {
       return
     }
     let active = true
+    setPreviousAdvances([])
+    setExpandedProcessedId(null)
     setMonthLoading(true)
     void readSalaryAdvanceMonth(month)
       .then((result) => { if (active) setPreviousAdvances(result.records) })
@@ -298,6 +351,16 @@ export default function SalaryAdvancePage() {
   const employeeName = employee?.fullName || authUser?.displayName || 'Nhân viên'
   const employeeCode = employee?.employeeCode || 'Chưa có mã'
 
+  const handleMonthChange = (nextMonth: string) => {
+    const nextIsCurrentMonth = nextMonth === currentVietnamMonth(new Date()).key
+    setMonth(nextMonth)
+    setMonthLoading(!nextIsCurrentMonth)
+    if (!nextIsCurrentMonth) setPreviousAdvances([])
+    setEditingId(null)
+    setExpandedProcessedId(null)
+    setMessage(null)
+  }
+
   if (isLoading || loading || policyLoading) {
     return (
       <div className="min-h-screen bg-background">
@@ -311,9 +374,9 @@ export default function SalaryAdvancePage() {
     <div className="min-h-screen bg-slate-50/70 pb-24 dark:bg-slate-950 md:pb-0">
       <Header title="Ứng lương / yêu cầu" subtitle="Gửi đề nghị cho quản lý" />
       <PageContainer>
-        <MonthNavigator value={month} onChange={setMonth} loading={monthLoading} />
-        <StaffBanner icon={DollarSign} tone="sky" eyebrow="Ứng lương" title="Bạn cần hỗ trợ khoản nào?" description="Nhập số tiền muốn ứng và ghi chú ngắn để quản lý xem xét nhanh hơn." note="Bạn chỉ có thể điều chỉnh khi yêu cầu còn chờ duyệt. Sau khi quản lý xác nhận, yêu cầu sẽ được khóa để giữ đúng lịch sử." action={<Link href="/staff-note" className="rounded-xl bg-white/15 px-3 py-2 text-xs font-extrabold text-white backdrop-blur">Gửi yêu cầu khác</Link>} />
-        {salaryPolicy.restrictionEnabled && (
+        <MonthNavigator value={month} onChange={handleMonthChange} loading={monthLoading} />
+        {isCurrentMonth && <StaffBanner icon={DollarSign} tone="sky" eyebrow="Ứng lương" title="Bạn cần hỗ trợ khoản nào?" description="Nhập số tiền muốn ứng và ghi chú ngắn để quản lý xem xét nhanh hơn." note="Bạn chỉ có thể điều chỉnh khi yêu cầu còn chờ duyệt. Sau khi quản lý xác nhận, yêu cầu sẽ được khóa để giữ đúng lịch sử." action={<Link href="/staff-note" className="rounded-xl bg-white/15 px-3 py-2 text-xs font-extrabold text-white backdrop-blur">Gửi yêu cầu khác</Link>} />}
+        {isCurrentMonth && salaryPolicy.restrictionEnabled && (
           <div className={`mb-6 flex items-start gap-3 rounded-2xl border p-4 ${salaryPolicy.canSubmit ? 'border-emerald-200 bg-emerald-50 text-emerald-800 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-200' : 'border-amber-200 bg-amber-50 text-amber-800 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-200'}`}>
             <CalendarClock className="mt-0.5 h-5 w-5 shrink-0" />
             <div><p className="text-sm font-black">{salaryPolicy.canSubmit ? 'Đang mở nhận ứng lương' : 'Chưa đến ngày nhận ứng lương'}</p><p className="mt-1 text-xs font-semibold leading-5">Chỉ gửi vào ngày 24–25 hằng tháng. Hôm nay là ngày {salaryPolicy.vietnamDay}.</p></div>
@@ -321,7 +384,7 @@ export default function SalaryAdvancePage() {
         )}
         {message && <div className={`mb-6 flex items-start gap-2 rounded-2xl border p-4 ${message.type === 'success' ? 'border-emerald-200 bg-emerald-50 text-emerald-700 dark:border-emerald-800 dark:bg-emerald-900/20 dark:text-emerald-300' : 'border-rose-200 bg-rose-50 text-rose-700 dark:border-rose-800 dark:bg-rose-900/20 dark:text-rose-300'}`}><AlertCircle className="mt-0.5 h-4 w-4 shrink-0" /><p className="text-sm font-semibold">{message.text}</p></div>}
 
-        {(!hasPendingRequest || editingId) && <Card variant="elevated" className="mb-8 rounded-3xl border-sky-100 p-4 shadow-[0_14px_35px_-28px_rgba(14,116,144,0.8)] dark:border-sky-500/20 sm:p-6">
+        {isCurrentMonth && (!hasPendingRequest || editingId) && <Card variant="elevated" className="mb-8 rounded-3xl border-sky-100 p-4 shadow-[0_14px_35px_-28px_rgba(14,116,144,0.8)] dark:border-sky-500/20 sm:p-6">
           <div className="mb-5 flex items-center gap-3"><RequestIdentityAvatar name={employeeName} photoURL={employee?.photoURL} icon={CircleDollarSign} iconColor="bg-sky-500" /><div><h2 className="text-xl font-black">Tạo yêu cầu ứng lương</h2><p className="text-xs font-semibold text-muted-foreground">Mã nhân viên · {employeeCode}</p></div></div>
           <form onSubmit={handleSubmit} className="space-y-5">
             <label className="block text-sm font-bold">Số tiền muốn ứng
@@ -334,7 +397,37 @@ export default function SalaryAdvancePage() {
           </form>
         </Card>}
 
-        {previousAdvances.length > 0 && <div>
+        {!isCurrentMonth && (
+          <section className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm dark:border-slate-800 dark:bg-slate-900 sm:p-5">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="text-xs font-black uppercase tracking-[0.16em] text-slate-400">Lịch sử ứng lương</p>
+                <h2 className="mt-1 text-xl font-black text-slate-950 dark:text-white">{monthLabel(month)}</h2>
+              </div>
+              <span className="shrink-0 rounded-full bg-slate-100 px-3 py-1.5 text-xs font-black text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+                {monthLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : `${previousAdvances.length} yêu cầu`}
+              </span>
+            </div>
+            <p className="mt-2 text-sm font-semibold leading-5 text-slate-500 dark:text-slate-400">Chỉ xem lịch sử; yêu cầu của tháng cũ không thể chỉnh sửa hoặc hủy.</p>
+            <div className="mt-4 space-y-2.5">
+              {monthLoading && <div className="rounded-2xl border border-dashed border-slate-300 p-6 text-center text-sm font-semibold text-slate-500 dark:border-slate-700">Đang tải dữ liệu tháng...</div>}
+              {!monthLoading && previousAdvances.map((advance) => (
+                <SalaryAdvanceHistoryItem
+                  key={advance.id}
+                  advance={advance}
+                  employeeName={employeeName}
+                  employeeCode={employeeCode}
+                  photoURL={employee?.photoURL}
+                  expanded={expandedProcessedId === advance.id}
+                  onToggle={() => setExpandedProcessedId(expandedProcessedId === advance.id ? null : advance.id || null)}
+                />
+              ))}
+              {!monthLoading && !previousAdvances.length && <div className="rounded-2xl border border-dashed border-slate-300 p-6 text-center text-sm font-semibold text-slate-500 dark:border-slate-700">Tháng này chưa có yêu cầu ứng lương.</div>}
+            </div>
+          </section>
+        )}
+
+        {isCurrentMonth && previousAdvances.length > 0 && <div>
           <div className="mb-3 flex items-center gap-3"><span className="h-px flex-1 bg-slate-200 dark:bg-slate-800" /><span className="text-xs font-black uppercase tracking-[0.16em] text-slate-400">Lịch sử ứng lương</span><span className="h-px flex-1 bg-slate-200 dark:bg-slate-800" /></div>
           <section className="space-y-3">
             <div className="flex items-center justify-between gap-3"><h2 className="text-lg font-black text-sky-700 dark:text-sky-300">Chờ quản lý duyệt</h2><span className="rounded-full bg-sky-100 px-3 py-1 text-xs font-black text-sky-700 dark:bg-sky-500/10 dark:text-sky-300">{pendingAdvances.length}</span></div>
