@@ -169,7 +169,7 @@ export default function Page() {
   }, [authUser, isPreviewMode, role])
 
   useEffect(() => {
-    if (!authUser || !employee) {
+    if (!authUser || !employee || role === 'director') {
       setSchedulePrompt({ visible: false, isNew: false, href: '/schedule' })
       return
     }
@@ -230,7 +230,7 @@ export default function Page() {
     }
 
     void loadRegistrationWeek()
-  }, [authUser, employee, isPreviewMode])
+  }, [authUser, employee, isPreviewMode, role])
 
   if (isLoading) {
     return <AppLoadingScreen />
@@ -256,13 +256,13 @@ export default function Page() {
   const isDirector = role === 'director'
   const adminFeatures = [
     { title: 'Điều hành', note: `${Math.max(0, adminStats.actionable - adminStats.otherPending)} lịch · ${adminStats.otherPending} yêu cầu khác`, href: '/admin/dashboard#schedules', icon: ShieldCheck },
-    { title: 'Nhân sự tuần này', note: 'Xem người làm và người trực trong tuần đang chạy', href: '/admin/next-week', icon: CalendarRange },
-    { title: 'Quản lý phạt', note: 'Nhân viên · danh sách khoản phạt', href: '/admin/requests?view=penalties', icon: LayoutDashboard },
-    { title: 'Danh sách ứng lương', note: 'Xem yêu cầu và tài khoản nhận tiền', href: '/admin/salary-advances', icon: CircleDollarSign },
-    { title: 'Lịch sử xử lý', note: 'Xem và sửa quyết định trong tuần', href: '/admin/history', icon: History },
-    { title: 'Danh sách nhân viên', note: 'Tên, mã nhân viên và số điện thoại', href: '/admin/dashboard?view=employees#employees', icon: UsersRound },
-    { title: 'Kho dữ liệu', note: 'Xem lịch sử đã lưu trên Google Drive', href: '/admin/archive', icon: Archive },
-    { title: 'Cài đặt', note: 'Email biên nhận và cấu hình quản lý', href: '/admin/settings', icon: Settings },
+    { title: 'Nhân sự tuần này', note: 'Người làm · người trực tuần này', href: '/admin/next-week', icon: CalendarRange },
+    { title: 'Quản lý phạt', note: 'Nhân viên · khoản phạt', href: '/admin/requests?view=penalties', icon: LayoutDashboard },
+    { title: 'Danh sách ứng lương', note: 'Yêu cầu · tài khoản nhận tiền', href: '/admin/salary-advances', icon: CircleDollarSign },
+    { title: 'Lịch sử xử lý', note: 'Quyết định trong tuần', href: '/admin/history', icon: History },
+    { title: 'Danh sách nhân viên', note: 'Tên · mã · số điện thoại', href: '/admin/dashboard?view=employees#employees', icon: UsersRound },
+    { title: 'Kho dữ liệu', note: 'Lịch sử trên Google Drive', href: '/admin/archive', icon: Archive },
+    { title: 'Cài đặt', note: 'Email · cấu hình quản lý', href: '/admin/settings', icon: Settings },
   ]
   // Management accounts can use the same self-service utilities as staff.
   // Keep schedule registration here as the first card so managers do not
@@ -278,8 +278,8 @@ export default function Page() {
   const collapsibleStaffFeatures = visibleStaffFeatures
 
   return (
-    <main className="min-h-screen pb-24 md:pb-10">
-      <section className="home-hero overflow-hidden rounded-b-[2rem] border-b border-pink-200/70 bg-pink-50 px-4 pb-7 pt-[max(1rem,env(safe-area-inset-top))] text-slate-950 shadow-sm md:mx-auto md:mt-5 md:w-[calc(100%-2.5rem)] md:max-w-6xl md:rounded-[2rem] md:border md:px-5 md:py-5 md:shadow-lg md:shadow-slate-950/5 lg:mt-7 lg:px-7 lg:py-7">
+    <main className="min-h-screen w-full overflow-x-clip pb-24 md:pb-10">
+      <section className="home-hero box-border w-full max-w-full overflow-hidden rounded-b-[1.75rem] border-b border-pink-200/70 bg-pink-50 px-4 pb-5 pt-[max(1rem,env(safe-area-inset-top))] text-slate-950 shadow-sm md:mx-auto md:mt-5 md:w-[calc(100%-2.5rem)] md:max-w-6xl md:rounded-[2rem] md:border md:px-5 md:py-5 md:shadow-lg md:shadow-slate-950/5 lg:mt-7 lg:px-7 lg:py-7">
         <div className="mx-auto max-w-2xl md:grid md:max-w-none md:grid-cols-[0.82fr_1.18fr] md:items-stretch md:gap-4 lg:gap-5">
           <div className="flex items-center justify-between md:rounded-[1.6rem] md:border md:border-white/80 md:bg-white/65 md:p-4 md:shadow-sm md:backdrop-blur-sm lg:p-5">
             <div className="flex items-center gap-3">
@@ -314,46 +314,28 @@ export default function Page() {
             </div>
           </div>
 
-          {isDirector ? (
-            <div className="mt-6 rounded-3xl bg-gradient-to-br from-blue-600 via-indigo-600 to-violet-600 p-5 text-white shadow-xl shadow-indigo-950/20 md:mt-0 md:p-5 md:shadow-lg md:shadow-indigo-950/15 lg:p-6">
-              <div className="flex items-start justify-between gap-4">
-                <div>
-                  <p className="text-xs font-semibold text-blue-100">Trung tâm điều hành</p>
-                  <p className="mt-1 text-2xl font-extrabold md:text-xl lg:text-2xl">Sẵn sàng quản lý</p>
-                  <p className="mt-1 text-sm text-blue-100">{adminStats.actionable} mục đang chờ xử lý</p>
-                </div>
-                <div className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-white/15">
-                  <ShieldCheck className="h-6 w-6" />
-                </div>
+          <div className={`mt-4 w-full min-w-0 overflow-hidden rounded-[1.5rem] p-4 text-white shadow-lg md:mt-0 ${isDirector ? 'bg-gradient-to-r from-sky-600 via-blue-600 to-indigo-600 shadow-blue-950/15' : 'bg-gradient-to-r from-violet-600 via-fuchsia-600 to-rose-500 shadow-fuchsia-950/15'}`}>
+            <div className="flex min-w-0 items-center gap-3">
+              <div className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-white/15">
+                {isDirector ? <ShieldCheck className="h-5 w-5" /> : <CalendarDays className="h-5 w-5" />}
               </div>
-              <Link href="/admin/dashboard" className="mt-5 flex min-h-11 items-center justify-between rounded-2xl bg-white px-4 text-sm font-bold text-indigo-700">
-                Mở trung tâm điều hành
-                <ChevronRight className="h-4 w-4" />
-              </Link>
-            </div>
-          ) : (
-            <div className="mt-6 rounded-3xl bg-gradient-to-br from-violet-600 via-fuchsia-600 to-rose-500 p-5 text-white shadow-xl shadow-fuchsia-950/20 md:mt-0 md:p-5 md:shadow-lg md:shadow-fuchsia-950/15 lg:p-6">
-              <div className="flex items-start justify-between gap-4">
-                <div>
-                  <p className="text-xs font-semibold text-indigo-100">{isAdmin ? 'Tiến độ gửi lịch tuần này' : 'Lịch làm việc tuần này'}</p>
-                  <p className="mt-1 text-2xl font-extrabold md:text-xl lg:text-2xl">
-                    {isAdmin ? `${adminStats.confirmed}/${adminStats.total} nhân viên` : '4 ca đã đăng ký'}
-                  </p>
-                  <p className="mt-1 text-sm text-indigo-100">
-                    {isAdmin ? 'nhân viên đã xác nhận bảng lịch' : 'Tự động xác nhận · có thể sửa lại'}
-                  </p>
-                </div>
-                <div className="rounded-2xl bg-white/15 px-3 py-2 text-center">
-                  <span className="block text-xl font-black">{isAdmin ? String(adminStats.pending).padStart(2, '0') : '02'}</span>
-                  <span className="text-[10px] font-semibold uppercase tracking-wider">{isAdmin ? 'Cần lưu ý' : 'Thông báo'}</span>
-                </div>
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-xs font-semibold text-white/80">{isDirector ? 'Trung tâm điều hành' : isAdmin ? 'Lịch tuần tới' : 'Lịch làm việc tuần này'}</p>
+                <p className="mt-0.5 truncate text-xl font-black tracking-tight">
+                  {isDirector ? `${adminStats.actionable} mục cần xử lý` : isAdmin ? `${adminStats.confirmed}/${adminStats.total} đã gửi` : '4 ca đã đăng ký'}
+                </p>
               </div>
-              <Link href={isAdmin ? '/admin/dashboard#schedules' : '/schedule'} className="mt-5 flex min-h-11 items-center justify-between rounded-2xl bg-white px-4 text-sm font-bold text-indigo-700">
-                {isAdmin ? 'Mở bảng đăng ký lịch' : 'Xem lịch của tôi'}
-                <ChevronRight className="h-4 w-4" />
-              </Link>
+              {!isDirector && (
+                <span className="shrink-0 rounded-full bg-white/15 px-3 py-1.5 text-xs font-extrabold">
+                  {isAdmin ? `${adminStats.pending} lưu ý` : '2 mới'}
+                </span>
+              )}
             </div>
-          )}
+            <Link href={isDirector ? '/admin/dashboard' : isAdmin ? '/admin/dashboard#schedules' : '/schedule'} className="mt-3 flex min-h-10 w-full items-center justify-between rounded-xl bg-white px-3.5 text-sm font-extrabold text-indigo-700">
+              {isDirector ? 'Mở điều hành' : isAdmin ? 'Xem đăng ký lịch' : 'Xem lịch của tôi'}
+              <ChevronRight className="h-4 w-4 shrink-0" />
+            </Link>
+          </div>
         </div>
       </section>
 
@@ -361,16 +343,14 @@ export default function Page() {
         {!isDirector && schedulePrompt.visible && featureSettings?.schedule && (
           <Link
             href={schedulePrompt.href}
-            className="mb-5 flex items-center gap-3 rounded-3xl border border-indigo-200 bg-indigo-50 p-4 text-indigo-950 shadow-sm transition active:scale-[0.99] dark:border-indigo-500/30 dark:bg-indigo-500/10 dark:text-indigo-100"
+            className="mb-5 flex min-w-0 items-center gap-3 overflow-hidden rounded-2xl border border-indigo-200 bg-indigo-50 p-3 text-indigo-950 shadow-sm transition active:scale-[0.99] dark:border-indigo-500/30 dark:bg-indigo-500/10 dark:text-indigo-100"
           >
             <div className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-indigo-600 text-white">
               <UserPlus className="h-5 w-5" />
             </div>
             <div className="min-w-0 flex-1">
-              <p className="font-extrabold">
-                {schedulePrompt.isNew ? 'Có vẻ bạn là thành viên mới' : 'Có vẻ bạn chưa có lịch'}
-              </p>
-              <p className="text-xs text-indigo-700 dark:text-indigo-200">{schedulePrompt.isNew ? 'Nhân viên mới: chọn lịch từ đầu tuần hiện tại' : schedulePrompt.href === '/schedule?week=current' ? 'Tuần này chưa có lịch · Thêm lịch ngay' : 'Tuần kế tiếp chưa có lịch · Thêm lịch ngay'}</p>
+              <p className="truncate font-extrabold">{schedulePrompt.isNew ? 'Thiết lập lịch làm đầu tiên' : 'Bạn chưa có lịch làm'}</p>
+              <p className="truncate text-xs text-indigo-700 dark:text-indigo-200">{schedulePrompt.href === '/schedule?week=current' ? 'Thêm lịch tuần này' : 'Thêm lịch tuần kế tiếp'}</p>
             </div>
             <ChevronRight className="h-5 w-5 shrink-0" />
           </Link>
@@ -387,15 +367,15 @@ export default function Page() {
             </div>
             <div className="grid gap-3 md:grid-cols-2">
               {adminFeatures.map(({ title, note, href, icon: Icon }) => (
-                <Link key={title} href={href} className="mobile-card flex min-h-20 items-center gap-3 p-3 transition active:scale-[0.99]">
-                  <div className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-indigo-50 text-indigo-600 dark:bg-indigo-500/15">
+                <Link key={title} href={href} className="mobile-card flex min-h-16 w-full min-w-0 items-center gap-3 overflow-hidden rounded-2xl p-3 transition active:scale-[0.99]">
+                  <div className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-indigo-50 text-indigo-600 dark:bg-indigo-500/15">
                     <Icon className="h-5 w-5" />
                   </div>
                   <div className="min-w-0 flex-1">
-                    <h3 className="font-bold">{title}</h3>
+                    <h3 className="truncate font-bold">{title}</h3>
                     <p className="truncate text-xs text-muted-foreground">{note}</p>
                   </div>
-                  <ChevronRight className="h-5 w-5 text-slate-400" />
+                  <ChevronRight className="h-4 w-4 shrink-0 text-slate-400" />
                 </Link>
               ))}
             </div>
