@@ -55,11 +55,11 @@ function dateFromParts(parts: DateParts): Date {
   return new Date(Date.UTC(parts.year, parts.month - 1, parts.day))
 }
 
-function nextWeekBounds(now = new Date()) {
+function currentWeekBounds(now = new Date()) {
   const today = dateFromParts(datePartsInVietnam(now))
   const day = today.getUTCDay() || 7
   const start = new Date(today)
-  start.setUTCDate(start.getUTCDate() + (8 - day))
+  start.setUTCDate(start.getUTCDate() - (day - 1))
   const end = new Date(start)
   end.setUTCDate(end.getUTCDate() + 6)
 
@@ -123,11 +123,11 @@ function customShiftLabel(note: string): string | null {
 export async function GET(request: Request) {
   try {
     const actor = await authenticateRequest(request)
-    if (!['admin', 'manager'].includes(actor.role)) {
-      return NextResponse.json({ error: 'Chỉ quản lý hoặc admin được xuất lịch nhân sự.' }, { status: 403 })
+    if (!['admin', 'manager', 'director'].includes(actor.role)) {
+      return NextResponse.json({ error: 'Chỉ tài khoản quản trị được xuất lịch nhân sự.' }, { status: 403 })
     }
 
-    const bounds = nextWeekBounds()
+    const bounds = currentWeekBounds()
     const [employeeSnapshot, scheduleSnapshot] = await Promise.all([
       adminDb.collection('employees').where('status', '==', 'active').get(),
       adminDb.collection('workSchedules')
@@ -196,7 +196,7 @@ export async function GET(request: Request) {
     ]
 
     sheet.mergeCells(`A1:${lastColumn}1`)
-    sheet.getCell('A1').value = 'LỊCH NHÂN SỰ TUẦN TỚI'
+    sheet.getCell('A1').value = 'LỊCH NHÂN SỰ TUẦN NÀY'
     sheet.getCell('A1').font = { name: 'Arial', size: 16, bold: true, color: { argb: 'FFFFFFFF' } }
     sheet.getCell('A1').alignment = { horizontal: 'center', vertical: 'middle' }
     sheet.getCell('A1').fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1E3A5F' } }
@@ -330,13 +330,13 @@ export async function GET(request: Request) {
     return new Response(buffer, {
       headers: {
         'content-type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-        'content-disposition': `attachment; filename="lich-nhan-su-tuan-toi-${fileDate}.xlsx"`,
+        'content-disposition': `attachment; filename="lich-nhan-su-tuan-nay-${fileDate}.xlsx"`,
         'cache-control': 'no-store',
       },
     })
   } catch (error) {
     if (error instanceof ApiError) return NextResponse.json({ error: error.message }, { status: error.status })
-    console.error('Next week schedule Excel export failed:', error)
-    return NextResponse.json({ error: 'Chưa thể xuất lịch nhân sự tuần tới.' }, { status: 500 })
+    console.error('Current week schedule Excel export failed:', error)
+    return NextResponse.json({ error: 'Chưa thể xuất lịch nhân sự tuần này.' }, { status: 500 })
   }
 }

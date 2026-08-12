@@ -5,16 +5,16 @@ const mocks = vi.hoisted(() => {
   const employeeDocs = [
     { id: 'employee-1', data: () => ({ fullName: 'Nguyễn Minh An', employeeCode: 'NV-001', status: 'active' }) },
   ]
-  const nextWeekStart = new Date()
-  const day = nextWeekStart.getDay() || 7
-  nextWeekStart.setDate(nextWeekStart.getDate() + 8 - day)
-  nextWeekStart.setHours(9, 0, 0, 0)
-  const tuesday = new Date(nextWeekStart)
+  const currentWeekStart = new Date()
+  const day = currentWeekStart.getDay() || 7
+  currentWeekStart.setDate(currentWeekStart.getDate() - day + 1)
+  currentWeekStart.setHours(9, 0, 0, 0)
+  const tuesday = new Date(currentWeekStart)
   tuesday.setDate(tuesday.getDate() + 1)
-  const sunday = new Date(nextWeekStart)
+  const sunday = new Date(currentWeekStart)
   sunday.setDate(sunday.getDate() + 6)
   const scheduleDocs = [
-    { id: 'schedule-1', data: () => ({ employeeId: 'employee-1', date: nextWeekStart, shift: 'Morning', status: 'Approved', note: '' }) },
+    { id: 'schedule-1', data: () => ({ employeeId: 'employee-1', date: currentWeekStart, shift: 'Morning', status: 'Approved', note: '' }) },
     { id: 'schedule-2', data: () => ({ employeeId: 'employee-1', date: tuesday, shift: 'Morning', status: 'Approved', note: '[CUSTOM:13:00-21:00]' }) },
     { id: 'schedule-3', data: () => ({ employeeId: 'employee-1', date: sunday, shift: 'Afternoon', status: 'Approved', note: '[DUTY_ONLY]' }) },
   ]
@@ -47,7 +47,7 @@ vi.mock('@/lib/server/firebase-admin', () => ({ adminDb: mocks.adminDb }))
 import { GET } from '@/app/api/exports/next-week-schedule/route'
 import { GET as GETDuty } from '@/app/api/exports/next-week-duty/route'
 
-describe('next-week schedule export', () => {
+describe('current-week schedule export', () => {
   beforeEach(() => vi.clearAllMocks())
 
   it('creates a Monday-to-Sunday workbook with shift marks and a total column', async () => {
@@ -67,7 +67,7 @@ describe('next-week schedule export', () => {
     const sheet = workbook.getWorksheet('Lịch tuần')
 
     expect(sheet).toBeDefined()
-    expect(sheet?.getCell('A1').value).toBe('LỊCH NHÂN SỰ TUẦN TỚI')
+    expect(sheet?.getCell('A1').value).toBe('LỊCH NHÂN SỰ TUẦN NÀY')
     expect(sheet?.getCell('D5').value).toBe('Sáng')
     expect(sheet?.getCell('G5').value).toBe('T/Ca')
     expect(String(sheet?.getCell('D4').value)).toContain('Thứ 2')
@@ -101,7 +101,7 @@ describe('next-week schedule export', () => {
     const sheet = workbook.getWorksheet('Lịch trực')
 
     expect(sheet).toBeDefined()
-    expect(sheet?.getCell('A1').value).toBe('LỊCH TRỰC TUẦN TỚI')
+    expect(sheet?.getCell('A1').value).toBe('LỊCH TRỰC TUẦN NÀY')
     expect(String(sheet?.getCell('G4').value)).toContain('Chủ nhật')
     expect(String(sheet?.getCell('G5').value)).toContain('Nguyễn Minh An-001')
   })

@@ -29,11 +29,11 @@ function dateFromParts(parts: DateParts): Date {
   return new Date(Date.UTC(parts.year, parts.month - 1, parts.day))
 }
 
-function nextWeekBounds(now = new Date()) {
+function currentWeekBounds(now = new Date()) {
   const today = dateFromParts(datePartsInVietnam(now))
   const day = today.getUTCDay() || 7
   const start = new Date(today)
-  start.setUTCDate(start.getUTCDate() + (8 - day))
+  start.setUTCDate(start.getUTCDate() - (day - 1))
   const end = new Date(start)
   end.setUTCDate(end.getUTCDate() + 6)
   return {
@@ -81,7 +81,7 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: 'Chỉ tài khoản quản trị được xuất lịch trực.' }, { status: 403 })
     }
 
-    const bounds = nextWeekBounds()
+    const bounds = currentWeekBounds()
     const [employeeSnapshot, scheduleSnapshot] = await Promise.all([
       // Do not restrict the roster to active profiles here. A valid duty
       // registration must remain exportable even if the employee status was
@@ -135,7 +135,7 @@ export async function GET(request: Request) {
     sheet.columns = WEEKDAY_LABELS.map((_, index) => ({ key: `day-${index}`, width: 23 }))
 
     sheet.mergeCells('A1:G1')
-    sheet.getCell('A1').value = 'LỊCH TRỰC TUẦN TỚI'
+    sheet.getCell('A1').value = 'LỊCH TRỰC TUẦN NÀY'
     sheet.getCell('A1').font = { name: 'Arial', size: 16, bold: true, color: { argb: 'FFFFFFFF' } }
     sheet.getCell('A1').alignment = { horizontal: 'center', vertical: 'middle' }
     sheet.getCell('A1').fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF5B21B6' } }
@@ -185,13 +185,13 @@ export async function GET(request: Request) {
     return new Response(buffer, {
       headers: {
         'content-type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-        'content-disposition': `attachment; filename="lich-truc-tuan-toi-${fileDate}.xlsx"`,
+        'content-disposition': `attachment; filename="lich-truc-tuan-nay-${fileDate}.xlsx"`,
         'cache-control': 'no-store',
       },
     })
   } catch (error) {
     if (error instanceof ApiError) return NextResponse.json({ error: error.message }, { status: error.status })
-    console.error('Next week duty Excel export failed:', error)
-    return NextResponse.json({ error: 'Chưa thể xuất lịch trực tuần tới.' }, { status: 500 })
+    console.error('Current week duty Excel export failed:', error)
+    return NextResponse.json({ error: 'Chưa thể xuất lịch trực tuần này.' }, { status: 500 })
   }
 }

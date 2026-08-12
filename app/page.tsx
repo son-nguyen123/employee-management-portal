@@ -255,7 +255,7 @@ export default function Page() {
   const isAdmin = role === 'admin' || role === 'manager' || role === 'director'
   const adminFeatures = [
     { title: 'Điều hành', note: `${Math.max(0, adminStats.actionable - adminStats.otherPending)} lịch · ${adminStats.otherPending} yêu cầu khác`, href: '/admin/dashboard#schedules', icon: ShieldCheck },
-    { title: 'Nhân sự tuần tới', note: 'Xem người làm theo từng ngày và ca', href: '/admin/next-week', icon: CalendarRange },
+    { title: 'Nhân sự tuần này', note: 'Xem người làm và người trực trong tuần đang chạy', href: '/admin/next-week', icon: CalendarRange },
     { title: 'Quản lý phạt', note: 'Nhân viên · danh sách khoản phạt', href: '/admin/requests?view=penalties', icon: LayoutDashboard },
     { title: 'Danh sách ứng lương', note: 'Xem yêu cầu và tài khoản nhận tiền', href: '/admin/salary-advances', icon: CircleDollarSign },
     { title: 'Lịch sử xử lý', note: 'Xem và sửa quyết định trong tuần', href: '/admin/history', icon: History },

@@ -64,23 +64,13 @@ function weekDaysFrom(monday: Date) {
   })
 }
 
-function relevantWeekDays(schedules: ScheduleRow[]) {
+function currentWeekDays() {
   const now = new Date()
   const currentMonday = new Date(now)
   const day = now.getDay() || 7
   currentMonday.setDate(now.getDate() - day + 1)
   currentMonday.setHours(0, 0, 0, 0)
-  const nextMonday = new Date(currentMonday)
-  nextMonday.setDate(currentMonday.getDate() + 7)
-
-  const nextWeekKeys = new Set(weekDaysFrom(nextMonday).map((item) => item.key))
-  const nextWeekHasRegistrations = schedules.some(
-    (schedule) => nextWeekKeys.has(dateKey(toDate(schedule.date))) && isVisibleSchedule(schedule)
-  )
-
-  // As soon as next week's registrations exist, show them. When that week
-  // starts, its schedules remain visible until a newer registration week exists.
-  return weekDaysFrom(nextWeekHasRegistrations ? nextMonday : currentMonday)
+  return weekDaysFrom(currentMonday)
 }
 
 function isVisibleSchedule(schedule: WorkSchedule) {
@@ -151,7 +141,7 @@ export default function NextWeekStaffPage() {
         setSchedulesReady(true)
       },
       () => {
-        setMessage('Chưa tải được lịch tuần tới. Hãy kiểm tra quyền quản lý.')
+        setMessage('Chưa tải được lịch tuần này. Hãy kiểm tra quyền quản lý.')
         setSchedulesReady(true)
       }
     )
@@ -162,7 +152,9 @@ export default function NextWeekStaffPage() {
     }
   }, [authUser, isPreviewMode])
 
-  const days = useMemo(() => relevantWeekDays(schedules), [schedules])
+  // Saturday registrations belong to the following week, but management
+  // always views the week that is currently running.
+  const days = useMemo(() => currentWeekDays(), [])
   const employeeNames = useMemo(
     () => new Map(employees.map((employee) => [employee.uid, employee.fullName])),
     [employees]
@@ -295,18 +287,18 @@ export default function NextWeekStaffPage() {
       })
       if (!response.ok) {
         const data = await response.json().catch(() => null) as { error?: string } | null
-        throw new Error(data?.error || 'Chưa thể xuất lịch nhân sự tuần tới.')
+        throw new Error(data?.error || 'Chưa thể xuất lịch nhân sự tuần này.')
       }
       const blob = await response.blob()
       const url = URL.createObjectURL(blob)
       const anchor = document.createElement('a')
       anchor.href = url
-      anchor.download = `lich-nhan-su-tuan-toi-${new Date().toISOString().slice(0, 10)}.xlsx`
+      anchor.download = `lich-nhan-su-tuan-nay-${new Date().toISOString().slice(0, 10)}.xlsx`
       anchor.click()
       URL.revokeObjectURL(url)
-      setMessage('Đã tải lịch nhân sự tuần tới về máy.')
+      setMessage('Đã tải lịch nhân sự tuần này về máy.')
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : 'Chưa thể xuất lịch nhân sự tuần tới.')
+      setMessage(error instanceof Error ? error.message : 'Chưa thể xuất lịch nhân sự tuần này.')
     } finally {
       setExportingNextWeek(false)
     }
@@ -327,18 +319,18 @@ export default function NextWeekStaffPage() {
       })
       if (!response.ok) {
         const data = await response.json().catch(() => null) as { error?: string } | null
-        throw new Error(data?.error || 'Chưa thể xuất lịch trực tuần tới.')
+        throw new Error(data?.error || 'Chưa thể xuất lịch trực tuần này.')
       }
       const blob = await response.blob()
       const url = URL.createObjectURL(blob)
       const anchor = document.createElement('a')
       anchor.href = url
-      anchor.download = `lich-truc-tuan-toi-${new Date().toISOString().slice(0, 10)}.xlsx`
+      anchor.download = `lich-truc-tuan-nay-${new Date().toISOString().slice(0, 10)}.xlsx`
       anchor.click()
       URL.revokeObjectURL(url)
-      setMessage('Đã tải lịch trực tuần tới về máy.')
+      setMessage('Đã tải lịch trực tuần này về máy.')
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : 'Chưa thể xuất lịch trực tuần tới.')
+      setMessage(error instanceof Error ? error.message : 'Chưa thể xuất lịch trực tuần này.')
     } finally {
       setExportingDuty(false)
     }
@@ -347,7 +339,7 @@ export default function NextWeekStaffPage() {
   if ((!role || !['admin', 'manager', 'director'].includes(role)) && !isPreviewMode) {
     return (
       <main className="min-h-screen">
-        <Header title="Nhân sự tuần tới" />
+        <Header title="Nhân sự tuần này" />
         <PageContainer>
           <div className="mobile-card p-8 text-center font-bold">Tài khoản này không có quyền xem lịch nhân sự.</div>
         </PageContainer>
@@ -360,7 +352,7 @@ export default function NextWeekStaffPage() {
   return (
     <main className="min-h-screen pb-8">
       <Header
-        title="Nhân sự tuần tới"
+        title="Nhân sự tuần này"
         rightAction={(
           <div className="flex items-center gap-1.5">
             <button
@@ -368,7 +360,7 @@ export default function NextWeekStaffPage() {
               onClick={() => void exportNextWeekExcel()}
               disabled={exportingNextWeek || exportingDuty}
               className="flex min-h-10 min-w-10 shrink-0 items-center justify-center gap-1.5 rounded-xl bg-emerald-600 px-2.5 text-xs font-extrabold text-white shadow-sm shadow-emerald-600/20 transition active:scale-[.98] disabled:cursor-wait disabled:opacity-60 sm:px-3"
-              aria-label="Xuất lịch nhân sự tuần tới ra Excel"
+              aria-label="Xuất lịch nhân sự tuần này ra Excel"
             >
               {exportingNextWeek ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
               <span className="hidden sm:inline">Excel</span>
@@ -378,7 +370,7 @@ export default function NextWeekStaffPage() {
               onClick={() => void exportNextWeekDuty()}
               disabled={exportingNextWeek || exportingDuty}
               className="flex min-h-10 min-w-10 shrink-0 items-center justify-center gap-1.5 rounded-xl bg-violet-600 px-2.5 text-xs font-extrabold text-white shadow-sm shadow-violet-600/20 transition active:scale-[.98] disabled:cursor-wait disabled:opacity-60 sm:px-3"
-              aria-label="Xuất lịch trực tuần tới ra Excel"
+              aria-label="Xuất lịch trực tuần này ra Excel"
             >
               {exportingDuty ? <Loader2 className="h-4 w-4 animate-spin" /> : <UsersRound className="h-4 w-4" />}
               <span className="hidden sm:inline">Trực</span>
