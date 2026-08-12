@@ -21,6 +21,8 @@ type DirectorSalaryAdvance = {
   employeeName: string
   employeeCode: string
   photoURL?: string
+  phone?: string
+  facebookUrl?: string
   amount: number
   reason: string
   bankName: string
@@ -86,6 +88,8 @@ function DirectorSalaryAdvancesPanel({ isPreviewMode }: { isPreviewMode: boolean
           employeeName: demoEmployee.fullName,
           employeeCode: demoEmployee.employeeCode,
           photoURL: demoEmployee.photoURL,
+          phone: demoEmployee.phone,
+          facebookUrl: demoEmployee.facebookUrl,
           amount: Number(item.amount || 0),
           reason: item.reason || '',
           bankName: demoEmployee.bankName || '',
@@ -173,22 +177,22 @@ function DirectorSalaryAdvancesPanel({ isPreviewMode }: { isPreviewMode: boolean
     <main className="min-h-screen bg-[#f3f7fb] pb-28 dark:bg-slate-950 md:pb-32">
       <Header title="Danh sách ứng lương" subtitle="Danh sách đã duyệt · sẵn sàng chuyển khoản" />
       <PageContainer maxWidth="2xl">
-        <section className="mb-6 overflow-hidden rounded-[2rem] bg-gradient-to-br from-sky-600 via-blue-600 to-indigo-700 p-5 text-white shadow-xl shadow-blue-900/20 sm:p-6">
-          <div className="flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between">
+        <section className="mb-5 overflow-hidden rounded-3xl bg-gradient-to-br from-sky-600 via-blue-600 to-indigo-700 p-4 text-white shadow-lg shadow-blue-900/15 sm:p-5">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div className="flex min-w-0 items-center gap-4">
-              <div className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-white/15">
-                <CircleDollarSign className="h-6 w-6" />
+              <div className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-white/15">
+                <CircleDollarSign className="h-5 w-5" />
               </div>
               <div className="min-w-0">
-                <p className="text-xs font-black uppercase tracking-[0.16em] text-blue-100">Đã duyệt · sẵn sàng chuyển khoản</p>
-                <div className="mt-1 flex flex-wrap items-baseline gap-x-3 gap-y-0.5">
-                  <p className="text-3xl font-black tracking-tight">{items.length} yêu cầu</p>
-                  <p className="text-lg font-extrabold text-blue-100">{formatAmount(total)}</p>
+                <p className="truncate text-[10px] font-black uppercase tracking-[0.13em] text-blue-100">Đã duyệt · sẵn sàng chuyển khoản</p>
+                <div className="mt-0.5 flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+                  <p className="text-2xl font-black tracking-tight">{items.length} yêu cầu</p>
+                  <p className="text-base font-extrabold text-blue-100">{formatAmount(total)}</p>
                 </div>
-                <p className="mt-1 text-xs font-semibold text-blue-100">Chỉ hiển thị danh sách admin đã duyệt</p>
+                <p className="mt-0.5 truncate text-[11px] font-semibold text-blue-100">Danh sách admin đã duyệt</p>
               </div>
             </div>
-            <button type="button" onClick={() => void exportExcel()} disabled={exporting} className="flex min-h-11 shrink-0 items-center justify-center gap-2 rounded-2xl bg-white px-4 text-sm font-black text-blue-700 shadow-lg transition hover:bg-blue-50 active:scale-[0.98] disabled:opacity-60">
+            <button type="button" onClick={() => void exportExcel()} disabled={exporting} className="flex min-h-10 shrink-0 items-center justify-center gap-2 rounded-xl bg-white px-4 text-xs font-black text-blue-700 shadow-md transition hover:bg-blue-50 active:scale-[0.98] disabled:opacity-60">
               {exporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
               {exporting ? 'Đang tạo Excel...' : 'Xuất Excel'}
             </button>
@@ -217,6 +221,24 @@ function DirectorSalaryAdvancesPanel({ isPreviewMode }: { isPreviewMode: boolean
                 <div className="mt-5 border-t border-slate-100 pt-4 dark:border-white/10">
                   <p className="text-3xl font-black tracking-tight text-sky-700 dark:text-sky-300">{formatAmount(item.amount)}</p>
                   <p className="mt-1 line-clamp-2 text-sm font-medium text-slate-500 dark:text-slate-400">{item.reason || 'Không có ghi chú.'}</p>
+                </div>
+                <div className="mt-3 grid grid-cols-2 gap-2">
+                  <a
+                    href={item.phone ? `tel:${item.phone}` : undefined}
+                    aria-disabled={!item.phone}
+                    className="flex min-h-9 items-center justify-center gap-1.5 rounded-xl border border-slate-200 bg-white px-2 text-xs font-black text-slate-700 transition active:scale-[0.98] aria-disabled:pointer-events-none aria-disabled:opacity-45 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200"
+                  >
+                    <Phone className="h-3.5 w-3.5" /> Gọi điện
+                  </a>
+                  <a
+                    href={item.facebookUrl || undefined}
+                    target={item.facebookUrl ? '_blank' : undefined}
+                    rel={item.facebookUrl ? 'noreferrer' : undefined}
+                    aria-disabled={!item.facebookUrl}
+                    className="flex min-h-9 items-center justify-center gap-1.5 rounded-xl bg-blue-600 px-2 text-xs font-black text-white transition active:scale-[0.98] aria-disabled:pointer-events-none aria-disabled:opacity-45"
+                  >
+                    <MessageCircle className="h-3.5 w-3.5" /> Mở Facebook
+                  </a>
                 </div>
                 <div className="mt-4 rounded-[1.5rem] bg-gradient-to-br from-slate-50 to-indigo-50/80 p-4 dark:from-slate-800 dark:to-indigo-950/40">
                   <div className="flex items-start gap-3">

@@ -35,6 +35,8 @@ export async function GET(request: Request) {
           employeeName: String(employee.fullName || 'Nhân viên'),
           employeeCode: String(employee.employeeCode || advance.employeeId || ''),
           photoURL: typeof employee.photoURL === 'string' ? employee.photoURL : '',
+          phone: typeof employee.phone === 'string' ? employee.phone : '',
+          facebookUrl: typeof employee.facebookUrl === 'string' ? employee.facebookUrl : '',
           amount: Number(advance.amount || 0),
           reason: String(advance.reason || ''),
           bankName: typeof employee.bankName === 'string' ? employee.bankName : '',

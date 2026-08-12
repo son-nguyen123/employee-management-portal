@@ -141,7 +141,7 @@ export default function EmployeeDetailPage() {
           getEmployeeSchedules(params.uid),
           getEmployeeLeaves(params.uid),
           getEmployeeLateRequests(params.uid),
-          getEmployeeSalaryAdvances(params.uid),
+          role === 'director' ? Promise.resolve<SalaryAdvance[]>([]) : getEmployeeSalaryAdvances(params.uid),
           getEmployeeStaffRequests(params.uid),
         ])
         setEmployee(employeeData)
@@ -159,7 +159,7 @@ export default function EmployeeDetailPage() {
       }
     }
     void load()
-  }, [authUser, isPreviewMode, params.uid])
+  }, [authUser, isPreviewMode, params.uid, role])
 
   const activities = useMemo(() => [...buildScheduleActivities(schedules), ...otherActivities].sort((a, b) => b.sortAt.getTime() - a.sortAt.getTime()), [schedules, otherActivities])
 
