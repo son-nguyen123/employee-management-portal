@@ -78,7 +78,12 @@ async function loadMonthSourceData(month: string, resource: 'penalties' | 'salar
 
   const archivedProfiles = safeRecords(payload, 'employeeProfiles')
   const allEmployeeIds = new Set(Array.from(mergedById.values()).map((item) => String(item.data.employeeId || '')).filter(Boolean))
-  const liveProfileSnapshots = await Promise.all(Array.from(allEmployeeIds).map((uid) => adminDb.collection('employees').doc(uid).get()))
+  const employeeIds = Array.from(allEmployeeIds)
+  const liveProfileSnapshots: DocumentSnapshot<DocumentData>[] = []
+  for (let index = 0; index < employeeIds.length; index += 100) {
+    const refs = employeeIds.slice(index, index + 100).map((uid) => adminDb.collection('employees').doc(uid))
+    if (refs.length) liveProfileSnapshots.push(...await adminDb.getAll(...refs))
+  }
   const liveProfiles = liveProfileSnapshots.filter((item) => item.exists).map(archived)
   const profileRecordsById = new Map(liveProfiles.map((item) => [item.id, item]))
   archivedProfiles.forEach((item) => { if (!profileRecordsById.has(item.id)) profileRecordsById.set(item.id, item) })

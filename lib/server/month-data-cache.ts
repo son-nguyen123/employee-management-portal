@@ -5,6 +5,18 @@ export type MonthDataResource = 'penalties' | 'salaryAdvances'
 
 const CURRENT_MONTH_TTL_SECONDS = 5 * 60
 const PREVIOUS_MONTH_TTL_SECONDS = 24 * 60 * 60
+const inFlightMonthLoads = new Map<string, Promise<unknown>>()
+
+function shareMonthLoad<T>(key: string, loader: () => Promise<T>): Promise<T> {
+  const existing = inFlightMonthLoads.get(key)
+  if (existing) return existing as Promise<T>
+
+  const pending = loader().finally(() => {
+    if (inFlightMonthLoads.get(key) === pending) inFlightMonthLoads.delete(key)
+  })
+  inFlightMonthLoads.set(key, pending)
+  return pending
+}
 
 export function monthDataCacheTag(resource: MonthDataResource, month: string): string {
   return `month-data:${resource}:${month}`
@@ -21,7 +33,8 @@ export function withMonthDataCache<T>(
   month: string,
   loader: () => Promise<T>,
 ): Promise<T> {
-  if (!isActiveMonthCache(month)) return loader()
+  const loadKey = `${resource}:${month}`
+  if (!isActiveMonthCache(month)) return shareMonthLoad(loadKey, loader)
 
   const currentMonth = currentVietnamMonth(new Date()).key
   const revalidate = month === currentMonth ? CURRENT_MONTH_TTL_SECONDS : PREVIOUS_MONTH_TTL_SECONDS
@@ -29,7 +42,7 @@ export function withMonthDataCache<T>(
     revalidate,
     tags: [monthDataCacheTag(resource, month)],
   })
-  return cachedLoader()
+  return shareMonthLoad(loadKey, cachedLoader)
 }
 
 export function invalidateMonthDataCache(): void {
