@@ -28,6 +28,8 @@ const EMAIL_RECEIPT_ACTIONS = new Set([
   'reviseRequest',
   'cancelRequest',
   'cancelScheduleBatch',
+  'adminCancelSchedules',
+  'restoreAdminCancelledSchedules',
   'createForgottenDutyPenalty',
   'createManualPenalty',
   'managePenalty',
@@ -47,6 +49,8 @@ const actionLabels: Record<string, string> = {
   reviseRequest: 'Chỉnh sửa yêu cầu',
   cancelRequest: 'Hủy yêu cầu',
   cancelScheduleBatch: 'Hủy bảng lịch',
+  adminCancelSchedules: 'Quản lý hủy ca',
+  restoreAdminCancelledSchedules: 'Khôi phục ca quản lý đã hủy',
   createForgottenDutyPenalty: 'Ghi nhận khoản phạt quên trực',
   createManualPenalty: 'Ghi nhận khoản phạt thủ công',
   managePenalty: 'Điều chỉnh khoản phạt',
@@ -101,7 +105,7 @@ async function subjectEmployeeId(
     }
     collection = resourceCollections[String(payload.resource)] || ''
     id = String(payload.id || '')
-  } else if (action === 'reviewScheduleBatch' || action === 'cancelScheduleBatch') {
+  } else if (action === 'reviewScheduleBatch' || action === 'cancelScheduleBatch' || action === 'adminCancelSchedules' || action === 'restoreAdminCancelledSchedules') {
     collection = 'workSchedules'
     id = Array.isArray(payload.ids) ? String(payload.ids[0] || '') : ''
   } else if (action === 'managePenalty') {

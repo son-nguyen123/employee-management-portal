@@ -136,7 +136,11 @@ function recordBelongsToMonth(collection: string, data: Record<string, unknown>,
     ? data.date
     : collection === 'penalties'
       ? data.penaltyDate
-      : data.reviewedAt || data.updatedAt || data.createdAt
+      : collection === 'salaryAdvances'
+        ? data.createdAt
+        : collection === 'auditEvents'
+          ? data.occurredAt
+          : data.reviewedAt || data.updatedAt || data.createdAt
   const date = new Date(String(value || ''))
   return !Number.isNaN(date.getTime()) && date >= monthStart && date < monthEnd
 }

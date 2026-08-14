@@ -59,6 +59,16 @@ export interface WorkSchedule {
   cancelledByLeaveRequestId?: string
   cancelledBy?: string
   cancelledAt?: Timestamp | Date
+  adminCancellation?: boolean
+  statusBeforeAdminCancellation?: ScheduleStatus
+  reviewNoteBeforeAdminCancellation?: string
+  reviewedByBeforeAdminCancellation?: string
+  reviewedAtBeforeAdminCancellation?: Timestamp | Date
+  lockedAtBeforeAdminCancellation?: Timestamp | Date | null
+  autoApprovedBeforeAdminCancellation?: boolean
+  requiresReapprovalBeforeAdminCancellation?: boolean
+  restoredAt?: Timestamp | Date
+  restoredBy?: string
   lockedAt?: Timestamp | Date | null
   batchKey?: string
   editPreviousStatus?: ScheduleStatus

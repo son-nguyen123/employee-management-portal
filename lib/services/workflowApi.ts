@@ -12,6 +12,7 @@ type WorkflowAction =
   | 'reopenRequest'
   | 'cancelScheduleBatch'
   | 'adminCancelSchedules'
+  | 'restoreAdminCancelledSchedules'
   | 'setScheduleBatchEditing'
   | 'createForgottenDutyPenalty'
   | 'createManualPenalty'

@@ -10,7 +10,7 @@ import { updateLeaveStatus } from '@/lib/services/leaveService'
 import { updateLateStatus } from '@/lib/services/lateService'
 import { updateSalaryAdvanceStatus } from '@/lib/services/salaryService'
 import { updateStaffRequestStatus } from '@/lib/services/staffRequestService'
-import { reviewWorkScheduleBatch } from '@/lib/services/scheduleService'
+import { restoreAdminCancelledWorkSchedules, reviewWorkScheduleBatch } from '@/lib/services/scheduleService'
 import { subscribeToWeeklyDecisionHistory, type DecisionHistoryItem, type DecisionStatus } from '@/lib/services/decisionHistoryService'
 import type { Employee } from '@/lib/models/types'
 
@@ -134,6 +134,10 @@ export default function DecisionHistoryPage() {
       setMessage('Tuần trước đã khóa quyết định và chỉ còn để tra cứu.')
       return
     }
+    if (item.status === 'Cancelled' && (role !== 'admin' || item.resource !== 'schedule')) {
+      setMessage('Chỉ admin được khôi phục lịch đã điều chỉnh.')
+      return
+    }
     if (item.status === status) return
     setReason('')
     setChange({ item, status })
@@ -144,19 +148,25 @@ export default function DecisionHistoryPage() {
     setProcessing(true)
     setMessage('')
     try {
+      const nextStatus = change.status === 'Approved' || change.status === 'Rejected' ? change.status : null
+      if (!nextStatus) return
+      const restoringSchedule = change.item.resource === 'schedule' && change.item.status === 'Cancelled' && nextStatus === 'Approved'
       if (!isPreviewMode) {
-        const note = change.status === 'Rejected' ? reason.trim() : ''
-        if (change.item.resource === 'leave') await updateLeaveStatus(change.item.id, change.status, authUser.uid, note)
-        if (change.item.resource === 'late') await updateLateStatus(change.item.id, change.status, authUser.uid, note)
-        if (change.item.resource === 'salary') await updateSalaryAdvanceStatus(change.item.id, change.status, authUser.uid, note)
-        if (change.item.resource === 'staff') await updateStaffRequestStatus(change.item.id, change.status, note)
-        if (change.item.resource === 'schedule') await reviewWorkScheduleBatch(change.item.ids, change.status, note)
+        const note = nextStatus === 'Rejected' ? reason.trim() : ''
+        if (change.item.resource === 'leave') await updateLeaveStatus(change.item.id, nextStatus, authUser.uid, note)
+        if (change.item.resource === 'late') await updateLateStatus(change.item.id, nextStatus, authUser.uid, note)
+        if (change.item.resource === 'salary') await updateSalaryAdvanceStatus(change.item.id, nextStatus, authUser.uid, note)
+        if (change.item.resource === 'staff') await updateStaffRequestStatus(change.item.id, nextStatus, note)
+        if (restoringSchedule) await restoreAdminCancelledWorkSchedules(change.item.ids)
+        else if (change.item.resource === 'schedule') await reviewWorkScheduleBatch(change.item.ids, nextStatus, note)
       } else {
         setItems((current) => current.map((item) => item.key === change.item.key
-          ? { ...item, status: change.status, reviewNote: change.status === 'Rejected' ? reason.trim() : '', reviewedAt: new Date() }
+          ? { ...item, status: nextStatus, reviewNote: nextStatus === 'Rejected' ? reason.trim() : '', reviewedAt: new Date() }
           : item))
       }
-      setMessage(`Đã đổi quyết định thành ${change.status === 'Approved' ? 'Duyệt' : 'Từ chối'} và gửi thông báo mới cho nhân viên.`)
+      setMessage(restoringSchedule
+        ? 'Đã khôi phục các ca về trạng thái trước khi admin điều chỉnh và báo lại cho nhân viên.'
+        : `Đã đổi quyết định thành ${nextStatus === 'Approved' ? 'Duyệt' : 'Từ chối'} và gửi thông báo mới cho nhân viên.`)
       setChange(null)
       setReason('')
     } catch (error) {
@@ -202,6 +212,7 @@ export default function DecisionHistoryPage() {
               const employee = employeeMap.get(employeeId)
               const isOpen = openEmployees.has(employeeId)
               const approved = employeeItems.filter((item) => item.status === 'Approved').length
+              const cancelled = employeeItems.filter((item) => item.status === 'Cancelled').length
               return (
                 <article key={employeeId} className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm dark:border-white/10 dark:bg-slate-900">
                   <button type="button" onClick={() => toggleEmployee(employeeId)} className="flex w-full items-center gap-3 p-4 text-left" aria-expanded={isOpen}>
@@ -212,7 +223,7 @@ export default function DecisionHistoryPage() {
                       <h2 className="truncate font-extrabold">{employee?.fullName || 'Nhân viên'}</h2>
                       <p className="mt-0.5 text-xs text-muted-foreground">{employee?.employeeCode || employeeId} · {employeeItems.length} yêu cầu</p>
                     </div>
-                    <div className="text-right text-[10px] font-bold text-slate-500"><p>{approved} duyệt</p><p>{employeeItems.length - approved} từ chối</p></div>
+                    <div className="text-right text-[10px] font-bold text-slate-500"><p>{approved} duyệt</p><p>{cancelled ? `${cancelled} đã hủy` : `${employeeItems.length - approved} từ chối`}</p></div>
                     <ChevronDown className={`h-5 w-5 shrink-0 text-slate-400 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
                   </button>
 
@@ -225,14 +236,16 @@ export default function DecisionHistoryPage() {
                             <button type="button" onClick={() => setOpenItem(itemOpen ? '' : item.key)} className="flex w-full items-center gap-3 p-3 text-left" aria-expanded={itemOpen}>
                               <CalendarDays className="h-5 w-5 shrink-0 text-slate-400" />
                               <div className="min-w-0 flex-1"><p className="truncate text-sm font-bold">{item.title}</p><p className="mt-0.5 text-[11px] text-muted-foreground">{item.reviewedAt.toLocaleString('vi-VN', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })}</p></div>
-                              <span className={`rounded-lg px-2 py-1 text-[10px] font-bold ${item.status === 'Approved' ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-300' : 'bg-rose-50 text-rose-700 dark:bg-rose-500/10 dark:text-rose-300'}`}>{item.status === 'Approved' ? 'Đã duyệt' : 'Đã từ chối'}</span>
+                              <span className={`rounded-lg px-2 py-1 text-[10px] font-bold ${item.status === 'Approved' ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-300' : item.status === 'Cancelled' ? 'bg-amber-50 text-amber-700 dark:bg-amber-500/10 dark:text-amber-300' : 'bg-rose-50 text-rose-700 dark:bg-rose-500/10 dark:text-rose-300'}`}>{item.status === 'Approved' ? 'Đã duyệt' : item.status === 'Cancelled' ? 'Admin đã hủy' : 'Đã từ chối'}</span>
                               <ChevronDown className={`h-4 w-4 shrink-0 text-slate-400 transition-transform ${itemOpen ? 'rotate-180' : ''}`} />
                             </button>
                             {itemOpen && (
                               <div className="border-t border-slate-100 p-3 dark:border-white/10">
                                 <p className="text-sm leading-5 text-slate-600 dark:text-slate-300">{item.detail}</p>
                                 {item.reviewNote && <p className="mt-2 rounded-xl bg-slate-50 p-2.5 text-xs text-slate-600 dark:bg-slate-800 dark:text-slate-300"><strong>Phản hồi:</strong> {item.reviewNote}</p>}
-                                {weekOffset === 0 ? (
+                                {weekOffset === 0 ? item.status === 'Cancelled' ? (
+                                  <button type="button" disabled={role !== 'admin'} onClick={() => openChange(item, 'Approved')} className="mt-3 flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-amber-500 text-xs font-bold text-white disabled:cursor-not-allowed disabled:opacity-50"><RotateCcw className="h-4 w-4" /> Khôi phục lịch</button>
+                                ) : (
                                   <div className="mt-3 grid grid-cols-2 gap-2">
                                     <button type="button" disabled={item.status === 'Rejected'} onClick={() => openChange(item, 'Rejected')} className="flex h-11 items-center justify-center gap-2 rounded-xl border border-slate-200 text-xs font-bold text-slate-700 disabled:bg-slate-100 disabled:text-slate-400 dark:border-slate-700 dark:text-slate-200 dark:disabled:bg-slate-800"><X className="h-4 w-4" /> Từ chối</button>
                                     <button type="button" disabled={item.status === 'Approved'} onClick={() => openChange(item, 'Approved')} className="flex h-11 items-center justify-center gap-2 rounded-xl bg-indigo-600 text-xs font-bold text-white disabled:bg-slate-200 disabled:text-slate-400 dark:disabled:bg-slate-800"><Check className="h-4 w-4" /> Duyệt</button>
@@ -262,8 +275,8 @@ export default function DecisionHistoryPage() {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 p-3 backdrop-blur-sm" onClick={() => !processing && setChange(null)}>
           <section className="w-full max-w-md rounded-[2rem] bg-white p-5 shadow-2xl dark:bg-slate-900" onClick={(event) => event.stopPropagation()}>
             <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-indigo-600">Xác nhận sửa quyết định</p>
-            <h2 className="mt-1 text-xl font-black">{change.status === 'Approved' ? 'Đổi thành Duyệt?' : 'Đổi thành Từ chối?'}</h2>
-            <p className="mt-2 text-sm leading-5 text-muted-foreground">{change.item.title}. Thao tác này sẽ cập nhật trạng thái và gửi thông báo mới cho nhân viên.</p>
+            <h2 className="mt-1 text-xl font-black">{change.item.status === 'Cancelled' ? 'Khôi phục lịch này?' : change.status === 'Approved' ? 'Đổi thành Duyệt?' : 'Đổi thành Từ chối?'}</h2>
+            <p className="mt-2 text-sm leading-5 text-muted-foreground">{change.item.status === 'Cancelled' ? 'Các ca sẽ được trả về trạng thái trước khi admin hủy và nhân viên sẽ nhận thông báo mới.' : `${change.item.title}. Thao tác này sẽ cập nhật trạng thái và gửi thông báo mới cho nhân viên.`}</p>
             {change.status === 'Rejected' && (
               <label className="mt-4 block text-sm font-bold">Lý do từ chối
                 <textarea autoFocus value={reason} onChange={(event) => setReason(event.target.value)} maxLength={1000} className="mobile-field mt-2 min-h-24 py-3" placeholder="Nhập lý do để nhân viên hiểu quyết định mới..." />
@@ -271,8 +284,8 @@ export default function DecisionHistoryPage() {
             )}
             <div className="mt-5 grid grid-cols-2 gap-2">
               <button type="button" disabled={processing} onClick={() => setChange(null)} className="h-12 rounded-2xl border border-slate-200 text-sm font-bold dark:border-slate-700">Quay lại</button>
-              <button type="button" disabled={processing || (change.status === 'Rejected' && !reason.trim())} onClick={() => void applyChange()} className="flex h-12 items-center justify-center gap-2 rounded-2xl bg-indigo-600 text-sm font-bold text-white disabled:opacity-50">
-                {processing ? <Loader2 className="h-4 w-4 animate-spin" /> : <RotateCcw className="h-4 w-4" />} Cập nhật
+              <button type="button" disabled={processing || (change.item.status !== 'Cancelled' && change.status === 'Rejected' && !reason.trim())} onClick={() => void applyChange()} className="flex h-12 items-center justify-center gap-2 rounded-2xl bg-indigo-600 text-sm font-bold text-white disabled:opacity-50">
+                {processing ? <Loader2 className="h-4 w-4 animate-spin" /> : <RotateCcw className="h-4 w-4" />} {change.item.status === 'Cancelled' ? 'Khôi phục' : 'Cập nhật'}
               </button>
             </div>
           </section>

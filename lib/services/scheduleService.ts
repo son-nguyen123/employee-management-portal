@@ -81,6 +81,13 @@ export async function adminCancelWorkSchedules(ids: string[], reason: string): P
   })
 }
 
+export async function restoreAdminCancelledWorkSchedules(ids: string[]): Promise<{ ids: string[]; status: string }> {
+  return callWorkflowApi('restoreAdminCancelledSchedules', {
+    requestId: newWorkflowRequestId(),
+    ids,
+  })
+}
+
 /**
  * Get all schedules for an employee
  */

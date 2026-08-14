@@ -2364,15 +2364,39 @@ export async function adminCancelSchedules(actor: RequestActor, raw: unknown) {
     )) {
       throw new ApiError(409, 'Các ca phải thuộc cùng một nhân viên và chưa bị hủy.')
     }
+    const employeeSnapshot = await transaction.get(adminDb.collection('employees').doc(employeeId))
+    if (!employeeSnapshot.exists || String(employeeSnapshot.get('factoryId') || 'factory-1') !== actor.factoryId) {
+      throw new ApiError(403, 'Bạn chỉ được điều chỉnh lịch của nhân viên thuộc xưởng mình.')
+    }
     const now = FieldValue.serverTimestamp()
-    refs.forEach((ref) => transaction.set(ref, {
+    refs.forEach((ref, index) => {
+      const snapshot = snapshots[index]
+      const previousReviewNote = snapshot.get('reviewNote')
+      const previousReviewedBy = snapshot.get('reviewedBy')
+      const previousReviewedAt = snapshot.get('reviewedAt')
+      const previousLockedAt = snapshot.get('lockedAt')
+      const previousAutoApproved = snapshot.get('autoApproved')
+      const previousRequiresReapproval = snapshot.get('requiresReapproval')
+      transaction.set(ref, {
       status: 'Cancelled',
       lockedAt: null,
       cancelledBy: actor.uid,
       cancelledAt: now,
       cancellationReason: reason,
+      adminCancellation: true,
+      statusBeforeAdminCancellation: snapshot.get('status'),
+      ...(previousReviewNote !== undefined ? { reviewNoteBeforeAdminCancellation: previousReviewNote } : {}),
+      ...(previousReviewedBy !== undefined ? { reviewedByBeforeAdminCancellation: previousReviewedBy } : {}),
+      ...(previousReviewedAt !== undefined ? { reviewedAtBeforeAdminCancellation: previousReviewedAt } : {}),
+      ...(previousLockedAt !== undefined ? { lockedAtBeforeAdminCancellation: previousLockedAt } : {}),
+      ...(previousAutoApproved !== undefined ? { autoApprovedBeforeAdminCancellation: previousAutoApproved } : {}),
+      ...(previousRequiresReapproval !== undefined ? { requiresReapprovalBeforeAdminCancellation: previousRequiresReapproval } : {}),
+      reviewedBy: actor.uid,
+      reviewedAt: now,
+      reviewNote: reason,
       updatedAt: now,
-    }, { merge: true }))
+      }, { merge: true })
+    })
     transaction.create(workflow, {
       employeeId,
       action: 'adminCancelSchedules',
@@ -2390,6 +2414,97 @@ export async function adminCancelSchedules(actor: RequestActor, raw: unknown) {
   })
 
   return { ids }
+}
+
+export async function restoreAdminCancelledSchedules(actor: RequestActor, raw: unknown) {
+  if (actor.role !== 'admin') throw new ApiError(403, 'Chỉ admin được khôi phục lịch đã điều chỉnh.')
+  const body = objectBody(raw)
+  const id = requestId(body)
+  if (!Array.isArray(body.ids) || body.ids.length < 1 || body.ids.length > 21) {
+    throw new ApiError(400, 'Vui lòng chọn từ 1 đến 21 ca cần khôi phục.')
+  }
+  const ids = [...new Set(body.ids.map((value, index) => text(value, `Mã ca ${index + 1}`, 128)))]
+  const refs = ids.map((scheduleId) => adminDb.collection('workSchedules').doc(scheduleId))
+  const workflow = workflowRef(actor, id)
+  let employeeId = ''
+
+  await adminDb.runTransaction(async (transaction) => {
+    const [workflowSnapshot, ...snapshots] = await Promise.all([
+      transaction.get(workflow),
+      ...refs.map((ref) => transaction.get(ref)),
+    ])
+    if (workflowSnapshot.exists) throw new ApiError(409, 'Thao tác khôi phục lịch này đã được xử lý.')
+    if (snapshots.some((snapshot) => !snapshot.exists)) throw new ApiError(404, 'Không tìm thấy đầy đủ các ca cần khôi phục.')
+
+    employeeId = String(snapshots[0].get('employeeId') || '')
+    if (!employeeId || snapshots.some((snapshot) =>
+      snapshot.get('employeeId') !== employeeId ||
+      snapshot.get('status') !== 'Cancelled' ||
+      snapshot.get('adminCancellation') !== true
+    )) {
+      throw new ApiError(409, 'Chỉ có thể khôi phục các ca bị admin hủy trong cùng một thao tác.')
+    }
+    const employeeSnapshot = await transaction.get(adminDb.collection('employees').doc(employeeId))
+    if (!employeeSnapshot.exists || String(employeeSnapshot.get('factoryId') || 'factory-1') !== actor.factoryId) {
+      throw new ApiError(403, 'Bạn chỉ được khôi phục lịch của nhân viên thuộc xưởng mình.')
+    }
+    if (snapshots.some((snapshot) => !decisionReviewIsEditable(firestoreDate(snapshot.get('reviewedAt'))))) {
+      throw new ApiError(409, 'Lịch đã qua tuần hiện tại nên không thể khôi phục từ Lịch sử xử lý.')
+    }
+
+    const now = FieldValue.serverTimestamp()
+    snapshots.forEach((snapshot, index) => {
+      const previousStatus = String(snapshot.get('statusBeforeAdminCancellation') || 'Approved')
+      const restoredStatus = ['Registered', 'Pending', 'Approved', 'Editing', 'ChangesRequested'].includes(previousStatus)
+        ? previousStatus
+        : 'Approved'
+      const previousLockedAt = snapshot.get('lockedAtBeforeAdminCancellation')
+      const previousReviewNote = snapshot.get('reviewNoteBeforeAdminCancellation')
+      const previousReviewedBy = snapshot.get('reviewedByBeforeAdminCancellation')
+      const previousReviewedAt = snapshot.get('reviewedAtBeforeAdminCancellation')
+      const previousAutoApproved = snapshot.get('autoApprovedBeforeAdminCancellation')
+      const previousRequiresReapproval = snapshot.get('requiresReapprovalBeforeAdminCancellation')
+      transaction.set(refs[index], {
+        status: restoredStatus,
+        lockedAt: previousLockedAt === undefined ? (restoredStatus === 'Approved' ? now : null) : previousLockedAt,
+        reviewNote: previousReviewNote == null ? FieldValue.delete() : previousReviewNote,
+        reviewedBy: previousReviewedBy == null ? FieldValue.delete() : previousReviewedBy,
+        reviewedAt: previousReviewedAt == null ? FieldValue.delete() : previousReviewedAt,
+        autoApproved: previousAutoApproved == null ? FieldValue.delete() : previousAutoApproved,
+        requiresReapproval: previousRequiresReapproval == null ? FieldValue.delete() : previousRequiresReapproval,
+        adminCancellation: FieldValue.delete(),
+        statusBeforeAdminCancellation: FieldValue.delete(),
+        reviewNoteBeforeAdminCancellation: FieldValue.delete(),
+        reviewedByBeforeAdminCancellation: FieldValue.delete(),
+        reviewedAtBeforeAdminCancellation: FieldValue.delete(),
+        lockedAtBeforeAdminCancellation: FieldValue.delete(),
+        autoApprovedBeforeAdminCancellation: FieldValue.delete(),
+        requiresReapprovalBeforeAdminCancellation: FieldValue.delete(),
+        cancelledBy: FieldValue.delete(),
+        cancelledAt: FieldValue.delete(),
+        cancellationReason: FieldValue.delete(),
+        restoredAt: now,
+        restoredBy: actor.uid,
+        updatedAt: now,
+      }, { merge: true })
+    })
+    transaction.create(workflow, {
+      employeeId,
+      action: 'restoreAdminCancelledSchedules',
+      targetIds: ids,
+      createdAt: now,
+    })
+    transaction.set(adminDb.collection('notifications').doc(`admin-schedule-restore-${id}`), {
+      employeeId,
+      title: 'Lịch làm đã được khôi phục',
+      message: `${ids.length} ca đã được quản lý khôi phục về trạng thái trước đó.`,
+      type: 'success',
+      isRead: false,
+      createdAt: now,
+    })
+  })
+
+  return { ids, status: 'Restored' }
 }
 
 export async function reviseRequest(actor: RequestActor, raw: unknown) {

@@ -121,7 +121,7 @@ export function OtherRequestWorkspace({ employees }: { employees: Employee[] }) 
     const unsubscribeHistory = subscribeToWeeklyDecisionHistory(
       weekWindow.start,
       new Date(weekWindow.end.getTime() - 1),
-      (items) => setDecisions(items.filter((item) => item.resource !== 'schedule')),
+      (items) => setDecisions(items.filter((item): item is DecisionHistoryItem & { status: 'Approved' | 'Rejected' } => item.resource !== 'schedule' && item.status !== 'Cancelled')),
       () => setMessage('Chưa thể tải lịch sử xử lý trong tuần.')
     )
     return () => { unsubscribePending(); unsubscribeHistory() }
@@ -129,7 +129,7 @@ export function OtherRequestWorkspace({ employees }: { employees: Employee[] }) 
 
   const employeeMap = useMemo(() => new Map(employees.map((employee) => [employee.uid, employee])), [employees])
   const rows = useMemo<RequestRow[]>(() => [
-    ...decisions.map((decision): RequestRow => ({ kind: 'decision', decision, status: decision.status, sortAt: decision.reviewedAt })),
+    ...decisions.filter((decision): decision is DecisionHistoryItem & { status: 'Approved' | 'Rejected' } => decision.status !== 'Cancelled').map((decision): RequestRow => ({ kind: 'decision', decision, status: decision.status, sortAt: decision.reviewedAt })),
     ...pending.map((item): RequestRow => ({ kind: 'pending', pending: item, status: 'Pending', sortAt: item.createdAt })),
   ].sort((left, right) => {
     const rank = { Pending: 0, Rejected: 1, Approved: 2 }

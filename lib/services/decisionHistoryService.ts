@@ -3,7 +3,7 @@ import { db } from '@/lib/firebase'
 import { FACTORY_LABELS, isFactoryId } from '@/lib/models/factory'
 
 export type DecisionResource = 'leave' | 'late' | 'salary' | 'staff' | 'schedule'
-export type DecisionStatus = 'Approved' | 'Rejected'
+export type DecisionStatus = 'Approved' | 'Rejected' | 'Cancelled'
 
 export interface DecisionHistoryItem {
   key: string
@@ -62,6 +62,10 @@ function weekRange(value: unknown): { start: Date; end: Date } {
 
 function processed(row: SnapshotRow): row is SnapshotRow & { status: DecisionStatus } {
   return row.status === 'Approved' || row.status === 'Rejected'
+}
+
+function adminCancelledSchedule(row: SnapshotRow): row is SnapshotRow & { status: 'Cancelled' } {
+  return row.status === 'Cancelled' && row.adminCancellation === true && Boolean(asDate(row.reviewedAt).getTime())
 }
 
 function decisionShifts(value: unknown, includeScheduleId = false): Array<{ date: Date; shift: 'Morning' | 'Afternoon' | 'Evening'; scheduleId?: string }> {
@@ -149,7 +153,7 @@ function buildRows(data: Record<DecisionResource, SnapshotRow[]>, penaltyRows: S
   }))
 
   const scheduleGroups = new Map<string, SnapshotRow[]>()
-  data.schedule.filter(processed).filter((item) => !item.id.startsWith('overtime-')).forEach((item) => {
+  data.schedule.filter((item) => processed(item) || adminCancelledSchedule(item)).filter((item) => !item.id.startsWith('overtime-')).forEach((item) => {
     const key = String(item.batchKey || `${item.employeeId}-${mondayKey(item.date)}`)
     const current = scheduleGroups.get(key)
     if (current) current.push(item)
@@ -189,7 +193,7 @@ function buildRows(data: Record<DecisionResource, SnapshotRow[]>, penaltyRows: S
       title: 'Bảng đăng ký lịch',
       detail: `${actualShiftCount} ca · ${dateLabel(first.date)}–${dateLabel(last.date)}`,
       status: first.status as DecisionStatus,
-      reviewNote: String(first.reviewNote || ''),
+      reviewNote: String(first.reviewNote || first.cancellationReason || ''),
       reviewedAt,
       weeklyShiftCount: Number(first.weeklyShiftCount ?? actualShiftCount),
       underMinimumWarning: items.some((item) => item.underMinimumWarning === true),
