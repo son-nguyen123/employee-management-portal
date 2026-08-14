@@ -1,4 +1,4 @@
-import { collection, getDocs, onSnapshot, query, where, orderBy } from 'firebase/firestore'
+import { collection, getDocs, limit, onSnapshot, query, where, orderBy } from 'firebase/firestore'
 import { db } from '@/lib/firebase'
 import { Penalty, WorkSchedule } from '@/lib/models/types'
 import type { FactoryId } from '@/lib/models/factory'
@@ -108,6 +108,32 @@ export async function getEmployeeSchedules(employeeId: string): Promise<WorkSche
     console.error('Error fetching employee schedules:', error)
     throw error
   }
+}
+
+/**
+ * Checks whether an employee has ever submitted a schedule without loading
+ * the employee's complete schedule history.
+ */
+export async function hasEmployeeSchedules(employeeId: string): Promise<boolean> {
+  const snapshot = await getDocs(query(
+    collection(db, SCHEDULES_COLLECTION),
+    where('employeeId', '==', employeeId),
+    limit(1),
+  ))
+  return !snapshot.empty
+}
+
+export async function getManagementSchedulesByDateRange(
+  startDate: Date,
+  endDate: Date,
+  factoryId?: FactoryId,
+): Promise<WorkSchedule[]> {
+  const base = collection(db, SCHEDULES_COLLECTION)
+  const scheduleQuery = factoryId
+    ? query(base, where('factoryId', '==', factoryId), where('date', '>=', startDate), where('date', '<=', endDate), orderBy('date', 'desc'))
+    : query(base, where('date', '>=', startDate), where('date', '<=', endDate), orderBy('date', 'desc'))
+  const snapshot = await getDocs(scheduleQuery)
+  return snapshot.docs.map((item) => ({ id: item.id, ...item.data() } as WorkSchedule))
 }
 
 /**
@@ -244,12 +270,19 @@ function attachSchedulePenalties(schedules: WorkSchedule[], penalties: Penalty[]
 export function subscribeToAllSchedules(
   callback: (schedules: WorkSchedule[]) => void,
   onError?: (error: Error) => void,
-  factoryId?: FactoryId
+  factoryId?: FactoryId,
+  dateRange?: { startDate: Date; endDate: Date },
 ): () => void {
-  const schedulesQuery = factoryId
-    ? query(collection(db, SCHEDULES_COLLECTION), where('factoryId', '==', factoryId), orderBy('date', 'desc'))
-    : query(collection(db, SCHEDULES_COLLECTION), orderBy('date', 'desc'))
-  const penaltiesQuery = query(collection(db, 'penalties'), orderBy('penaltyDate', 'desc'))
+  const schedulesQuery = factoryId && dateRange
+    ? query(collection(db, SCHEDULES_COLLECTION), where('factoryId', '==', factoryId), where('date', '>=', dateRange.startDate), where('date', '<=', dateRange.endDate), orderBy('date', 'desc'))
+    : factoryId
+      ? query(collection(db, SCHEDULES_COLLECTION), where('factoryId', '==', factoryId), orderBy('date', 'desc'))
+      : dateRange
+        ? query(collection(db, SCHEDULES_COLLECTION), where('date', '>=', dateRange.startDate), where('date', '<=', dateRange.endDate), orderBy('date', 'desc'))
+        : query(collection(db, SCHEDULES_COLLECTION), orderBy('date', 'desc'))
+  const penaltiesQuery = dateRange
+    ? query(collection(db, 'penalties'), where('penaltyDate', '>=', dateRange.startDate), where('penaltyDate', '<=', dateRange.endDate), orderBy('penaltyDate', 'desc'))
+    : query(collection(db, 'penalties'), orderBy('penaltyDate', 'desc'))
   let scheduleRows: WorkSchedule[] = []
   let penaltyRows: Penalty[] = []
   let schedulesReady = false

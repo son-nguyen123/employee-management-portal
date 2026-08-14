@@ -24,6 +24,14 @@ function nextMondayKey() {
   return localDateKey(monday)
 }
 
+function nextMondayDate() {
+  const now = new Date()
+  const monday = new Date(now)
+  monday.setDate(now.getDate() + (((8 - now.getDay()) % 7) || 7))
+  monday.setHours(0, 0, 0, 0)
+  return monday
+}
+
 function scheduleWeekKey(value: WorkSchedule['date']) {
   const date = value instanceof Date ? new Date(value) : value.toDate()
   const weekday = date.getDay() || 7
@@ -55,7 +63,14 @@ export function ManagementOverview({ employees }: { employees: Employee[] }) {
     const unsubscribe = subscribeToAllSchedules(
       setSchedules,
       undefined,
-      role === 'director' ? undefined : employeeFactoryId(currentEmployee)
+      role === 'director' ? undefined : employeeFactoryId(currentEmployee),
+      (() => {
+        const startDate = nextMondayDate()
+        const endDate = new Date(startDate)
+        endDate.setDate(startDate.getDate() + 6)
+        endDate.setHours(23, 59, 59, 999)
+        return { startDate, endDate }
+      })()
     )
     void getWeeklyScheduleTarget(nextMondayKey())
       .then((result) => setExpectedEmployees(result.expectedEmployees))

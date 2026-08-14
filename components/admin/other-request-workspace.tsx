@@ -2,11 +2,12 @@
 
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
 import { AlertTriangle, ArrowLeft, Check, ChevronRight, CircleDollarSign, Clock3, FileText, Loader2, MessageSquareText, RotateCcw, UserRound, X } from 'lucide-react'
-import { useAuth, useUserRole } from '@/lib/hooks/useAuth'
+import { useAuth } from '@/lib/hooks/useAuth'
 import type { Employee } from '@/lib/models/types'
+import { useNotificationFeed } from '@/components/notifications/notification-feed-provider'
 import { updateLateStatus } from '@/lib/services/lateService'
 import { updateLeaveStatus } from '@/lib/services/leaveService'
-import { subscribeToManagementPendingItems, type ManagementPendingItem, type ManagementShift } from '@/lib/services/notificationService'
+import { type ManagementPendingItem, type ManagementShift } from '@/lib/services/notificationService'
 import { updateSalaryAdvanceStatus } from '@/lib/services/salaryService'
 import { updateStaffRequestStatus } from '@/lib/services/staffRequestService'
 import { subscribeToWeeklyDecisionHistory, type DecisionHistoryItem } from '@/lib/services/decisionHistoryService'
@@ -80,7 +81,7 @@ function decisionFromPending(
 
 export function OtherRequestWorkspace({ employees }: { employees: Employee[] }) {
   const { authUser, isPreviewMode } = useAuth()
-  const role = useUserRole()
+  const { managementPendingItems, managementPendingReady } = useNotificationFeed()
   const [pending, setPending] = useState<ManagementPendingItem[]>([])
   const [decisions, setDecisions] = useState<DecisionHistoryItem[]>([])
   const [selected, setSelected] = useState<RequestRow | null>(null)
@@ -114,18 +115,19 @@ export function OtherRequestWorkspace({ employees }: { employees: Employee[] }) 
       return () => window.clearTimeout(timeout)
     }
     const weekWindow = currentWeekWindow()
-    const unsubscribePending = subscribeToManagementPendingItems(
-      (items) => setPending(items.filter((item) => item.type !== 'schedule' && item.type !== 'account')),
-      () => setMessage('Chưa thể tải các yêu cầu khác.')
-    )
     const unsubscribeHistory = subscribeToWeeklyDecisionHistory(
       weekWindow.start,
       new Date(weekWindow.end.getTime() - 1),
       (items) => setDecisions(items.filter((item): item is DecisionHistoryItem & { status: 'Approved' | 'Rejected' } => item.resource !== 'schedule' && item.status !== 'Cancelled')),
       () => setMessage('Chưa thể tải lịch sử xử lý trong tuần.')
     )
-    return () => { unsubscribePending(); unsubscribeHistory() }
-  }, [authUser, isPreviewMode, role])
+    return () => unsubscribeHistory()
+  }, [authUser, isPreviewMode])
+
+  useEffect(() => {
+    if (!authUser || isPreviewMode || !managementPendingReady) return
+    setPending(managementPendingItems.filter((item) => item.type !== 'schedule' && item.type !== 'account'))
+  }, [authUser, isPreviewMode, managementPendingItems, managementPendingReady])
 
   const employeeMap = useMemo(() => new Map(employees.map((employee) => [employee.uid, employee])), [employees])
   const rows = useMemo<RequestRow[]>(() => [

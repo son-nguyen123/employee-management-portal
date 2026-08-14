@@ -120,13 +120,22 @@ export async function getEmployeeTotalPenalties(employeeId: string): Promise<num
 export function subscribeToEmployeePenalties(
   employeeId: string,
   callback: (penalties: Penalty[]) => void,
-  onError?: (error: Error) => void
+  onError?: (error: Error) => void,
+  dateRange?: { startDate: Date; endDate: Date },
 ): () => void {
-  const penaltiesQuery = query(
-    collection(db, PENALTIES_COLLECTION),
-    where('employeeId', '==', employeeId),
-    orderBy('penaltyDate', 'desc')
-  )
+  const penaltiesQuery = dateRange
+    ? query(
+      collection(db, PENALTIES_COLLECTION),
+      where('employeeId', '==', employeeId),
+      where('penaltyDate', '>=', dateRange.startDate),
+      where('penaltyDate', '<=', dateRange.endDate),
+      orderBy('penaltyDate', 'desc'),
+    )
+    : query(
+      collection(db, PENALTIES_COLLECTION),
+      where('employeeId', '==', employeeId),
+      orderBy('penaltyDate', 'desc'),
+    )
   return onSnapshot(
     penaltiesQuery,
     (snapshot) => callback(snapshot.docs.map((item) => ({
@@ -139,12 +148,20 @@ export function subscribeToEmployeePenalties(
 
 export function subscribeToAllPenalties(
   callback: (penalties: Penalty[]) => void,
-  onError?: (error: Error) => void
+  onError?: (error: Error) => void,
+  dateRange?: { startDate: Date; endDate: Date },
 ): () => void {
-  const penaltiesQuery = query(
-    collection(db, PENALTIES_COLLECTION),
-    orderBy('penaltyDate', 'desc')
-  )
+  const penaltiesQuery = dateRange
+    ? query(
+      collection(db, PENALTIES_COLLECTION),
+      where('penaltyDate', '>=', dateRange.startDate),
+      where('penaltyDate', '<', dateRange.endDate),
+      orderBy('penaltyDate', 'desc'),
+    )
+    : query(
+      collection(db, PENALTIES_COLLECTION),
+      orderBy('penaltyDate', 'desc'),
+    )
   return onSnapshot(
     penaltiesQuery,
     (snapshot) => callback(snapshot.docs.map((item) => ({

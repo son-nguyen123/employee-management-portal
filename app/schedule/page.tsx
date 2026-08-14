@@ -25,7 +25,7 @@ import { useAuth } from '@/lib/hooks/useAuth'
 import {
   replaceWorkSchedules,
   setWorkScheduleBatchEditing,
-  getEmployeeSchedules,
+  hasEmployeeSchedules,
   getDutyAvailability,
   ensureFixedSchedule,
   subscribeToSchedulesByDateRange,
@@ -39,9 +39,8 @@ import { getManagementContact } from '@/lib/services/managementSettingsService'
 import { toMessengerUrl } from '@/lib/utils/messenger'
 import { scheduleShareText } from '@/lib/archive/retention'
 import { submitStaffRequest } from '@/lib/services/staffRequestService'
-import { subscribeToEmployeeLeaves } from '@/lib/services/leaveService'
 import { subscribeToEmployeePenalties } from '@/lib/services/penaltyService'
-import type { LeaveRequest, Penalty } from '@/lib/models/types'
+import type { Penalty } from '@/lib/models/types'
 import { isPastRegistrationDate } from '@/lib/schedule/registration-policy'
 
 type Shift = 'Morning' | 'Afternoon' | 'Evening' | 'Custom'
@@ -151,48 +150,23 @@ export default function SchedulePage() {
   const [referenceNow] = useState(() => Date.now())
   const [clockNow, setClockNow] = useState(referenceNow)
   const [portalReady, setPortalReady] = useState(false)
-  const [leaveMarks, setLeaveMarks] = useState<Record<string, { fullDay: boolean; shifts: string[]; status: 'Pending' | 'AwaitingEmployeeConsent' | 'Approved' }>>({})
-
-  useEffect(() => {
-    if (!authUser || isPreviewMode) return
-    return subscribeToEmployeeLeaves(authUser.uid, (requests: LeaveRequest[]) => {
-      const active = requests.filter((request) => ['Pending', 'AwaitingEmployeeConsent', 'Approved'].includes(request.status))
-      const marks: Record<string, { fullDay: boolean; shifts: string[]; status: 'Pending' | 'AwaitingEmployeeConsent' | 'Approved' }> = {}
-      const statusRank = (status: 'Pending' | 'AwaitingEmployeeConsent' | 'Approved') => status === 'Approved' ? 3 : status === 'AwaitingEmployeeConsent' ? 2 : 1
-      const add = (key: string, status: 'Pending' | 'AwaitingEmployeeConsent' | 'Approved', shift?: string) => {
-        marks[key] ||= { fullDay: false, shifts: [], status }
-        if (statusRank(status) > statusRank(marks[key].status)) marks[key].status = status
-        if (shift && !marks[key].shifts.includes(shift)) marks[key].shifts.push(shift)
-      }
-      active.forEach((request) => {
-        const requestStatus = request.status as 'Pending' | 'AwaitingEmployeeConsent' | 'Approved'
-        const start = request.leaveDate instanceof Date ? request.leaveDate : request.leaveDate.toDate()
-        const end = request.endDate ? (request.endDate instanceof Date ? request.endDate : request.endDate.toDate()) : start
-        if (request.duration === 'long') {
-          for (const cursor = new Date(start); cursor <= end; cursor.setDate(cursor.getDate() + 1)) {
-            const key = localDateKey(cursor)
-            add(key, requestStatus)
-            marks[key].fullDay = true
-          }
-          return
-        }
-        if (request.workScheduleIds?.length) {
-          request.workScheduleIds.forEach((id) => {
-            const match = Object.entries(originalScheduleIds).find(([, scheduleId]) => scheduleId === id)?.[0]
-            add(match?.slice(0, 10) || localDateKey(start), requestStatus, match?.slice(11))
-          })
-        } else add(localDateKey(start), requestStatus)
-      })
-      setLeaveMarks(marks)
-    }, () => setLeaveMarks({}))
-  }, [authUser, isPreviewMode, originalScheduleIds])
-
   useEffect(() => {
     if (!authUser || isPreviewMode) {
       setEmployeePenalties([])
       return
     }
-    return subscribeToEmployeePenalties(authUser.uid, setEmployeePenalties, () => setEmployeePenalties([]))
+    const startDate = new Date()
+    startDate.setDate(startDate.getDate() - 14)
+    startDate.setHours(0, 0, 0, 0)
+    const endDate = new Date()
+    endDate.setDate(endDate.getDate() + 14)
+    endDate.setHours(23, 59, 59, 999)
+    return subscribeToEmployeePenalties(
+      authUser.uid,
+      setEmployeePenalties,
+      () => setEmployeePenalties([]),
+      { startDate, endDate },
+    )
   }, [authUser, isPreviewMode])
 
   useEffect(() => {
@@ -263,8 +237,8 @@ export default function SchedulePage() {
       return
     }
     setHasExistingSchedules(null)
-    void getEmployeeSchedules(authUser.uid)
-      .then((schedules) => setHasExistingSchedules(schedules.some((item) => item.status !== 'Cancelled')))
+    void hasEmployeeSchedules(authUser.uid)
+      .then((hasSchedules) => setHasExistingSchedules(hasSchedules))
       .catch(() => setHasExistingSchedules(false))
   }, [authUser, isPreviewMode])
 
@@ -347,10 +321,6 @@ export default function SchedulePage() {
       setDutyAvailabilityLoading(false)
     }
   }, [authUser, days, isPreviewMode])
-
-  useEffect(() => {
-    void loadDutyAvailability()
-  }, [loadDutyAvailability])
 
   const dutyTeamCount = useCallback((dayKey: string) => {
     const storedCount = dutyCounts[dayKey] || 0
@@ -1227,8 +1197,6 @@ export default function SchedulePage() {
                     </div>
                     {!!selected[day.key]?.length && <Badge variant="success">{overtimeMode ? `+${selected[day.key].filter((shift) => !original[day.key]?.includes(shift)).length} ca mới` : `${selected[day.key].length} ca`}</Badge>}
                   </div>
-                  {leaveMarks[day.key]?.fullDay && <div className="mb-3 rounded-2xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-extrabold text-rose-700 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-200">{leaveMarks[day.key].status === 'Approved' ? 'Đã duyệt nghỉ cả ngày' : 'Đang chờ duyệt nghỉ cả ngày'}</div>}
-                  {!leaveMarks[day.key]?.fullDay && !!leaveMarks[day.key]?.shifts.length && <div className="mb-3 rounded-2xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-extrabold text-rose-700 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-200">{leaveMarks[day.key].shifts.map((shift) => `${shiftOptions.find((item) => item.value === shift)?.shortLabel || 'Ca'} · ${leaveMarks[day.key].status === 'Approved' ? 'Đã duyệt nghỉ' : 'Đang chờ duyệt'}`).join(' • ')}</div>}
                   <div className="grid grid-cols-2 gap-2">
                     {shiftOptions.filter((shift) => (!overtimeMode && !changeMode) || shift.value !== 'Custom').map((shift) => {
                       const today = new Date()
@@ -1236,7 +1204,6 @@ export default function SchedulePage() {
                       const isPastDay = changeMode && day.date < today
                       const registrationLocked = isPastRegistrationDay(day.key) && !original[day.key]?.includes(shift.value)
                       const active = selected[day.key]?.includes(shift.value)
-                      const requestedLeave = leaveMarks[day.key]?.fullDay || leaveMarks[day.key]?.shifts.includes(shift.value)
                       const returnable = changeMode && Boolean(returnableLeaveShifts[`${day.key}-${shift.value}`])
                       const wasSaved = (editing || overtimeMode || changeMode) && original[day.key]?.includes(shift.value)
                       const activeClass = returnable
@@ -1256,10 +1223,10 @@ export default function SchedulePage() {
                           className={`min-h-[58px] rounded-2xl border px-3 text-left transition active:scale-[0.98] ${registrationLocked
                             ? 'border-slate-200 bg-slate-100 text-slate-400 dark:border-slate-700 dark:bg-slate-800/60 dark:text-slate-500'
                             :
-                            active ? activeClass : returnable ? 'border-rose-400 bg-rose-50 text-rose-700 dark:border-rose-500/50 dark:bg-rose-500/10 dark:text-rose-200' : requestedLeave ? 'border-rose-400 bg-rose-50 text-rose-700 dark:border-rose-500/50 dark:bg-rose-500/10 dark:text-rose-200' : 'border-slate-200 bg-slate-50 dark:border-slate-700 dark:bg-slate-800'
+                            active ? activeClass : returnable ? 'border-rose-400 bg-rose-50 text-rose-700 dark:border-rose-500/50 dark:bg-rose-500/10 dark:text-rose-200' : 'border-slate-200 bg-slate-50 dark:border-slate-700 dark:bg-slate-800'
                           } disabled:cursor-not-allowed disabled:active:scale-100`}
                         >
-                          <span className="flex items-center justify-between text-sm font-bold">{shift.label}{registrationLocked ? <span className="text-[10px]">Đã khóa</span> : active ? <Check className="h-4 w-4" /> : returnable ? <span className="text-[10px]">Đã nghỉ · chạm để đi làm lại</span> : requestedLeave ? <span className="text-[10px]">{leaveMarks[day.key].status === 'Approved' ? 'Đã duyệt nghỉ' : 'Đang chờ duyệt'}</span> : null}</span>
+                          <span className="flex items-center justify-between text-sm font-bold">{shift.label}{registrationLocked ? <span className="text-[10px]">Đã khóa</span> : active ? <Check className="h-4 w-4" /> : returnable ? <span className="text-[10px]">Đã nghỉ · chạm để đi làm lại</span> : null}</span>
                           <span className={`mt-0.5 block text-[11px] ${active ? 'text-white/80' : 'text-muted-foreground'}`}>
                             {shift.value === 'Custom' && customData[day.key]
                               ? `${customData[day.key].start}–${customData[day.key].end}`

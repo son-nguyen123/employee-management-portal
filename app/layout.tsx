@@ -3,6 +3,7 @@ import type { Metadata, Viewport } from 'next'
 import { ThemeProvider } from '@/components/providers/theme-provider'
 import { SkipLoginFAB } from '@/components/demo/skip-login-fab'
 import { ForegroundNotificationListener } from '@/components/notifications/foreground-notification-listener'
+import { NotificationFeedProvider } from '@/components/notifications/notification-feed-provider'
 import { NotificationPermissionGate } from '@/components/notifications/notification-permission-gate'
 import { AuthProvider } from '@/lib/hooks/useAuth'
 import { ProfileCompletionGuard } from '@/components/auth/profile-completion-guard'
@@ -60,14 +61,16 @@ export default function RootLayout({
       <body className="antialiased">
         <ThemeProvider>
           <AuthProvider>
-            <SkipLoginFAB />
-            <ServiceWorkerRegistrar />
-            <ForegroundNotificationListener />
-            <ProfileCompletionGuard>
-              <NotificationPermissionGate>{children}</NotificationPermissionGate>
-            </ProfileCompletionGuard>
-            <InstallAppPrompt />
-            <PersistentBottomNav />
+            <NotificationFeedProvider>
+              <SkipLoginFAB />
+              <ServiceWorkerRegistrar />
+              <ForegroundNotificationListener />
+              <ProfileCompletionGuard>
+                <NotificationPermissionGate>{children}</NotificationPermissionGate>
+              </ProfileCompletionGuard>
+              <InstallAppPrompt />
+              <PersistentBottomNav />
+            </NotificationFeedProvider>
             {process.env.NODE_ENV === 'production' && <Analytics />}
           </AuthProvider>
         </ThemeProvider>

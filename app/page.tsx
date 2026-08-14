@@ -29,11 +29,11 @@ import {
 import { useTheme } from 'next-themes'
 import { useAuth, useUserRole } from '@/lib/hooks/useAuth'
 import { getAllEmployees } from '@/lib/services/employeeService'
-import { getAllSchedules, getEmployeeSchedules, getSchedulesByDateRange } from '@/lib/services/scheduleService'
+import { getManagementSchedulesByDateRange, getSchedulesByDateRange, hasEmployeeSchedules } from '@/lib/services/scheduleService'
 import { getPreviewSchedules } from '@/lib/services/previewWorkflow'
 import { getUserFeatureSettings, getWeeklyScheduleTarget } from '@/lib/services/managementSettingsService'
-import { subscribeToManagementPendingItems } from '@/lib/services/notificationService'
 import { AppLoadingScreen } from '@/components/ui/app-loading-screen'
+import { useNotificationFeed } from '@/components/notifications/notification-feed-provider'
 import { profileImageUrl } from '@/lib/utils/profileImage'
 import { defaultUserFeatureSettings, type UserFeatureKey, type UserFeatureSettings } from '@/lib/models/userFeatureSettings'
 
@@ -51,6 +51,7 @@ export default function Page() {
   const router = useRouter()
   const { authUser, employee, isLoading, isPreviewMode, logout } = useAuth()
   const role = useUserRole()
+  const { managementPendingItems, managementPendingReady } = useNotificationFeed()
   const { theme, setTheme } = useTheme()
   const [adminStats, setAdminStats] = useState({ confirmed: 0, total: 0, pending: 0, actionable: 0, otherPending: 0 })
   const [schedulePrompt, setSchedulePrompt] = useState<{ visible: boolean; isNew: boolean; href: string }>({ visible: false, isNew: false, href: '/schedule' })
@@ -105,14 +106,6 @@ export default function Page() {
 
   useEffect(() => {
     if (!authUser || (role !== 'admin' && role !== 'manager' && role !== 'director')) return
-    const unsubscribePending = isPreviewMode || role === 'director' ? () => undefined : subscribeToManagementPendingItems((items) => {
-      const visible = items.filter((item) => item.type !== 'account' || role === 'admin')
-      setAdminStats((current) => ({
-        ...current,
-        actionable: visible.length,
-        otherPending: visible.filter((item) => item.type !== 'schedule').length,
-      }))
-    })
     const loadAdminStats = async () => {
       try {
         const now = new Date()
@@ -142,7 +135,7 @@ export default function Page() {
         const weekKey = `${nextMonday.getFullYear()}-${String(nextMonday.getMonth() + 1).padStart(2, '0')}-${String(nextMonday.getDate()).padStart(2, '0')}`
         const [employees, schedules, target] = await Promise.all([
           getAllEmployees(),
-          getAllSchedules(),
+          getManagementSchedulesByDateRange(nextMonday, nextSunday),
           getWeeklyScheduleTarget(weekKey),
         ])
         const fixedForNextWeek = employees.filter((employee) => {
@@ -165,8 +158,17 @@ export default function Page() {
       }
     }
     loadAdminStats()
-    return unsubscribePending
   }, [authUser, isPreviewMode, role])
+
+  useEffect(() => {
+    if (!authUser || !managementPendingReady || role === 'director' || isPreviewMode) return
+    const visible = managementPendingItems.filter((item) => item.type !== 'account' || role === 'admin')
+    setAdminStats((current) => ({
+      ...current,
+      actionable: visible.length,
+      otherPending: visible.filter((item) => item.type !== 'schedule').length,
+    }))
+  }, [authUser, isPreviewMode, managementPendingItems, managementPendingReady, role])
 
   useEffect(() => {
     if (!authUser || !employee || role === 'director') {
@@ -192,36 +194,36 @@ export default function Page() {
       const appearsNew = Date.now() - joined.getTime() <= 45 * 24 * 60 * 60 * 1000
 
       try {
-        const allSchedules = isPreviewMode
-          ? getPreviewSchedules().filter((item) => item.employeeId === authUser.uid)
-          : await getEmployeeSchedules(authUser.uid)
-        const currentSchedules = isPreviewMode
-          ? allSchedules.filter((item) => {
-              const date = item.date instanceof Date
-                ? item.date
-                : typeof item.date === 'string'
-                  ? new Date(item.date)
-                  : item.date.toDate()
-              return date >= currentMonday && date <= currentSunday
-            })
-          : await getSchedulesByDateRange(authUser.uid, currentMonday, currentSunday)
-        const nextSchedules = isPreviewMode
-          ? allSchedules.filter((item) => {
-              const date = item.date instanceof Date
-                ? item.date
-                : typeof item.date === 'string'
-                  ? new Date(item.date)
-                  : item.date.toDate()
-              return date >= nextMonday && date <= nextSunday
-            })
-          : await getSchedulesByDateRange(authUser.uid, nextMonday, nextSunday)
+        const previewSchedules = getPreviewSchedules().filter((item) => item.employeeId === authUser.uid)
+        const [hasAnySchedules, currentSchedules, nextSchedules] = isPreviewMode
+          ? [
+              previewSchedules.some((item) => item.status !== 'Cancelled'),
+              previewSchedules.filter((item) => {
+                const date = new Date(item.date)
+                return date >= currentMonday && date <= currentSunday
+              }),
+              previewSchedules.filter((item) => {
+                const date = new Date(item.date)
+                return date >= nextMonday && date <= nextSunday
+              }),
+            ] as const
+          : await Promise.all([
+              hasEmployeeSchedules(authUser.uid),
+              getSchedulesByDateRange(authUser.uid, currentMonday, currentSunday),
+              getSchedulesByDateRange(authUser.uid, nextMonday, nextSunday),
+            ])
+        /*
+         * The prompt only needs one existence bit plus two visible weeks. The
+         * old full-history read was needlessly replaying every schedule the
+         * employee had ever created.
+         */
         const hasCurrentWeek = currentSchedules.some((item) => item.status !== 'Cancelled')
         const hasNextWeek = nextSchedules.some((item) => item.status !== 'Cancelled')
         const shouldUseCurrentWeek = weekday >= 1 && weekday <= 5
         const targetHasSchedule = shouldUseCurrentWeek ? hasCurrentWeek : hasNextWeek
         setSchedulePrompt({
           visible: !targetHasSchedule,
-          isNew: appearsNew && !allSchedules.some((item) => item.status !== 'Cancelled'),
+          isNew: appearsNew && !hasAnySchedules,
           href: shouldUseCurrentWeek ? '/schedule?week=current' : '/schedule',
         })
       } catch {

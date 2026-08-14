@@ -1,15 +1,12 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect } from 'react'
 import { Bell, CalendarDays, LayoutDashboard, UserRound } from 'lucide-react'
 import { usePathname } from 'next/navigation'
 import { useAuth, useUserRole } from '@/lib/hooks/useAuth'
 import { BottomNav } from '@/components/layout/bottom-nav'
-import {
-  subscribeToEmployeeNotifications,
-  subscribeToManagementPendingCount,
-} from '@/lib/services/notificationService'
 import { syncAppIconBadge } from '@/lib/services/messagingService'
+import { useNotificationFeed } from '@/components/notifications/notification-feed-provider'
 
 const hiddenPrefixes = ['/auth', '/profile/setup']
 
@@ -17,48 +14,10 @@ export function PersistentBottomNav() {
   const pathname = usePathname()
   const { authUser, employee, isLoading, isPreviewMode } = useAuth()
   const role = useUserRole()
+  const { pendingNotificationCount } = useNotificationFeed()
   const isManagement = role === 'admin' || role === 'manager' || role === 'director'
-  const [pendingNotificationCount, setPendingNotificationCount] = useState(0)
   const hidden = hiddenPrefixes.some((prefix) => pathname.startsWith(prefix))
   const showNavigation = !isLoading && !!authUser && !hidden && !(employee?.role === 'employee' && employee.status !== 'active')
-
-  useEffect(() => {
-    if (!authUser) {
-      setPendingNotificationCount(0)
-      return
-    }
-
-    if (isPreviewMode) {
-      setPendingNotificationCount(isManagement ? 5 : 1)
-      return
-    }
-
-    if (role === 'director') {
-      setPendingNotificationCount(0)
-      return
-    }
-
-    if (isManagement) {
-      // Management notifications are split into the visible "Lịch" and
-      // "Cần duyệt" inboxes. The badge must represent actionable workflow
-      // records only; manager result notifications are already shown in the
-      // history list and otherwise made the badge look stuck after processing.
-      return subscribeToManagementPendingCount(
-        (count) => setPendingNotificationCount(count),
-        role === 'admin'
-      )
-    }
-
-    return subscribeToEmployeeNotifications(authUser.uid, (notifications) => {
-      const now = new Date()
-      const monthStart = new Date(now.getFullYear(), now.getMonth(), 1)
-      const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 1)
-      setPendingNotificationCount(notifications.filter((item) => {
-        const createdAt = item.createdAt instanceof Date ? item.createdAt : item.createdAt.toDate()
-        return !item.isRead && createdAt >= monthStart && createdAt < monthEnd
-      }).length)
-    })
-  }, [authUser, isManagement, isPreviewMode, role])
 
   useEffect(() => {
     if (isPreviewMode) return

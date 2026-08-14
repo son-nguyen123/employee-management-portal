@@ -227,18 +227,28 @@ export async function deleteNotification(notificationId: string): Promise<void> 
  */
 export function subscribeToEmployeeNotifications(
   employeeId: string,
-  callback: (notifications: Notification[]) => void
+  callback: (notifications: Notification[]) => void,
+  onError?: (error: Error) => void,
+  dateRange?: { startDate: Date; endDate: Date },
 ): () => void {
-  const q = query(
-    collection(db, NOTIFICATIONS_COLLECTION),
-    where('employeeId', '==', employeeId),
-    orderBy('createdAt', 'desc')
-  )
+  const q = dateRange
+    ? query(
+      collection(db, NOTIFICATIONS_COLLECTION),
+      where('employeeId', '==', employeeId),
+      where('createdAt', '>=', dateRange.startDate),
+      where('createdAt', '<', dateRange.endDate),
+      orderBy('createdAt', 'desc'),
+    )
+    : query(
+      collection(db, NOTIFICATIONS_COLLECTION),
+      where('employeeId', '==', employeeId),
+      orderBy('createdAt', 'desc'),
+    )
 
   const unsubscribe = onSnapshot(q, (querySnapshot) => {
     const notifications = querySnapshot.docs.map((item) => normalizeNotification(item.id, item.data()))
     callback(notifications)
-  })
+  }, (error) => onError?.(error))
 
   return unsubscribe
 }
@@ -544,17 +554,32 @@ export function subscribeToManagementPendingItems(
     collection(db, collectionName),
     where('status', '==', 'Pending')
   )
+  const penaltyStart = new Date(nextMonday)
+  penaltyStart.setDate(penaltyStart.getDate() - 14)
+  penaltyStart.setHours(0, 0, 0, 0)
+  const penaltyEnd = new Date(nextSunday)
+
   const unsubscribes = [
+    // The pending workspace keeps the enabled schedule-change workflow, while
+    // the two feature-disabled request types (leave and late arrival) stay out
+    // of the listener fan-out.
     watch('employees', query(collection(db, 'employees'))),
     watch('schedules', query(
       collection(db, 'workSchedules'),
-      where('status', 'in', ['Pending', 'Registered'])
+      where('status', 'in', ['Pending', 'Registered']),
+      where('date', '>=', Timestamp.fromDate(nextMonday)),
+      where('date', '<=', Timestamp.fromDate(nextSunday)),
     )),
-    watch('leaveRequests', pendingQuery('leaveRequests')),
-    watch('lateRequests', pendingQuery('lateRequests')),
     watch('salaryAdvances', pendingQuery('salaryAdvances')),
     watch('staffRequests', pendingQuery('staffRequests')),
-    watch('penalties', query(collection(db, 'penalties'))),
+    // Keep current automatic/manual penalties available for schedule warnings
+    // without replaying the complete penalty history on every manager page.
+    watch('penalties', query(
+      collection(db, 'penalties'),
+      where('penaltyDate', '>=', Timestamp.fromDate(penaltyStart)),
+      where('penaltyDate', '<=', Timestamp.fromDate(penaltyEnd)),
+      orderBy('penaltyDate', 'desc'),
+    )),
   ]
 
   return () => unsubscribes.forEach((unsubscribe) => unsubscribe())

@@ -6,8 +6,8 @@ import Link from 'next/link'
 import { AlertTriangle, Building2, CalendarPlus, Check, ChevronDown, CircleDollarSign, Clock3, Download, ExternalLink, FileText, Loader2, MessageSquareText, Phone, Plus, UsersRound, X } from 'lucide-react'
 import { useAuth } from '@/lib/hooks/useAuth'
 import { auth } from '@/lib/firebase'
-import { subscribeToPendingLeaveRequests, updateLeaveStatus } from '@/lib/services/leaveService'
-import { subscribeToPendingLateRequests, updateLateStatus } from '@/lib/services/lateService'
+import { updateLeaveStatus } from '@/lib/services/leaveService'
+import { updateLateStatus } from '@/lib/services/lateService'
 import { subscribeToPendingSalaryAdvances, updateSalaryAdvanceStatus } from '@/lib/services/salaryService'
 import { mockLateRequests, mockLeaveRequests, mockSalaryAdvances } from '@/lib/services/mockData'
 import { Header } from '@/components/layout/header'
@@ -200,8 +200,6 @@ export default function AdminRequestsPage() {
       return
     }
 
-    let leaves: any[] = []
-    let lates: any[] = []
     let salaries: any[] = []
     let staffRequests: StaffRequest[] = []
     let employeeList: Employee[] = []
@@ -209,8 +207,8 @@ export default function AdminRequestsPage() {
     const publish = () => {
       setEmployees(employeeList)
       setPenaltyEmployeeId((current) => current || employeeList[0]?.uid || '')
-      setRows(buildRequestRows(leaves, lates, salaries, staffRequests, employeeList))
-      if (ready.size === 5) {
+      setRows(buildRequestRows([], [], salaries, staffRequests, employeeList))
+      if (ready.size === 3) {
         setLoading(false)
         setMessage('')
       }
@@ -221,16 +219,6 @@ export default function AdminRequestsPage() {
     }
 
     const unsubscribers = [
-      subscribeToPendingLeaveRequests((items) => {
-        leaves = items
-        ready.add('leave')
-        publish()
-      }, handleError),
-      subscribeToPendingLateRequests((items) => {
-        lates = items
-        ready.add('late')
-        publish()
-      }, handleError),
       subscribeToPendingSalaryAdvances((items) => {
         salaries = items
         ready.add('salary')
@@ -269,13 +257,14 @@ export default function AdminRequestsPage() {
       })
       if (active) setPenalties(sorted)
     }
-    const unsubscribe = penaltyExportMonth === currentVietnamMonth(new Date()).key
+    const currentMonthWindow = currentVietnamMonth(new Date())
+    const unsubscribe = penaltyExportMonth === currentMonthWindow.key
       ? subscribeToAllPenalties((items) => {
         liveRecords = items
         mergeRecords()
       }, () => {
         if (active) setMessage('Không thể cập nhật khoản phạt theo thời gian thực.')
-      })
+      }, { startDate: currentMonthWindow.start, endDate: currentMonthWindow.end })
       : undefined
     setPenalties([])
     setPenaltyMonthLoading(true)

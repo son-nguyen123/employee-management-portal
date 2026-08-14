@@ -171,6 +171,13 @@ export default function AdminDashboardPage() {
           if (employeesReady && schedulesReady) setLoading(false)
         }
         const factoryScope = role === 'director' ? undefined : employeeFactoryId(currentEmployee)
+        const startDate = new Date()
+        const weekday = startDate.getDay() || 7
+        startDate.setDate(startDate.getDate() - weekday + 1)
+        startDate.setHours(0, 0, 0, 0)
+        const endDate = new Date(startDate)
+        endDate.setDate(startDate.getDate() + 13)
+        endDate.setHours(23, 59, 59, 999)
         const unsubscribeEmployees = subscribeToAllEmployees((nextEmployees) => {
           employeeData = nextEmployees
           employeesReady = true
@@ -180,7 +187,7 @@ export default function AdminDashboardPage() {
           scheduleData = nextSchedules
           schedulesReady = true
           publish()
-        }, undefined, factoryScope)
+        }, undefined, factoryScope, { startDate, endDate })
         return () => {
           unsubscribeEmployees()
           unsubscribeSchedules()

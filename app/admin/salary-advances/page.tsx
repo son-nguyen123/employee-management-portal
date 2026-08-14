@@ -359,10 +359,11 @@ export default function AdminSalaryAdvancesPage() {
       setEmployees(items)
       setReady((current) => ({ ...current, employees: true }))
     }, fail, employeeFactoryId(currentEmployee))
+    const currentMonthWindow = currentVietnamMonth(new Date())
     const unsubscribeRequests = subscribeToAllSalaryAdvances((items) => {
       setLiveRequests(items)
       setReady((current) => ({ ...current, requests: true }))
-    }, fail)
+    }, fail, { startDate: currentMonthWindow.start, endDate: currentMonthWindow.end })
     return () => {
       unsubscribeEmployees()
       unsubscribeRequests()

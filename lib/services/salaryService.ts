@@ -115,13 +115,22 @@ function salaryFromSnapshot(item: { id: string; data: () => Record<string, unkno
 export function subscribeToEmployeeSalaryAdvances(
   employeeId: string,
   callback: (requests: SalaryAdvance[]) => void,
-  onError?: (error: Error) => void
+  onError?: (error: Error) => void,
+  dateRange?: { startDate: Date; endDate: Date },
 ): () => void {
-  const salaryQuery = query(
-    collection(db, SALARY_ADVANCES_COLLECTION),
-    where('employeeId', '==', employeeId),
-    orderBy('createdAt', 'desc')
-  )
+  const salaryQuery = dateRange
+    ? query(
+      collection(db, SALARY_ADVANCES_COLLECTION),
+      where('employeeId', '==', employeeId),
+      where('createdAt', '>=', dateRange.startDate),
+      where('createdAt', '<', dateRange.endDate),
+      orderBy('createdAt', 'desc'),
+    )
+    : query(
+      collection(db, SALARY_ADVANCES_COLLECTION),
+      where('employeeId', '==', employeeId),
+      orderBy('createdAt', 'desc'),
+    )
   return onSnapshot(
     salaryQuery,
     (snapshot) => callback(snapshot.docs.map(salaryFromSnapshot)),
@@ -147,12 +156,20 @@ export function subscribeToPendingSalaryAdvances(
 
 export function subscribeToAllSalaryAdvances(
   callback: (requests: SalaryAdvance[]) => void,
-  onError?: (error: Error) => void
+  onError?: (error: Error) => void,
+  dateRange?: { startDate: Date; endDate: Date },
 ): () => void {
-  const salaryQuery = query(
-    collection(db, SALARY_ADVANCES_COLLECTION),
-    orderBy('createdAt', 'desc')
-  )
+  const salaryQuery = dateRange
+    ? query(
+      collection(db, SALARY_ADVANCES_COLLECTION),
+      where('createdAt', '>=', dateRange.startDate),
+      where('createdAt', '<', dateRange.endDate),
+      orderBy('createdAt', 'desc'),
+    )
+    : query(
+      collection(db, SALARY_ADVANCES_COLLECTION),
+      orderBy('createdAt', 'desc'),
+    )
   return onSnapshot(
     salaryQuery,
     (snapshot) => callback(snapshot.docs.map(salaryFromSnapshot)),

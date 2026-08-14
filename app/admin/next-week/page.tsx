@@ -103,6 +103,9 @@ export default function NextWeekStaffPage() {
   const [savingEdit, setSavingEdit] = useState(false)
   const [exportingNextWeek, setExportingNextWeek] = useState(false)
   const [exportingDuty, setExportingDuty] = useState(false)
+  // Saturday registrations belong to the following week, but management
+  // always views the week that is currently running.
+  const days = useMemo(() => currentWeekDays(), [])
 
   useEffect(() => {
     if (!authUser) return
@@ -147,18 +150,20 @@ export default function NextWeekStaffPage() {
         setMessage('Chưa tải được lịch tuần này. Hãy kiểm tra quyền quản lý.')
         setSchedulesReady(true)
       },
-      factoryScope
+      factoryScope,
+      (() => {
+        const startDate = days[0].date
+        const endDate = new Date(days[6].date)
+        endDate.setHours(23, 59, 59, 999)
+        return { startDate, endDate }
+      })()
     )
 
     return () => {
       unsubscribeEmployees()
       unsubscribeSchedules()
     }
-  }, [authUser, currentEmployee, isPreviewMode, role])
-
-  // Saturday registrations belong to the following week, but management
-  // always views the week that is currently running.
-  const days = useMemo(() => currentWeekDays(), [])
+  }, [authUser, currentEmployee, days, isPreviewMode, role])
   const activeEmployees = useMemo(() => employees.filter((employee) => employee.status === 'active'), [employees])
   const activeEmployeeIds = useMemo(() => new Set(activeEmployees.map((employee) => employee.uid)), [activeEmployees])
   const employeeNames = useMemo(

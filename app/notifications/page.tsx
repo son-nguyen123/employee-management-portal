@@ -27,6 +27,7 @@ import { useRouter } from 'next/navigation'
 import { Header } from '@/components/layout/header'
 import { PageContainer } from '@/components/layout/page-container'
 import { useAuth, useUserRole } from '@/lib/hooks/useAuth'
+import { useNotificationFeed } from '@/components/notifications/notification-feed-provider'
 import type { Notification } from '@/lib/models/types'
 import type { EmployeeReviewContext, EmployeeReviewLevel } from '@/lib/models/employeeReview'
 import { updateLateStatus } from '@/lib/services/lateService'
@@ -34,8 +35,6 @@ import { updateLeaveStatus } from '@/lib/services/leaveService'
 import {
   markAllNotificationsAsRead,
   markNotificationAsRead,
-  subscribeToEmployeeNotifications,
-  subscribeToManagementPendingItems,
   type ManagementPendingItem,
   type ManagementShift,
 } from '@/lib/services/notificationService'
@@ -313,6 +312,7 @@ function ReviewAssessment({
 export default function NotificationsPage() {
   const router = useRouter()
   const { authUser, isPreviewMode } = useAuth()
+  const { employeeNotifications, employeeNotificationsReady, managementPendingItems, managementPendingReady } = useNotificationFeed()
   const role = useUserRole()
   const isManagement = role === 'admin' || role === 'manager' || role === 'director'
   const [items, setItems] = useState<Notification[]>([])
@@ -433,48 +433,43 @@ export default function NotificationsPage() {
     }
 
     if (isManagement) {
-      const unsubscribePending = subscribeToManagementPendingItems(
-        (pending) => {
-          const visible = pending.filter((item) => item.type !== 'account' || role === 'admin')
-          const legacySchedules = visible.filter((item) => item.type === 'schedule')
-          setPendingItems(visible.filter((item) => item.type !== 'schedule'))
-          legacySchedules.forEach((item) => {
-            if (legacyAutoApprovalRef.current.has(item.id)) return
-            legacyAutoApprovalRef.current.add(item.id)
-            void reviewWorkScheduleBatch(item.targetIds, 'Approved', 'Tự động chuyển đổi theo chính sách lịch mới.').catch(() => {
-              legacyAutoApprovalRef.current.delete(item.id)
-              setPendingItems((current) => current.some((row) => row.id === item.id) ? current : [item, ...current])
-              setMessage('Có lịch cũ chưa thể tự động đồng bộ. Hệ thống sẽ thử lại khi dữ liệu thay đổi.')
-            })
-          })
-          setLoading(false)
-          if (!legacySchedules.length) setMessage('')
-        },
-        () => {
-          setMessage('Chưa thể tải các việc đang chờ xử lý. Vui lòng thử lại.')
-          setLoading(false)
-        }
-      )
-      const unsubscribeNotifications = subscribeToEmployeeNotifications(authUser.uid, (notifications) => {
-        setItems(notifications)
-        setLoading(false)
-      })
       const window = recentNotificationWindow()
       const unsubscribeHistory = subscribeToWeeklyDecisionHistory(window.start, new Date(window.end.getTime() - 1), setDecisions, () => setMessage('Chưa thể tải các quyết định đã xử lý.'))
       const unsubscribeEmployees = subscribeToAllEmployees(setEmployees, () => undefined)
       return () => {
-        unsubscribePending()
-        unsubscribeNotifications()
         unsubscribeHistory()
         unsubscribeEmployees()
       }
     }
 
-    return subscribeToEmployeeNotifications(authUser.uid, (notifications) => {
-      setItems(notifications)
-      setLoading(false)
+    return undefined
+  }, [authUser, isManagement, isPreviewMode, role])
+
+  useEffect(() => {
+    if (!authUser || !isManagement || isPreviewMode || role === 'director') return
+    const visible = managementPendingItems.filter((item) => item.type !== 'account' || role === 'admin')
+    const legacySchedules = visible.filter((item) => item.type === 'schedule')
+    setPendingItems(visible.filter((item) => item.type !== 'schedule'))
+    legacySchedules.forEach((item) => {
+      if (legacyAutoApprovalRef.current.has(item.id)) return
+      legacyAutoApprovalRef.current.add(item.id)
+      void reviewWorkScheduleBatch(item.targetIds, 'Approved', 'Tự động chuyển đổi theo chính sách lịch mới.').catch(() => {
+        legacyAutoApprovalRef.current.delete(item.id)
+        setPendingItems((current) => current.some((row) => row.id === item.id) ? current : [item, ...current])
+        setMessage('Có lịch cũ chưa thể tự động đồng bộ. Hệ thống sẽ thử lại khi dữ liệu thay đổi.')
+      })
     })
-  }, [authUser, isManagement, isPreviewMode])
+    if (managementPendingReady) {
+      setLoading(false)
+      if (!legacySchedules.length) setMessage('')
+    }
+  }, [authUser, isManagement, isPreviewMode, managementPendingItems, managementPendingReady, role])
+
+  useEffect(() => {
+    if (!authUser || isPreviewMode || role === 'director') return
+    setItems(employeeNotifications)
+    if (employeeNotificationsReady) setLoading(false)
+  }, [authUser?.uid, employeeNotifications, employeeNotificationsReady, isPreviewMode, role])
 
   useEffect(() => {
     if (!authUser || isManagement) return

@@ -22,7 +22,7 @@ import Link from 'next/link'
 import { useAuth } from '@/lib/hooks/useAuth'
 import type { EmployeeScheduleMode, StaffRequest } from '@/lib/models/types'
 import { requestEmployeeFactoryChange, requestEmployeeScheduleModeChange, setInitialEmployeeScheduleMode } from '@/lib/services/employeeService'
-import { subscribeToEmployeeFactoryChangeRequests, subscribeToEmployeeScheduleModeRequests } from '@/lib/services/staffRequestService'
+import { subscribeToEmployeeProfileRequests } from '@/lib/services/staffRequestService'
 import { employeeFactoryId, FACTORY_IDS, FACTORY_LABELS, type FactoryId } from '@/lib/models/factory'
 import { profileImageUrl } from '@/lib/utils/profileImage'
 import { Header } from '@/components/layout/header'
@@ -105,15 +105,9 @@ export default function ProfilePage() {
 
   useEffect(() => {
     if (!authUser || employee?.role !== 'employee') return
-    return subscribeToEmployeeScheduleModeRequests(authUser.uid, (items) => {
-      setModeRequest(items.find((item) => item.status === 'Pending') || null)
-    })
-  }, [authUser, employee?.role])
-
-  useEffect(() => {
-    if (!authUser || employee?.role !== 'employee') return
-    return subscribeToEmployeeFactoryChangeRequests(authUser.uid, (items) => {
-      setFactoryRequest(items.find((item) => item.status === 'Pending') || null)
+    return subscribeToEmployeeProfileRequests(authUser.uid, (items) => {
+      setModeRequest(items.find((item) => item.type === 'scheduleModeChange') || null)
+      setFactoryRequest(items.find((item) => item.type === 'factoryChange') || null)
     })
   }, [authUser, employee?.role])
 

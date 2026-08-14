@@ -174,6 +174,7 @@ export default function SalaryAdvancePage() {
       .catch(() => setMessage({ type: 'error', text: 'Chưa tải được lịch mở ứng lương; hệ thống sẽ kiểm tra lại khi gửi.' }))
       .finally(() => setPolicyLoading(false))
 
+    const currentMonthWindow = currentVietnamMonth(new Date())
     return subscribeToEmployeeSalaryAdvances(
       authUser.uid,
       (data) => {
@@ -183,7 +184,8 @@ export default function SalaryAdvancePage() {
       (error) => {
         console.error('Error:', error)
         setLoading(false)
-      }
+      },
+      { startDate: currentMonthWindow.start, endDate: currentMonthWindow.end },
     )
   }, [authUser, isPreviewMode])
 

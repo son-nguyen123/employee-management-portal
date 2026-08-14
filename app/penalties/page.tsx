@@ -44,6 +44,7 @@ export default function PenaltiesPage() {
     let active = true
     let sourceRecords: Penalty[] = []
     let liveRecords: Penalty[] | null = null
+    const currentMonthWindow = currentVietnamMonth(new Date())
     const mergeRecords = () => {
       const byId = new Map(sourceRecords.map((item) => [item.id, item]))
       liveRecords
@@ -62,7 +63,7 @@ export default function PenaltiesPage() {
         mergeRecords()
       }, () => {
         if (active) setMessage('Không thể cập nhật khoản phạt theo thời gian thực.')
-      })
+      }, { startDate: currentMonthWindow.start, endDate: currentMonthWindow.end })
       : undefined
     setLoading(true)
     setMessage('')

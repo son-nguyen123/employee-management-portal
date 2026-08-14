@@ -111,6 +111,9 @@ export async function getDutyAvailability(actor: RequestActor, raw: unknown) {
   const snapshot = await adminDb.collection('workSchedules')
     .where('date', '>=', Timestamp.fromDate(start))
     .where('date', '<=', Timestamp.fromDate(end))
+    // Duty rows use one of these two exact markers. Filtering in Firestore
+    // avoids reading every regular shift in the selected date window.
+    .where('note', 'in', ['[DUTY] Trực 17:00–17:30', '[DUTY_ONLY] Trực 17:00–17:30'])
     .get()
   const membersByDay = new Map<string, Set<string>>()
 
@@ -155,7 +158,10 @@ export async function updateWeeklyScheduleTarget(actor: RequestActor, raw: unkno
 
 export async function getManagementContact(actor: RequestActor) {
   requireStaff(actor)
-  const snapshot = await adminDb.collection('employees').get()
+  const snapshot = await adminDb.collection('employees')
+    .where('role', 'in', ['manager', 'admin'])
+    .limit(10)
+    .get()
   const managers = snapshot.docs
     .map((document): Record<string, unknown> & { uid: string } => ({
       uid: document.id,
@@ -668,11 +674,11 @@ async function sendPenaltyPush(params: {
 }
 
 async function activeManagerIds(factoryId?: string): Promise<string[]> {
-  const snapshot = await adminDb.collection('employees').get()
+  const snapshot = await adminDb.collection('employees')
+    .where('role', 'in', ['admin', 'manager'])
+    .get()
   return snapshot.docs
-    .filter((item) => ['admin', 'manager'].includes(String(item.get('role'))) && (
-      !factoryId || String(item.get('factoryId') || 'factory-1') === factoryId
-    ))
+    .filter((item) => !factoryId || String(item.get('factoryId') || 'factory-1') === factoryId)
     .map((item) => item.id)
 }
 
@@ -857,8 +863,11 @@ export async function submitScheduleModeChangeRequest(actor: RequestActor, raw: 
   if (cooldownUntil && cooldownUntil.getTime() > Date.now()) {
     throw new ApiError(409, `Bạn chỉ có thể đổi lại sau ${cooldownUntil.toLocaleDateString('vi-VN')}.`)
   }
-  const existingRequests = await adminDb.collection('staffRequests').where('employeeId', '==', actor.uid).get()
-  if (existingRequests.docs.some((item) => item.get('type') === 'scheduleModeChange' && item.get('status') === 'Pending')) {
+  const existingRequests = await adminDb.collection('staffRequests')
+    .where('employeeId', '==', actor.uid)
+    .where('status', '==', 'Pending')
+    .get()
+  if (existingRequests.docs.some((item) => item.get('type') === 'scheduleModeChange')) {
     throw new ApiError(409, 'Bạn đã có một yêu cầu đổi chế độ đang chờ quản lý xử lý.')
   }
 
@@ -925,8 +934,11 @@ export async function submitFactoryChangeRequest(actor: RequestActor, raw: unkno
     : 'factory-1'
   if (currentFactoryId === requestedFactoryId) throw new ApiError(409, `Bạn đang thuộc ${FACTORY_LABELS[currentFactoryId]}.`)
 
-  const existingRequests = await adminDb.collection('staffRequests').where('employeeId', '==', actor.uid).get()
-  if (existingRequests.docs.some((item) => item.get('type') === 'factoryChange' && item.get('status') === 'Pending')) {
+  const existingRequests = await adminDb.collection('staffRequests')
+    .where('employeeId', '==', actor.uid)
+    .where('status', '==', 'Pending')
+    .get()
+  if (existingRequests.docs.some((item) => item.get('type') === 'factoryChange')) {
     throw new ApiError(409, 'Bạn đã có một yêu cầu đổi xưởng đang chờ quản lý xử lý.')
   }
 
@@ -1156,9 +1168,17 @@ export async function submitSchedules(actor: RequestActor, raw: unknown) {
     return start <= weekStart && end >= weekEnd
   })
   const batchKey = scheduleBatchKey(actor.uid, weekStart)
-  const [managerIds, existingSchedules, employeeSnapshot] = await Promise.all([
+  const [managerIds, existingSchedules, previousScheduleProbe, employeeSnapshot] = await Promise.all([
     activeManagerIds(actor.factoryId),
-    adminDb.collection('workSchedules').where('employeeId', '==', actor.uid).get(),
+    adminDb.collection('workSchedules')
+      .where('employeeId', '==', actor.uid)
+      .where('date', '>=', Timestamp.fromDate(weekStart))
+      .where('date', '<=', Timestamp.fromDate(weekEnd))
+      .get(),
+    adminDb.collection('workSchedules')
+      .where('employeeId', '==', actor.uid)
+      .limit(1)
+      .get(),
     adminDb.collection('employees').doc(actor.uid).get(),
   ])
   const employeeData = employeeSnapshot.data() as Record<string, unknown> | undefined
@@ -1168,7 +1188,7 @@ export async function submitSchedules(actor: RequestActor, raw: unknown) {
   // A "new employee" means an employee who has never submitted a schedule.
   // The durable profile marker remains reliable after old schedule rows move
   // to Drive; legacy rows are retained as a fallback during migration.
-  const hasPreviousSchedule = employeeData?.hasSubmittedSchedule === true || !existingSchedules.empty
+  const hasPreviousSchedule = employeeData?.hasSubmittedSchedule === true || !previousScheduleProbe.empty
   const firstScheduleException = !hasPreviousSchedule
   const currentWeekStartKey = vietnamWeekStartKey(requestTime)
   const reactivationWaiverActive = reactivationWaiverApplies({
@@ -1419,9 +1439,17 @@ export async function submitStaffRequest(actor: RequestActor, raw: unknown) {
     if ([...requestedShifts, ...removedShifts, ...restoredShifts].some((item) => mondayFor(item.date).getTime() !== weekStart!.getTime())) {
       throw new ApiError(400, 'Các ca làm thêm phải thuộc cùng một tuần.')
     }
+    const weekEnd = new Date(weekStart.getTime() + 7 * 24 * 60 * 60 * 1000)
     const [existing, existingStaffRequests] = await Promise.all([
-      adminDb.collection('workSchedules').where('employeeId', '==', actor.uid).get(),
-      adminDb.collection('staffRequests').where('employeeId', '==', actor.uid).get(),
+      adminDb.collection('workSchedules')
+        .where('employeeId', '==', actor.uid)
+        .where('date', '>=', Timestamp.fromDate(weekStart))
+        .where('date', '<', Timestamp.fromDate(weekEnd))
+        .get(),
+      adminDb.collection('staffRequests')
+        .where('employeeId', '==', actor.uid)
+        .where('status', '==', 'Pending')
+        .get(),
     ])
     const removedIds = new Set(removedShifts.map((item) => item.scheduleId))
     if (removedShifts.some((removed) => !existing.docs.some((snapshot) => {

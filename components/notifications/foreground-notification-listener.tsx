@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { BellRing, X } from 'lucide-react'
 import { useAuth } from '@/lib/hooks/useAuth'
 import {
@@ -8,7 +8,7 @@ import {
   subscribeToForegroundMessages,
   syncPushDeviceRegistration,
 } from '@/lib/services/messagingService'
-import { subscribeToEmployeeNotifications } from '@/lib/services/notificationService'
+import { useNotificationFeed } from '@/components/notifications/notification-feed-provider'
 
 interface ForegroundNotice {
   title: string
@@ -17,31 +17,29 @@ interface ForegroundNotice {
 
 export function ForegroundNotificationListener() {
   const { authUser, isPreviewMode } = useAuth()
+  const { employeeNotifications, employeeNotificationsReady } = useNotificationFeed()
   const [notice, setNotice] = useState<ForegroundNotice | null>(null)
   const dismissTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const lastNotice = useRef<{ key: string; at: number } | null>(null)
+  const knownNotificationIds = useRef<Set<string>>(new Set())
+  const notificationFeedInitialized = useRef(false)
+
+  const showNotice = useCallback((title: string, body: string) => {
+    const key = `${title}\n${body}`
+    const now = Date.now()
+    if (lastNotice.current?.key === key && now - lastNotice.current.at < 30000) return false
+    lastNotice.current = { key, at: now }
+    setNotice({ title, body })
+    if (dismissTimer.current) clearTimeout(dismissTimer.current)
+    dismissTimer.current = setTimeout(() => setNotice(null), 7000)
+    return true
+  }, [])
 
   useEffect(() => {
     if (!authUser || isPreviewMode) return
 
-    let unsubscribe: () => void = () => undefined
-    let unsubscribeFirestore: () => void = () => undefined
     let cancelled = false
-    let initialized = false
-    const knownNotificationIds = new Set<string>()
-
-    const showNotice = (title: string, body: string) => {
-      const key = `${title}\n${body}`
-      const now = Date.now()
-      // FCM and the Firestore fallback can report the same event a few seconds
-      // apart on slow devices. Keep one visible toast without suppressing later events.
-      if (lastNotice.current?.key === key && now - lastNotice.current.at < 30000) return false
-      lastNotice.current = { key, at: now }
-      setNotice({ title, body })
-      if (dismissTimer.current) clearTimeout(dismissTimer.current)
-      dismissTimer.current = setTimeout(() => setNotice(null), 7000)
-      return true
-    }
+    let unsubscribe: () => void = () => undefined
 
     void syncPushDeviceRegistration(authUser.uid).catch((error) => {
       console.error('Không thể đồng bộ thiết bị nhận thông báo:', error)
@@ -50,15 +48,8 @@ export function ForegroundNotificationListener() {
     void subscribeToForegroundMessages((payload) => {
       if (cancelled) return
 
-      const title =
-        payload.notification?.title ||
-        payload.data?.title ||
-        'Trí Candy'
-      const body =
-        payload.notification?.body ||
-        payload.data?.body ||
-        payload.data?.message ||
-        'Bạn có một thông báo mới.'
+      const title = payload.notification?.title || payload.data?.title || 'Trí Candy'
+      const body = payload.notification?.body || payload.data?.body || payload.data?.message || 'Bạn có một thông báo mới.'
 
       if (showNotice(title, body)) {
         const source = payload.data?.source || 'push'
@@ -79,33 +70,47 @@ export function ForegroundNotificationListener() {
       unsubscribe = stopListening
     })
 
-    // Firestore is the reliable foreground fallback when the browser suppresses
-    // an FCM notification while the PWA is already visible.
-    unsubscribeFirestore = subscribeToEmployeeNotifications(authUser.uid, (items) => {
-      if (!initialized) {
-        items.forEach((item) => item.id && knownNotificationIds.add(item.id))
-        initialized = true
-        return
-      }
-      const newest = items.find((item) => item.id && !knownNotificationIds.has(item.id))
-      items.forEach((item) => item.id && knownNotificationIds.add(item.id))
-      if (newest && !newest.isRead && showNotice(newest.title, newest.message)) {
-        void showForegroundSystemNotification({
-          title: newest.title,
-          body: newest.message,
-          link: '/notifications',
-          tag: `notification:${newest.id}`,
-        })
-      }
-    })
-
     return () => {
       cancelled = true
       unsubscribe()
-      unsubscribeFirestore()
       if (dismissTimer.current) clearTimeout(dismissTimer.current)
     }
-  }, [authUser, isPreviewMode])
+  }, [authUser?.uid, isPreviewMode, showNotice])
+
+  // Reuse the single Firestore notification listener owned by the provider as
+  // the foreground fallback. This avoids a second identical onSnapshot query.
+  useEffect(() => {
+    if (!authUser || isPreviewMode || !employeeNotificationsReady) {
+      knownNotificationIds.current.clear()
+      notificationFeedInitialized.current = false
+      return
+    }
+
+    if (!notificationFeedInitialized.current) {
+      employeeNotifications.forEach((item) => item.id && knownNotificationIds.current.add(item.id))
+      notificationFeedInitialized.current = true
+      return
+    }
+
+    const newest = employeeNotifications
+      .filter((item) => item.id && !knownNotificationIds.current.has(item.id))
+      .sort((left, right) => {
+        const leftDate = left.createdAt instanceof Date ? left.createdAt : left.createdAt.toDate()
+        const rightDate = right.createdAt instanceof Date ? right.createdAt : right.createdAt.toDate()
+        return rightDate.getTime() - leftDate.getTime()
+      })
+      .find((item) => !item.isRead)
+
+    employeeNotifications.forEach((item) => item.id && knownNotificationIds.current.add(item.id))
+    if (newest && showNotice(newest.title, newest.message)) {
+      void showForegroundSystemNotification({
+        title: newest.title,
+        body: newest.message,
+        link: '/notifications',
+        tag: `notification:${newest.id}`,
+      })
+    }
+  }, [authUser?.uid, employeeNotifications, employeeNotificationsReady, isPreviewMode, showNotice])
 
   if (!notice) return null
 
