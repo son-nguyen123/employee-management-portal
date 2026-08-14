@@ -262,6 +262,7 @@ export default function Page() {
     { title: 'Lịch sử xử lý', note: 'Quyết định trong tuần', href: '/admin/history', icon: History },
     { title: 'Danh sách nhân viên', note: 'Tên · mã · số điện thoại', href: '/admin/dashboard?view=employees#employees', icon: UsersRound },
     { title: 'Kho dữ liệu', note: 'Lịch sử trên Google Drive', href: '/admin/archive', icon: Archive },
+    { title: 'Hướng dẫn sử dụng', note: 'Nghiệp vụ · reset · tra cứu', href: '/admin/guide', icon: BookOpenText },
     { title: 'Cài đặt', note: 'Email · cấu hình quản lý', href: '/admin/settings', icon: Settings },
   ]
   // Management accounts can use the same self-service utilities as staff.
