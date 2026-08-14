@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { FieldValue } from 'firebase-admin/firestore'
 import { ApiError, authenticateRequest } from '@/lib/server/api-auth'
 import { adminAuth, adminDb } from '@/lib/server/firebase-admin'
+import { invalidateMonthDataCache } from '@/lib/server/month-data-cache'
 
 export const runtime = 'nodejs'
 
@@ -80,6 +81,7 @@ export async function POST(request: Request) {
     }
 
     await profileRef.update({ ...updates, updatedAt: FieldValue.serverTimestamp() })
+    invalidateMonthDataCache()
     await adminAuth.updateUser(actor.uid, { displayName: fullName, photoURL })
     return NextResponse.json({ ok: true })
   } catch (error) {

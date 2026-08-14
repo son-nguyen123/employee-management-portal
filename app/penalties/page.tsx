@@ -7,6 +7,8 @@ import { PageContainer } from '@/components/layout/page-container'
 import { useAuth } from '@/lib/hooks/useAuth'
 import { MonthNavigator } from '@/components/ui/month-navigator'
 import { readPenaltyMonth } from '@/lib/services/monthDataService'
+import { subscribeToEmployeePenalties } from '@/lib/services/penaltyService'
+import { belongsToVietnamMonth, dateFromMonthValue } from '@/lib/services/monthDataUtils'
 import type { Penalty } from '@/lib/models/types'
 import { currentVietnamMonth } from '@/lib/archive/retention'
 
@@ -40,13 +42,41 @@ export default function PenaltiesPage() {
       return
     }
     let active = true
+    let sourceRecords: Penalty[] = []
+    let liveRecords: Penalty[] | null = null
+    const mergeRecords = () => {
+      const byId = new Map(sourceRecords.map((item) => [item.id, item]))
+      liveRecords
+        ?.filter((item) => belongsToVietnamMonth(item.penaltyDate, month))
+        .forEach((item) => byId.set(item.id, item))
+      const sorted = Array.from(byId.values()).sort((left, right) => {
+        const leftDate = dateFromMonthValue(left.penaltyDate)?.getTime() || 0
+        const rightDate = dateFromMonthValue(right.penaltyDate)?.getTime() || 0
+        return rightDate - leftDate
+      })
+      if (active) setPenalties(sorted)
+    }
+    const unsubscribe = month === currentVietnamMonth(new Date()).key
+      ? subscribeToEmployeePenalties(authUser.uid, (items) => {
+        liveRecords = items
+        mergeRecords()
+      }, () => {
+        if (active) setMessage('Không thể cập nhật khoản phạt theo thời gian thực.')
+      })
+      : undefined
     setLoading(true)
     setMessage('')
     void readPenaltyMonth(month)
-      .then((result) => { if (active) setPenalties(result.records) })
+      .then((result) => {
+        sourceRecords = result.records
+        mergeRecords()
+      })
       .catch(() => { if (active) setMessage('Chưa thể tải các khoản phạt của tháng này.') })
       .finally(() => { if (active) setLoading(false) })
-    return () => { active = false }
+    return () => {
+      active = false
+      unsubscribe?.()
+    }
   }, [authUser, isPreviewMode, month])
 
   const penaltyAmount = (item: Penalty) => item.status === 'Cancelled' ? 0 : Number(item.amount || 0)

@@ -16,6 +16,7 @@ import { employeeFactoryId } from '@/lib/models/factory'
 import { MonthNavigator } from '@/components/ui/month-navigator'
 import { readSalaryAdvanceMonth } from '@/lib/services/monthDataService'
 import { currentVietnamMonth } from '@/lib/archive/retention'
+import { belongsToVietnamMonth, dateFromMonthValue } from '@/lib/services/monthDataUtils'
 
 type SalaryFilter = 'all' | 'Pending' | 'Approved' | 'Rejected' | 'Cancelled'
 
@@ -107,40 +108,51 @@ function DirectorSalaryAdvancesPanel({ isPreviewMode }: { isPreviewMode: boolean
     }
 
     let active = true
+    let sourceRecords: SalaryAdvance[] = []
+    let source: 'firestore' | 'drive' | 'merged' = 'firestore'
+    let employeeById = new Map<string, Employee>()
+    const publish = () => {
+      const byId = new Map(sourceRecords.map((item) => [item.id, item]))
+      const nextItems = Array.from(byId.values()).filter((item) => {
+        const employee = employeeById.get(item.employeeId)
+        return item.status === 'Approved' && (source === 'drive' || employee?.status === 'active')
+      }).map((item) => {
+        const employee = employeeById.get(item.employeeId)
+        return {
+          id: item.id || `${item.employeeId}-${String(item.createdAt)}`,
+          employeeId: item.employeeId,
+          employeeName: employee?.fullName || 'Nhân viên',
+          employeeCode: employee?.employeeCode || item.employeeId,
+          photoURL: employee?.photoURL,
+          phone: employee?.phone,
+          facebookUrl: employee?.facebookUrl,
+          amount: Number(item.amount || 0),
+          reason: item.reason || '',
+          bankName: employee?.bankName || '',
+          bankAccountName: employee?.bankAccountName || '',
+          bankAccountNumber: employee?.bankAccountNumber || '',
+          approvedAt: dateFromMonthValue(item.reviewedAt)?.toISOString() || null,
+        }
+      })
+      if (active) setItems(nextItems)
+    }
     setReady(false)
     void (async () => {
       try {
         const result = await readSalaryAdvanceMonth(month)
-        const employeeById = new Map(result.employees.map((employee) => [employee.uid || (employee as Employee & { id?: string }).id, employee]))
-        const nextItems = result.records.filter((item) => {
-          const employee = employeeById.get(item.employeeId)
-          return item.status === 'Approved' && (result.source === 'drive' || employee?.status === 'active')
-        }).map((item) => {
-          const employee = employeeById.get(item.employeeId)
-          return {
-            id: item.id || `${item.employeeId}-${String(item.createdAt)}`,
-            employeeId: item.employeeId,
-            employeeName: employee?.fullName || 'Nhân viên',
-            employeeCode: employee?.employeeCode || item.employeeId,
-            photoURL: employee?.photoURL,
-            phone: employee?.phone,
-            facebookUrl: employee?.facebookUrl,
-            amount: Number(item.amount || 0),
-            reason: item.reason || '',
-            bankName: employee?.bankName || '',
-            bankAccountName: employee?.bankAccountName || '',
-            bankAccountNumber: employee?.bankAccountNumber || '',
-            approvedAt: item.reviewedAt instanceof Date ? item.reviewedAt.toISOString() : null,
-          }
-        })
-        if (active) setItems(nextItems)
+        source = result.source
+        sourceRecords = result.records
+        employeeById = new Map(result.employees.map((employee) => [employee.uid || (employee as Employee & { id?: string }).id || '', employee]))
+        publish()
       } catch (error) {
         if (active) setMessage(error instanceof Error ? error.message : 'Chưa thể tải danh sách ứng lương đã duyệt.')
       } finally {
         if (active) setReady(true)
       }
     })()
-    return () => { active = false }
+    return () => {
+      active = false
+    }
   }, [authUser, isPreviewMode, month])
 
   const copyAccountNumber = async (item: DirectorSalaryAdvance) => {
@@ -361,7 +373,7 @@ export default function AdminSalaryAdvancesPage() {
     if (!authUser || isPreviewMode || role === 'director') return
     const currentMonth = currentVietnamMonth(new Date()).key
     if (month === currentMonth) {
-      setRequests(liveRequests)
+      setRequests(liveRequests.filter((item) => belongsToVietnamMonth(item.createdAt, currentMonth)))
       return
     }
     let active = true

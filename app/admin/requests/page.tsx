@@ -14,13 +14,14 @@ import { Header } from '@/components/layout/header'
 import { PageContainer } from '@/components/layout/page-container'
 import { ManagementOverview } from '@/components/admin/management-overview'
 import { subscribeToActiveEmployees } from '@/lib/services/employeeService'
-import { adjustPenalty, cancelPenalty, createManualPenalty } from '@/lib/services/penaltyService'
+import { adjustPenalty, cancelPenalty, createManualPenalty, subscribeToAllPenalties } from '@/lib/services/penaltyService'
 import { subscribeToPendingStaffRequests, updateStaffRequestStatus } from '@/lib/services/staffRequestService'
 import type { Employee, Penalty, StaffRequest } from '@/lib/models/types'
 import { FACTORY_LABELS } from '@/lib/models/factory'
 import { MonthNavigator } from '@/components/ui/month-navigator'
 import { invalidateMonthData, readPenaltyMonth } from '@/lib/services/monthDataService'
 import { currentVietnamMonth } from '@/lib/archive/retention'
+import { belongsToVietnamMonth, dateFromMonthValue } from '@/lib/services/monthDataUtils'
 
 type RequestType = 'leave' | 'late' | 'salary' | 'overtime' | 'note' | 'scheduleChange' | 'scheduleModeChange' | 'factoryChange'
 type RequestRow = {
@@ -252,11 +253,36 @@ export default function AdminRequestsPage() {
   useEffect(() => {
     if (!authUser || isPreviewMode || pageMode !== 'penalties') return
     let active = true
+    let sourceRecords: Penalty[] = []
+    let liveRecords: Penalty[] | null = null
+    let allowedEmployeeIds = new Set<string>()
+    const mergeRecords = () => {
+      const byId = new Map(sourceRecords.map((item) => [item.id, item]))
+      liveRecords
+        ?.filter((item) => allowedEmployeeIds.has(item.employeeId) && belongsToVietnamMonth(item.penaltyDate, penaltyExportMonth))
+        .forEach((item) => byId.set(item.id, item))
+      const sorted = Array.from(byId.values()).sort((left, right) => {
+        const leftDate = dateFromMonthValue(left.penaltyDate)?.getTime() || 0
+        const rightDate = dateFromMonthValue(right.penaltyDate)?.getTime() || 0
+        return rightDate - leftDate
+      })
+      if (active) setPenalties(sorted)
+    }
+    const unsubscribe = penaltyExportMonth === currentVietnamMonth(new Date()).key
+      ? subscribeToAllPenalties((items) => {
+        liveRecords = items
+        mergeRecords()
+      }, () => {
+        if (active) setMessage('Không thể cập nhật khoản phạt theo thời gian thực.')
+      })
+      : undefined
     setPenaltyMonthLoading(true)
     void readPenaltyMonth(penaltyExportMonth)
       .then((result) => {
         if (!active) return
-        setPenalties(result.records)
+        sourceRecords = result.records
+        allowedEmployeeIds = new Set(result.employees.map((employee) => employee.uid || (employee as Employee & { id?: string }).id || ''))
+        mergeRecords()
         setEmployees((current) => {
           const byId = new Map(current.map((employee) => [employee.uid, employee]))
           result.employees.forEach((employee) => byId.set(employee.uid || (employee as Employee & { id?: string }).id || '', employee))
@@ -265,7 +291,10 @@ export default function AdminRequestsPage() {
       })
       .catch((error) => { if (active) setMessage(error instanceof Error ? error.message : 'Chưa thể tải dữ liệu phạt của tháng này.') })
       .finally(() => { if (active) setPenaltyMonthLoading(false) })
-    return () => { active = false }
+    return () => {
+      active = false
+      unsubscribe?.()
+    }
   }, [authUser, isPreviewMode, pageMode, penaltyExportMonth])
 
   useEffect(() => {

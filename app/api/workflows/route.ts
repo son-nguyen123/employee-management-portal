@@ -43,6 +43,7 @@ import {
 } from '@/lib/server/workflows'
 import { recordCompletedWorkflowAudit } from '@/lib/server/audit-trail'
 import { dispatchQueuedAuditEmails } from '@/lib/server/audit-email'
+import { invalidateMonthDataCache } from '@/lib/server/month-data-cache'
 
 export const runtime = 'nodejs'
 export const maxDuration = 30
@@ -89,6 +90,26 @@ const handlers = {
 } as const
 
 const diagnosticActions = new Set(['getPushDiagnostics', 'sendTestPush'])
+
+const monthDataMutationActions = new Set([
+  'submitSchedules',
+  'replaceSchedules',
+  'submitLeave',
+  'submitLate',
+  'submitSalaryAdvance',
+  'submitStaffRequest',
+  'reviseRequest',
+  'reopenRequest',
+  'cancelRequest',
+  'createForgottenDutyPenalty',
+  'createManualPenalty',
+  'managePenalty',
+  'reviewRequest',
+  'reviewScheduleBatch',
+  'respondPenaltyConsent',
+  'manageEmployeeStatus',
+  'manageEmployeeRole',
+])
 
 function safeServerError(error: unknown): { status: number; message: string } {
   if (error instanceof ApiError) {
@@ -165,6 +186,7 @@ export async function POST(request: Request) {
       throw new ApiError(400, 'Nghiệp vụ không hợp lệ.')
     }
     const result = await handlers[action as keyof typeof handlers](actor, payload)
+    if (monthDataMutationActions.has(action)) invalidateMonthDataCache()
     if (!diagnosticActions.has(action)) {
       try {
         await recordCompletedWorkflowAudit({ actor, action, payload, result })

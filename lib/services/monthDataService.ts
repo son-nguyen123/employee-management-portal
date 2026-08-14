@@ -1,6 +1,6 @@
 import { auth } from '@/lib/firebase'
 import type { Employee, Penalty, SalaryAdvance } from '@/lib/models/types'
-import { currentVietnamMonth } from '@/lib/archive/retention'
+import { previousVietnamMonth } from '@/lib/archive/retention'
 
 export type MonthDataSource = 'firestore' | 'drive' | 'merged'
 
@@ -11,7 +11,19 @@ export interface MonthDataResult<T> {
   employees: Employee[]
 }
 
-const cache = new Map<string, MonthDataResult<unknown>>()
+type MonthCacheEntry = {
+  result: MonthDataResult<unknown>
+  expiresAt: number
+}
+
+const PREVIOUS_MONTH_CLIENT_CACHE_TTL_MS = 10 * 60 * 1000
+const cache = new Map<string, MonthCacheEntry>()
+
+function removeInactiveMonthCacheEntries(previousMonth: string) {
+  for (const [key] of cache) {
+    if (!key.endsWith(`:${previousMonth}`)) cache.delete(key)
+  }
+}
 
 function hydrateDates(record: Record<string, unknown>): Record<string, unknown> {
   const result: Record<string, unknown> = { ...record }
@@ -26,8 +38,12 @@ async function readMonth<T extends Record<string, unknown>>(resource: 'penalties
   const user = auth.currentUser
   if (!user) throw new Error('Bạn cần đăng nhập để xem dữ liệu theo tháng.')
   const key = `${user.uid}:${resource}:${month}`
-  const cached = cache.get(key)
-  if (cached) return cached as MonthDataResult<T>
+  const previousMonth = previousVietnamMonth(new Date()).key
+  removeInactiveMonthCacheEntries(previousMonth)
+  const cacheableMonth = month === previousMonth
+  const cached = cacheableMonth ? cache.get(key) : undefined
+  if (cached && cached.expiresAt > Date.now()) return cached.result as MonthDataResult<T>
+  if (cached) cache.delete(key)
   const token = await user.getIdToken()
   const response = await fetch(`/api/month-data?resource=${resource}&month=${encodeURIComponent(month)}`, { headers: { authorization: `Bearer ${token}` }, cache: 'no-store' })
   const body = await response.json().catch(() => null) as { ok?: boolean; result?: MonthDataResult<T>; error?: string } | null
@@ -40,7 +56,14 @@ async function readMonth<T extends Record<string, unknown>>(resource: 'penalties
       return { ...hydrated, uid: String(hydrated.uid || hydrated.id) } as unknown as Employee
     }),
   }
-  if (month !== currentVietnamMonth(new Date()).key) cache.set(key, result as MonthDataResult<unknown>)
+  if (cacheableMonth) {
+    cache.set(key, {
+      result: result as MonthDataResult<unknown>,
+      expiresAt: Date.now() + PREVIOUS_MONTH_CLIENT_CACHE_TTL_MS,
+    })
+  } else {
+    cache.delete(key)
+  }
   return result
 }
 

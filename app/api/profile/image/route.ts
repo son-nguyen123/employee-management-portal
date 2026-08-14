@@ -9,6 +9,7 @@ import {
   readProfileImage,
   storeProfileImage,
 } from '@/lib/server/google-drive-archive'
+import { invalidateMonthDataCache } from '@/lib/server/month-data-cache'
 
 export const runtime = 'nodejs'
 
@@ -72,6 +73,7 @@ export async function POST(request: Request) {
       console.error('Old Google Drive profile image cleanup failed:', error)
     }
 
+    invalidateMonthDataCache()
     return NextResponse.json(
       { ok: true, url: photoURL, oldImagesDeleted },
       { headers: { 'cache-control': 'no-store' } },

@@ -18,6 +18,7 @@ import { getSalaryAdvancePolicy, type SalaryAdvancePolicy } from '@/lib/services
 import { MonthNavigator } from '@/components/ui/month-navigator'
 import { readSalaryAdvanceMonth } from '@/lib/services/monthDataService'
 import { currentVietnamMonth } from '@/lib/archive/retention'
+import { belongsToVietnamMonth } from '@/lib/services/monthDataUtils'
 
 function formatVietnameseCurrency(value: string | number): string {
   const digits = String(value).replace(/\D/g, '')
@@ -190,7 +191,7 @@ export default function SalaryAdvancePage() {
     if (!authUser || isPreviewMode) return
     const currentMonth = currentVietnamMonth(new Date()).key
     if (month === currentMonth) {
-      setPreviousAdvances(liveAdvances)
+      setPreviousAdvances(liveAdvances.filter((item) => belongsToVietnamMonth(item.createdAt, currentMonth)))
       return
     }
     let active = true

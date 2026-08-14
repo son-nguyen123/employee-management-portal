@@ -6,6 +6,7 @@ import { listMonthlyArchives, readArchive } from '@/lib/server/google-drive-arch
 import { adminDb } from '@/lib/server/firebase-admin'
 import { Timestamp, type DocumentData, type DocumentSnapshot } from 'firebase-admin/firestore'
 import { currentVietnamMonth } from '@/lib/archive/retention'
+import { withMonthDataCache } from '@/lib/server/month-data-cache'
 
 export type MonthRecord = { id: string; path?: string; data: Record<string, unknown> }
 type ArchivePayload = { records?: Record<string, MonthRecord[]> }
@@ -38,7 +39,13 @@ function safeRecords(payload: ArchivePayload, collection: string): MonthRecord[]
   return Array.isArray(records) ? records : []
 }
 
-export async function getAuthorizedMonthData(actor: RequestActor, month: string, resource: 'penalties' | 'salaryAdvances') {
+type MonthSourceData = {
+  source: 'firestore' | 'drive' | 'merged'
+  records: MonthRecord[]
+  profiles: MonthRecord[]
+}
+
+async function loadMonthSourceData(month: string, resource: 'penalties' | 'salaryAdvances'): Promise<MonthSourceData> {
   const { start, end } = monthWindow(month)
   const isCurrentMonth = month === currentVietnamMonth(new Date()).key
   const dateField = resource === 'penalties' ? 'penaltyDate' : 'createdAt'
@@ -75,17 +82,25 @@ export async function getAuthorizedMonthData(actor: RequestActor, month: string,
   const liveProfiles = liveProfileSnapshots.filter((item) => item.exists).map(archived)
   const profileRecordsById = new Map(liveProfiles.map((item) => [item.id, item]))
   archivedProfiles.forEach((item) => { if (!profileRecordsById.has(item.id)) profileRecordsById.set(item.id, item) })
-  const profiles = Array.from(profileRecordsById.values())
+  return {
+    source: archiveAvailable && firestoreRecords.length ? 'merged' : archiveAvailable ? 'drive' : 'firestore',
+    records: Array.from(mergedById.values()),
+    profiles: Array.from(profileRecordsById.values()),
+  }
+}
+
+export async function getAuthorizedMonthData(actor: RequestActor, month: string, resource: 'penalties' | 'salaryAdvances') {
+  const sourceData = await withMonthDataCache(resource, month, () => loadMonthSourceData(month, resource))
+  const profiles = sourceData.profiles
   const profileDataById = new Map(profiles.map((item) => [item.id, item.data]))
   const canReadEmployee = (employeeId: string) => {
     if (actor.role === 'employee') return employeeId === actor.uid
     if (actor.role === 'director') return true
     return employeeFactoryId(profileDataById.get(employeeId) as never) === actor.factoryId
   }
-  const records = Array.from(mergedById.values()).filter((item) => canReadEmployee(String(item.data.employeeId || '')))
+  const records = sourceData.records.filter((item) => canReadEmployee(String(item.data.employeeId || '')))
   const employeeIds = new Set(records.map((item) => String(item.data.employeeId || '')))
   const employees: FlatMonthRecord[] = profiles.filter((item) => employeeIds.has(item.id)).map((item) => ({ id: item.id, ...item.data, uid: item.id }))
   const flattenedRecords: FlatMonthRecord[] = records.map((item) => ({ id: item.id, ...item.data }))
-  const source = archiveAvailable && firestoreRecords.length ? 'merged' : archiveAvailable ? 'drive' : 'firestore'
-  return { month, source, records: flattenedRecords, employees }
+  return { month, source: sourceData.source, records: flattenedRecords, employees }
 }

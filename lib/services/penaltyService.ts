@@ -136,3 +136,21 @@ export function subscribeToEmployeePenalties(
     (error) => onError?.(error)
   )
 }
+
+export function subscribeToAllPenalties(
+  callback: (penalties: Penalty[]) => void,
+  onError?: (error: Error) => void
+): () => void {
+  const penaltiesQuery = query(
+    collection(db, PENALTIES_COLLECTION),
+    orderBy('penaltyDate', 'desc')
+  )
+  return onSnapshot(
+    penaltiesQuery,
+    (snapshot) => callback(snapshot.docs.map((item) => ({
+      id: item.id,
+      ...item.data(),
+    } as Penalty))),
+    (error) => onError?.(error)
+  )
+}

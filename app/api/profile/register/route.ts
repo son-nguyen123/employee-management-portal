@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { FieldValue, Timestamp } from 'firebase-admin/firestore'
 import { adminAuth, adminDb } from '@/lib/server/firebase-admin'
 import { isFactoryId } from '@/lib/models/factory'
+import { invalidateMonthDataCache } from '@/lib/server/month-data-cache'
 
 export const runtime = 'nodejs'
 
@@ -75,6 +76,7 @@ export async function POST(request: Request) {
         { employeeId: managerId, title: 'Tài khoản mới chờ duyệt', message: `${fullName} · ${employeeCode} vừa đăng ký tài khoản.`, type: 'warning', isRead: false, createdAt: now }
       ))
     })
+    invalidateMonthDataCache()
     return NextResponse.json({ ok: true, status: 'pending' })
   } catch (error) {
     const message = error instanceof Error && error.message === 'CODE_EXISTS'

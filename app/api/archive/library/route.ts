@@ -4,6 +4,7 @@ import { listAllArchives, readArchive } from '@/lib/server/google-drive-archive'
 import { runArchivePreview } from '@/lib/server/weekly-archive'
 import { runMonthlyArchive } from '@/lib/server/monthly-archive'
 import { getCurrentMonthSnapshot } from '@/lib/server/current-month-snapshot'
+import { invalidateMonthDataCache } from '@/lib/server/month-data-cache'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -45,7 +46,9 @@ export async function POST(request: Request) {
     requireManager(actor)
     const body = await request.json() as { referenceDate?: unknown; action?: unknown }
     if (body.action === 'archive-previous-month') {
-      return NextResponse.json({ ok: true, result: await runMonthlyArchive() })
+      const result = await runMonthlyArchive()
+      invalidateMonthDataCache()
+      return NextResponse.json({ ok: true, result })
     }
     if (typeof body.referenceDate !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(body.referenceDate)) {
       throw new ApiError(400, 'Ngày kiểm thử không hợp lệ.')
