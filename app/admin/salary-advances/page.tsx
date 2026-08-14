@@ -219,10 +219,10 @@ function DirectorSalaryAdvancesPanel({ isPreviewMode }: { isPreviewMode: boolean
               <div className="min-w-0">
                 <p className="truncate text-[10px] font-black uppercase tracking-[0.13em] text-blue-100">Đã duyệt · sẵn sàng chuyển khoản</p>
                 <div className="mt-0.5 flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
-                  <p className="text-2xl font-black tracking-tight">{items.length} yêu cầu</p>
-                  <p className="text-base font-extrabold text-blue-100">{formatAmount(total)}</p>
+                  <p className="text-2xl font-black tracking-tight">{ready ? `${items.length} yêu cầu` : 'Đang tải dữ liệu...'}</p>
+                  <p className="text-base font-extrabold text-blue-100">{ready ? formatAmount(total) : 'Vui lòng chờ'}</p>
                 </div>
-                <p className="mt-0.5 truncate text-[11px] font-semibold text-blue-100">Danh sách admin đã duyệt</p>
+                <p className="mt-0.5 truncate text-[11px] font-semibold text-blue-100">{ready ? 'Danh sách admin đã duyệt' : 'Đang kiểm tra dữ liệu tháng'}</p>
               </div>
             </div>
             <button type="button" onClick={() => void exportExcel()} disabled={exporting} className="flex min-h-10 shrink-0 items-center justify-center gap-2 rounded-xl bg-white px-4 text-xs font-black text-blue-700 shadow-md transition hover:bg-blue-50 active:scale-[0.98] disabled:opacity-60">
@@ -377,6 +377,7 @@ export default function AdminSalaryAdvancesPage() {
       return
     }
     let active = true
+    setRequests([])
     setMonthLoading(true)
     void readSalaryAdvanceMonth(month)
       .then((result) => {
@@ -415,6 +416,7 @@ export default function AdminSalaryAdvancesPage() {
   const approvedTotal = operationalRequests
     .filter((request) => request.status === 'Approved')
     .reduce((sum, request) => sum + Number(request.amount || 0), 0)
+  const salaryDataReady = ready.employees && ready.requests && !monthLoading
 
   const employeeFor = (request: SalaryAdvance) => employees.find((item) => item.uid === request.employeeId)
 
@@ -475,8 +477,8 @@ export default function AdminSalaryAdvancesPage() {
               <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-white/15 text-white"><CircleDollarSign className="h-5 w-5" /></span>
               <div className="min-w-0">
                 <p className="text-[10px] font-black uppercase tracking-[0.14em] text-sky-100">Tổng quan ứng lương</p>
-                <p className="text-sm font-black">Chờ {pendingCount} · Đã duyệt {approvedCount}</p>
-                <p className="break-words text-[11px] font-semibold leading-5 text-sky-100">{formatAmount(pendingTotal)} đang chờ · {formatAmount(approvedTotal)} đã duyệt</p>
+                <p className="text-sm font-black">{salaryDataReady ? `Chờ ${pendingCount} · Đã duyệt ${approvedCount}` : 'Đang tải dữ liệu tháng...'}</p>
+                <p className="break-words text-[11px] font-semibold leading-5 text-sky-100">{salaryDataReady ? `${formatAmount(pendingTotal)} đang chờ · ${formatAmount(approvedTotal)} đã duyệt` : 'Chưa kết luận số lượng yêu cầu'}</p>
               </div>
             </div>
             <button type="button" onClick={() => void exportExcel()} disabled={exporting} className="flex min-h-11 w-full shrink-0 items-center justify-center gap-2 rounded-xl bg-white px-4 text-sm font-black text-sky-700 transition active:scale-[0.98] disabled:opacity-60 sm:w-auto sm:min-w-48">
@@ -501,6 +503,8 @@ export default function AdminSalaryAdvancesPage() {
         {message && <p className="mb-4 rounded-2xl border border-sky-100 bg-sky-50 p-3 text-sm font-semibold text-sky-800 dark:border-sky-500/20 dark:bg-sky-500/10 dark:text-sky-200">{message}</p>}
         {!ready.employees || !ready.requests ? (
           <div className="grid min-h-56 place-items-center"><Loader2 className="h-7 w-7 animate-spin text-sky-600" /></div>
+        ) : monthLoading ? (
+          <div className="grid min-h-56 place-items-center gap-2 text-sm font-semibold text-slate-500 dark:text-slate-400"><Loader2 className="h-7 w-7 animate-spin text-sky-600" />Đang tải dữ liệu tháng...</div>
         ) : (
           <>
             <section className="space-y-3">

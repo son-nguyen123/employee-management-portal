@@ -93,7 +93,7 @@ export default function PenaltiesPage() {
             <div className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-white/15"><AlertTriangle className="h-5 w-5" /></div>
             <div className="min-w-0 flex-1">
               <p className="text-xs font-bold uppercase tracking-wider text-rose-100">Tổng khoản phạt</p>
-              <p className="mt-0.5 text-xl font-black">{total.toLocaleString('vi-VN')}đ <span className="text-sm font-bold text-rose-100">· {activeCount} lần</span></p>
+          <p className="mt-0.5 text-xl font-black">{loading ? 'Đang tải dữ liệu...' : <>{total.toLocaleString('vi-VN')}đ <span className="text-sm font-bold text-rose-100">· {activeCount} lần</span></>}</p>
             </div>
           </div>
           <p className="mt-3 border-t border-white/20 pt-3 text-xs leading-5 text-rose-50">Lịch trễ 1.000đ; báo đi trễ muộn 500đ. Khoản đã hủy không bị trừ.</p>

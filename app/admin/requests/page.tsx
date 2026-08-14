@@ -155,7 +155,7 @@ export default function AdminRequestsPage() {
   const [penaltyTab, setPenaltyTab] = useState<'employees' | 'list'>('employees')
   const [penaltyExportMonth, setPenaltyExportMonth] = useState(currentVietnamMonth(new Date()).key)
   const [exportingPenalties, setExportingPenalties] = useState(false)
-  const [penaltyMonthLoading, setPenaltyMonthLoading] = useState(false)
+  const [penaltyMonthLoading, setPenaltyMonthLoading] = useState(true)
 
   useEffect(() => {
     if (!rejectingRow && !editingPenalty) return
@@ -196,6 +196,7 @@ export default function AdminRequestsPage() {
       setRows(buildRequestRows(mockLeaveRequests, mockLateRequests, mockSalaryAdvances, [], employeeList, true))
       setPenaltyEmployeeId(employeeList[0].uid)
       setLoading(false)
+      setPenaltyMonthLoading(false)
       return
     }
 
@@ -276,6 +277,7 @@ export default function AdminRequestsPage() {
         if (active) setMessage('Không thể cập nhật khoản phạt theo thời gian thực.')
       })
       : undefined
+    setPenalties([])
     setPenaltyMonthLoading(true)
     void readPenaltyMonth(penaltyExportMonth)
       .then((result) => {
@@ -527,7 +529,8 @@ export default function AdminRequestsPage() {
                 </details>
               )
             })}
-            {!penalizedEmployees.length && <div className="mobile-card p-8 text-center text-sm font-semibold text-muted-foreground">Chưa có nhân viên bị phạt.</div>}
+            {!penalizedEmployees.length && penaltyMonthLoading && <div className="mobile-card grid min-h-28 place-items-center gap-2 p-8 text-center text-sm font-semibold text-muted-foreground"><Loader2 className="h-5 w-5 animate-spin text-rose-600" />Đang tải dữ liệu tháng...</div>}
+            {!penaltyMonthLoading && !penalizedEmployees.length && <div className="mobile-card p-8 text-center text-sm font-semibold text-muted-foreground">Chưa có nhân viên bị phạt.</div>}
           </section>
         )}
         <form ref={manualPenaltyFormRef} onSubmit={addManualPenalty} className={`${pageMode === 'penalties' && manualPenaltyOpen ? 'order-2' : 'hidden'} mb-5 scroll-mt-6 overflow-hidden rounded-3xl border border-rose-200 bg-white shadow-sm dark:border-rose-500/20 dark:bg-slate-900`}>
@@ -603,7 +606,8 @@ export default function AdminRequestsPage() {
               {activePenalties.length} khoản
             </span><ChevronDown className={`h-5 w-5 text-slate-400 transition-transform ${penaltiesOpen ? 'rotate-180' : ''}`} /></div>
           </button>
-          {penaltiesOpen && <div className="space-y-3 border-t border-slate-100 p-3 dark:border-white/10">
+          {!activePenalties.length && penaltyMonthLoading && <div className="grid min-h-28 place-items-center gap-2 border-t border-slate-100 p-6 text-center text-sm font-semibold text-muted-foreground dark:border-white/10"><Loader2 className="h-5 w-5 animate-spin text-rose-600" />Đang tải dữ liệu tháng...</div>}
+          {penaltiesOpen && !penaltyMonthLoading && <div className="space-y-3 border-t border-slate-100 p-3 dark:border-white/10">
             {penalties.filter((item) => item.status !== 'Cancelled').map((penalty) => {
               const employee = employees.find((item) => item.uid === penalty.employeeId)
               return (
@@ -631,7 +635,7 @@ export default function AdminRequestsPage() {
                 </article>
               )
             })}
-            {!loading && !penalties.some((item) => item.status !== 'Cancelled') && (
+            {!penaltyMonthLoading && !penalties.some((item) => item.status !== 'Cancelled') && (
               <div className="mobile-card p-5 text-center text-sm font-semibold text-muted-foreground">Chưa có khoản phạt đang áp dụng.</div>
             )}
           </div>}
