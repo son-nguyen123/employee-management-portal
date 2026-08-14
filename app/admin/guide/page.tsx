@@ -1,15 +1,11 @@
 'use client'
 
-import Link from 'next/link'
 import { useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import {
-  Archive,
-  ArrowRight,
   BellRing,
   BookOpenText,
   CalendarDays,
-  CalendarRange,
   CheckCircle2,
   CircleDollarSign,
   ClipboardCheck,
@@ -24,13 +20,6 @@ import { AppLoadingScreen } from '@/components/ui/app-loading-screen'
 import { useAuth, useUserRole } from '@/lib/hooks/useAuth'
 
 const managementRoles = ['admin', 'manager', 'director']
-
-const quickLinks = [
-  { title: 'Điều hành', note: 'Xem lịch và xử lý yêu cầu', href: '/admin/dashboard', icon: ClipboardCheck, tone: 'bg-indigo-50 text-indigo-600 dark:bg-indigo-500/15 dark:text-indigo-300' },
-  { title: 'Nhân sự tuần này', note: 'Người làm và người trực', href: '/admin/next-week', icon: CalendarRange, tone: 'bg-sky-50 text-sky-600 dark:bg-sky-500/15 dark:text-sky-300' },
-  { title: 'Ứng lương', note: 'Duyệt và xem theo tháng', href: '/admin/salary-advances', icon: CircleDollarSign, tone: 'bg-emerald-50 text-emerald-600 dark:bg-emerald-500/15 dark:text-emerald-300' },
-  { title: 'Kho dữ liệu', note: 'Tra cứu bản lưu Drive', href: '/admin/archive', icon: Archive, tone: 'bg-violet-50 text-violet-600 dark:bg-violet-500/15 dark:text-violet-300' },
-]
 
 const workflowSections = [
   {
@@ -102,7 +91,7 @@ export default function AdminGuidePage() {
 
   return (
     <main className="min-h-screen pb-8">
-      <Header title="Hướng dẫn sử dụng" subtitle="Sổ tay nghiệp vụ dành cho quản lý" backHref="/" />
+      <Header title="Hướng dẫn sử dụng" subtitle="Sổ tay nghiệp vụ dành cho quản lý" showBackButton={false} />
       <PageContainer>
         <section className="overflow-hidden rounded-[2rem] bg-gradient-to-br from-indigo-600 via-violet-600 to-fuchsia-600 p-5 text-white shadow-xl shadow-indigo-950/15 sm:p-6">
           <div className="flex items-start gap-3">
@@ -116,19 +105,6 @@ export default function AdminGuidePage() {
           <div className="mt-5 flex items-center gap-2 rounded-2xl bg-white/12 px-3 py-2.5 text-xs font-bold text-white/90">
             <Info className="h-4 w-4 shrink-0" />
             <span>Luôn ưu tiên mở đúng màn hình nghiệp vụ trước khi thao tác dữ liệu.</span>
-          </div>
-        </section>
-
-        <section className="mt-5">
-          <div className="mb-3 flex items-end justify-between gap-3"><div><p className="text-xs font-black uppercase tracking-[0.16em] text-indigo-600">Truy cập nhanh</p><h2 className="mt-1 text-xl font-black">Các màn hình thường dùng</h2></div><span className="rounded-full bg-indigo-50 px-3 py-1 text-[10px] font-black text-indigo-700 dark:bg-indigo-500/15 dark:text-indigo-200">Admin · Director</span></div>
-          <div className="grid gap-3 sm:grid-cols-2">
-            {quickLinks.map(({ title, note, href, icon: Icon, tone }) => (
-              <Link key={title} href={href} className="mobile-card flex min-h-20 items-center gap-3 p-3 transition active:scale-[0.99]">
-                <div className={`grid h-11 w-11 shrink-0 place-items-center rounded-2xl ${tone}`}><Icon className="h-5 w-5" /></div>
-                <div className="min-w-0 flex-1"><h3 className="font-extrabold">{title}</h3><p className="mt-0.5 truncate text-xs text-muted-foreground">{note}</p></div>
-                <ArrowRight className="h-4 w-4 shrink-0 text-slate-400" />
-              </Link>
-            ))}
           </div>
         </section>
 
@@ -152,10 +128,10 @@ export default function AdminGuidePage() {
         </section>
 
         <section className="mt-5 grid gap-3 sm:grid-cols-2">
-          <Link href="/admin/settings" className="rounded-3xl border border-sky-200 bg-sky-50 p-4 transition active:scale-[0.99] dark:border-sky-500/20 dark:bg-sky-500/10">
+          <div className="rounded-3xl border border-sky-200 bg-sky-50 p-4 dark:border-sky-500/20 dark:bg-sky-500/10">
             <div className="flex items-center gap-3"><Settings className="h-5 w-5 text-sky-600" /><h2 className="font-black text-sky-950 dark:text-sky-100">Cài đặt cần nhớ</h2></div>
             <p className="mt-2 text-sm leading-5 text-sky-900/75 dark:text-sky-100/75">Mở đăng ký tài khoản 1 giờ, giới hạn ngày ứng lương, bật tắt tiện ích user và email biên nhận.</p>
-          </Link>
+          </div>
           <div className="rounded-3xl border border-amber-200 bg-amber-50 p-4 text-amber-950 dark:border-amber-500/20 dark:bg-amber-500/10 dark:text-amber-100">
             <div className="flex items-center gap-3"><ShieldCheck className="h-5 w-5 text-amber-600" /><h2 className="font-black">Nguyên tắc an toàn</h2></div>
             <p className="mt-2 text-sm leading-5 text-amber-900/75 dark:text-amber-100/75">Không xóa dữ liệu để xử lý nhanh. Nếu có thao tác nhầm, xem lịch sử và sửa đúng bản ghi; kho Drive là lớp đối chiếu dài hạn.</p>
