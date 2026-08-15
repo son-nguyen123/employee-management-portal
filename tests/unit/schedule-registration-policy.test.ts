@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { isManagementScheduleRole, isPastRegistrationDate, reactivationWaiverApplies, registrationTargetsNextWeek, restrictPastRegistration } from '@/lib/schedule/registration-policy'
+import { isManagementScheduleRole, isPastRegistrationDate, nextMondayKeyInVietnam, reactivationWaiverApplies, registrationTargetsNextWeek, restrictPastRegistration } from '@/lib/schedule/registration-policy'
 
 describe('schedule registration policy', () => {
   it('waives late registration only in the reactivation week', () => {
@@ -39,6 +39,12 @@ describe('schedule registration policy', () => {
     expect(registrationTargetsNextWeek(5)).toBe(true)
     expect(registrationTargetsNextWeek(6)).toBe(true)
     expect(registrationTargetsNextWeek(7)).toBe(true)
+  })
+
+  it('materializes fixed schedules for the next Monday in Vietnam', () => {
+    expect(nextMondayKeyInVietnam(new Date('2026-08-13T17:00:00.000Z'))).toBe('2026-08-17') // Friday 00:00
+    expect(nextMondayKeyInVietnam(new Date('2026-08-15T17:00:00.000Z'))).toBe('2026-08-17') // Sunday 00:00
+    expect(nextMondayKeyInVietnam(new Date('2026-08-16T17:00:00.000Z'))).toBe('2026-08-24') // Monday 00:00
   })
 
   it('recognizes every management role as an unrestricted schedule owner', () => {

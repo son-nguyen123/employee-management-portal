@@ -11,6 +11,7 @@ import { defaultUserFeatureSettings, userFeatureKeys, type UserFeatureKey, type 
 import { vietnamWeekContaining } from '@/lib/archive/retention'
 import { decisionReviewIsEditable } from '@/lib/review/decision-policy'
 import { isManagementScheduleRole, isPastRegistrationDate, reactivationWaiverApplies, registrationTargetsNextWeek, restrictPastRegistration } from '@/lib/schedule/registration-policy'
+import { parseCustomShiftNote, scheduleShiftIdentity } from '@/lib/schedule/custom-shift'
 import { salaryAdvanceWindowState } from '@/lib/salary/advance-policy'
 import { FACTORY_IDS, FACTORY_LABELS, isFactoryId, type FactoryId } from '@/lib/models/factory'
 
@@ -36,6 +37,16 @@ function text(value: unknown, field: string, max: number, allowEmpty = false): s
   if (typeof value !== 'string') throw new ApiError(400, `${field} không hợp lệ.`)
   const result = value.trim()
   if ((!allowEmpty && !result) || result.length > max) {
+    throw new ApiError(400, `${field} không hợp lệ.`)
+  }
+  return result
+}
+
+function customShiftNote(value: unknown, field: string): string {
+  if (value == null || value === '') return ''
+  const result = text(value, field, 40)
+  const parsed = parseCustomShiftNote(result)
+  if (!parsed || parsed.marker !== result) {
     throw new ApiError(400, `${field} không hợp lệ.`)
   }
   return result
@@ -1470,7 +1481,7 @@ export async function submitStaffRequest(actor: RequestActor, raw: unknown) {
   const requestRef = adminDb.collection('staffRequests').doc()
   const workflow = workflowRef(actor, id)
   let weekStart: Date | null = null
-  let requestedShifts: Array<{ date: Date; shift: Shift }> = []
+  let requestedShifts: Array<{ date: Date; shift: Shift; note?: string }> = []
   let removedShifts: Array<{ scheduleId: string; date: Date; shift: Shift }> = []
   let restoredShifts: Array<{ scheduleId: string; date: Date; shift: Shift }> = []
   let shouldPenalizeSameDayChange = false
@@ -1487,7 +1498,9 @@ export async function submitStaffRequest(actor: RequestActor, raw: unknown) {
       const date = dateValue(row.date, `Ngày làm thêm ${index + 1}`)
       const shift = row.shift
       if (!shifts.includes(shift as Shift)) throw new ApiError(400, `Ca làm thêm ${index + 1} không hợp lệ.`)
-      return { date, shift: shift as Shift }
+      const note = customShiftNote(row.note, `Khung giờ làm thêm ${index + 1}`)
+      if (note && shift !== 'Morning') throw new ApiError(400, `Ca làm thêm ${index + 1} không hợp lệ.`)
+      return { date, shift: shift as Shift, ...(note ? { note } : {}) }
     })
     if (type === 'scheduleChange') {
       if (!Array.isArray(body.removedShifts) || body.removedShifts.length > 21) {
@@ -1573,8 +1586,8 @@ export async function submitStaffRequest(actor: RequestActor, raw: unknown) {
     const duplicated = requestedShifts.some((requested) => existing.docs.some((snapshot) => {
       const schedule = snapshot.data()
       if (schedule.status === 'Cancelled' || removedIds.has(snapshot.id)) return false
-      return (schedule.date as Timestamp).toDate().toISOString().slice(0, 10) === requested.date.toISOString().slice(0, 10) &&
-        schedule.shift === requested.shift
+      return scheduleShiftIdentity((schedule.date as Timestamp).toDate(), schedule.shift, schedule.note) ===
+        scheduleShiftIdentity(requested.date, requested.shift, requested.note)
     }))
     if (duplicated) throw new ApiError(409, 'Một ca làm thêm đã có trong lịch hiện tại. Vui lòng tải lại và chọn ca khác.')
     const alreadyPending = existingStaffRequests.docs.some((snapshot) => {
@@ -1595,7 +1608,11 @@ export async function submitStaffRequest(actor: RequestActor, raw: unknown) {
       content,
       ...(weekStart ? { weekStart: Timestamp.fromDate(weekStart) } : {}),
       ...(requestedShifts.length ? {
-        shifts: requestedShifts.map((item) => ({ date: Timestamp.fromDate(item.date), shift: item.shift })),
+        shifts: requestedShifts.map((item) => ({
+          date: Timestamp.fromDate(item.date),
+          shift: item.shift,
+          ...(item.note ? { note: item.note } : {}),
+        })),
       } : {}),
       ...(removedShifts.length ? {
         removedShifts: removedShifts.map((item) => ({
@@ -3336,27 +3353,32 @@ export async function reviewRequest(actor: RequestActor, raw: unknown) {
         .filter((snapshot) => snapshot.get('status') !== 'Cancelled' && !removedRefs.some((ref) => ref.id === snapshot.id))
         .map((snapshot) => {
           const schedule = snapshot.data()
-          return `${(schedule.date as Timestamp).toDate().toISOString().slice(0, 10)}-${schedule.shift}`
+          return scheduleShiftIdentity((schedule.date as Timestamp).toDate(), schedule.shift, schedule.note)
         }))
       restoredSnapshots.forEach((snapshot) => {
         if (!snapshot.exists) return
         const schedule = snapshot.data()
         if (!schedule?.date) return
-        existingKeys.add(`${(schedule.date as Timestamp).toDate().toISOString().slice(0, 10)}-${schedule.shift}`)
+        existingKeys.add(scheduleShiftIdentity((schedule.date as Timestamp).toDate(), schedule.shift, schedule.note))
       })
-      const overtimeShifts = (Array.isArray(data.shifts) ? data.shifts : [] as Array<{ date: Timestamp; shift: Shift }>).filter((item: { date: Timestamp; shift: Shift }) =>
+      const overtimeShifts = (Array.isArray(data.shifts) ? data.shifts : [] as Array<{ date: Timestamp; shift: Shift; note?: string }>).filter((item: { date: Timestamp; shift: Shift; note?: string }) =>
         item?.date instanceof Timestamp && shifts.includes(item.shift)
       )
       const firstDate = overtimeShifts[0]?.date.toDate() || removedItems[0]?.date?.toDate()
       overtimeShifts.forEach((item, index) => {
-        const key = `${item.date.toDate().toISOString().slice(0, 10)}-${item.shift}`
+        const key = scheduleShiftIdentity(item.date.toDate(), item.shift, item.note)
         if (existingKeys.has(key) || !firstDate) return
         transaction.set(adminDb.collection('workSchedules').doc(`${data.type === 'scheduleChange' ? 'schedule-change' : 'overtime'}-${id}-${index}`), {
           employeeId,
+          factoryId: String(employeeSnapshot.get('factoryId') || data.factoryId || 'factory-1'),
           date: item.date,
           shift: item.shift,
           status: 'Approved',
-          note: `${data.type === 'scheduleChange' ? '[SCHEDULE_CHANGE_APPROVED]' : '[OVERTIME_APPROVED]'}${data.content ? ` ${String(data.content).slice(0, 450)}` : ''}`,
+          note: [
+            item.note || '',
+            data.type === 'scheduleChange' ? '[SCHEDULE_CHANGE_APPROVED]' : '[OVERTIME_APPROVED]',
+            data.content ? String(data.content).slice(0, 450) : '',
+          ].filter(Boolean).join(' '),
           batchKey: scheduleBatchKey(employeeId, mondayFor(firstDate)),
           requiresReapproval: false,
           revisionCount: 0,

@@ -50,6 +50,12 @@ function initials(name: string): string {
     .join('') || 'NV'
 }
 
+function requestShiftLabel(item: NonNullable<StaffRequest['shifts']>[number]): string {
+  const custom = item.note?.match(/\[CUSTOM:(\d{2}:\d{2})-(\d{2}:\d{2})\]/)
+  if (custom) return `Tăng ca ${custom[1]}–${custom[2]}`
+  return item.shift === 'Morning' ? 'Ca sáng' : item.shift === 'Afternoon' ? 'Ca chiều' : 'Ca tối'
+}
+
 function EmployeeAvatar({ employee, className = 'h-11 w-11' }: { employee: Employee; className?: string }) {
   return employee.photoURL ? (
     <img src={employee.photoURL} alt="" className={`${className} shrink-0 rounded-full object-cover ring-2 ring-white dark:ring-slate-900`} />
@@ -713,7 +719,7 @@ export default function AdminRequestsPage() {
                           {row.type === 'scheduleChange' && <p className="font-extrabold">Ca mới / ca thêm</p>}
                           {row.shifts.map((item, index) => {
                             const date = item.date instanceof Date ? item.date : item.date.toDate()
-                            const shiftLabel = item.shift === 'Morning' ? 'Ca sáng' : item.shift === 'Afternoon' ? 'Ca chiều' : 'Ca tối'
+                            const shiftLabel = requestShiftLabel(item)
                             return <p key={`${date.toISOString()}-${item.shift}-${index}`}><strong>{date.toLocaleDateString('vi-VN', { weekday: 'long', day: '2-digit', month: '2-digit' })}</strong> · {shiftLabel}</p>
                           })}
                         </div>

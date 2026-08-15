@@ -28,6 +28,7 @@ export type ManagementPendingType = 'account' | 'schedule' | 'leave' | 'late' | 
 export interface ManagementShift {
   date: Date
   shift: StaffRequestShift['shift']
+  note?: string
   scheduleId?: string
 }
 
@@ -97,6 +98,7 @@ function asShiftList(value: unknown, includeScheduleId = false): ManagementShift
     return [{
       date,
       shift,
+      ...(typeof row.note === 'string' && row.note ? { note: row.note } : {}),
       ...(includeScheduleId && typeof (row.scheduleId || row.workScheduleId) === 'string'
         ? { scheduleId: String(row.scheduleId || row.workScheduleId) }
         : {}),

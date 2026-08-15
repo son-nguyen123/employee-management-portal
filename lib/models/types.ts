@@ -97,6 +97,7 @@ export type StaffRequestStatus = 'Pending' | 'Approved' | 'Rejected'
 export interface StaffRequestShift {
   date: Timestamp | Date
   shift: 'Morning' | 'Afternoon' | 'Evening'
+  note?: string
 }
 
 export interface StaffRequest {

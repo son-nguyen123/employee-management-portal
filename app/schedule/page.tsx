@@ -568,8 +568,14 @@ export default function SchedulePage() {
       )
       const requestedShifts = Object.entries(selected).flatMap(([dayKey, selectedShifts]) =>
         selectedShifts
-          .filter((shift): shift is Exclude<Shift, 'Custom'> => shift !== 'Custom' && !original[dayKey]?.includes(shift) && !returnableLeaveShifts[`${dayKey}-${shift}`])
-          .map((shift) => ({ date: new Date(`${dayKey}T12:00:00`), shift }))
+          .filter((shift) => !original[dayKey]?.includes(shift) && (shift === 'Custom' || !returnableLeaveShifts[`${dayKey}-${shift}`]))
+          .map((shift) => shift === 'Custom'
+            ? {
+                date: new Date(`${dayKey}T12:00:00`),
+                shift: 'Morning' as const,
+                note: `[CUSTOM:${customData[dayKey]?.start || '08:00'}-${customData[dayKey]?.end || '17:00'}]`,
+              }
+            : { date: new Date(`${dayKey}T12:00:00`), shift })
       )
       const removedShifts = Object.entries(original).flatMap(([dayKey, originalShifts]) =>
         originalShifts
@@ -605,9 +611,12 @@ export default function SchedulePage() {
         setSelected(cloneSelection(original))
         setWeekNote('')
         if (changeMode) {
-          const describe = (item: { date: Date; shift: Exclude<Shift, 'Custom'> }) => {
+          const describe = (item: { date: Date; shift: Exclude<Shift, 'Custom'>; note?: string }) => {
             const day = days.find((candidate) => candidate.key === localDateKey(item.date))
-            const shift = shiftOptions.find((candidate) => candidate.value === item.shift)?.label || item.shift
+            const customMatch = item.note?.match(/\[CUSTOM:(\d{2}:\d{2})-(\d{2}:\d{2})\]/)
+            const shift = customMatch
+              ? `Tăng ca ${customMatch[1]}–${customMatch[2]}`
+              : shiftOptions.find((candidate) => candidate.value === item.shift)?.label || item.shift
             return `${day?.shortName || item.date.toLocaleDateString('vi-VN')} · ${shift}`
           }
           setSubmittedChangeSummary({
@@ -1202,7 +1211,7 @@ export default function SchedulePage() {
                     {!!selected[day.key]?.length && <Badge variant="success">{overtimeMode ? `+${selected[day.key].filter((shift) => !original[day.key]?.includes(shift)).length} ca mới` : `${selected[day.key].length} ca`}</Badge>}
                   </div>
                   <div className="grid grid-cols-2 gap-2">
-                    {shiftOptions.filter((shift) => (!overtimeMode && !changeMode) || shift.value !== 'Custom').map((shift) => {
+                    {shiftOptions.map((shift) => {
                       const today = new Date()
                       today.setHours(0, 0, 0, 0)
                       const isPastDay = changeMode && day.date < today

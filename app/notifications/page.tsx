@@ -87,6 +87,11 @@ const shiftNames = {
   Evening: 'Ca tối',
 }
 
+function managementShiftLabel(item: Pick<ManagementShift, 'shift' | 'note'>): string {
+  const custom = item.note?.match(/\[CUSTOM:(\d{2}:\d{2})-(\d{2}:\d{2})\]/)
+  return custom ? `Tăng ca ${custom[1]}–${custom[2]}` : shiftNames[item.shift]
+}
+
 function startOfWeek(date: Date): Date {
   const result = new Date(date)
   const weekday = result.getDay() || 7
@@ -168,11 +173,11 @@ function UnifiedShiftList({
   registrationKind: 'registered' | 'overtime'
 }) {
   if (!shifts?.length && !removedShifts?.length && !restoredShifts?.length) return null
-  const grouped = new Map<string, { date: Date; changes: Array<{ shift: ManagementShift['shift']; kind: ShiftChangeKind }> }>()
+  const grouped = new Map<string, { date: Date; changes: Array<{ shift: ManagementShift['shift']; note?: string; kind: ShiftChangeKind }> }>()
   const addChanges = (items: ManagementShift[] | undefined, kind: ShiftChangeKind) => items?.forEach((item) => {
     const key = item.date.toISOString().slice(0, 10)
     const current = grouped.get(key) || { date: item.date, changes: [] }
-    if (!current.changes.some((change) => change.shift === item.shift && change.kind === kind)) current.changes.push({ shift: item.shift, kind })
+    if (!current.changes.some((change) => change.shift === item.shift && change.note === item.note && change.kind === kind)) current.changes.push({ shift: item.shift, note: item.note, kind })
     grouped.set(key, current)
   })
   addChanges(removedShifts, 'cancelled')
@@ -190,7 +195,7 @@ function UnifiedShiftList({
         {[...grouped.values()].sort((a, b) => a.date.getTime() - b.date.getTime()).map((row) => (
           <div key={row.date.toISOString()} className="flex items-start gap-3 rounded-2xl border border-slate-100 bg-white p-3 shadow-[0_3px_12px_rgba(15,23,42,0.035)] dark:border-white/5 dark:bg-slate-900">
             <div className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-slate-100 text-center leading-none text-slate-600 dark:bg-slate-800 dark:text-slate-200"><span className="text-[9px] font-black uppercase tracking-wide">{row.date.getDay() === 0 ? 'CN' : `T${row.date.getDay() + 1}`}</span><span className="-mt-2 text-base font-black tabular-nums">{String(row.date.getDate()).padStart(2, '0')}</span></div>
-            <div className="min-w-0 flex-1"><p className="text-[15px] font-black capitalize leading-5">{row.date.toLocaleDateString('vi-VN', { weekday: 'long', day: '2-digit', month: '2-digit' })}</p><div className="mt-2 flex flex-wrap gap-1.5">{row.changes.map(({ shift, kind }) => <span key={`${shift}-${kind}`} className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-extrabold leading-4 ${shiftChangeTone[kind].className}`}><span className={`h-1.5 w-1.5 rounded-full ${shiftChangeTone[kind].dotClassName}`} />{shiftChangeTone[kind].label} · {shiftNames[shift].replace('Ca ', '')}</span>)}</div></div>
+            <div className="min-w-0 flex-1"><p className="text-[15px] font-black capitalize leading-5">{row.date.toLocaleDateString('vi-VN', { weekday: 'long', day: '2-digit', month: '2-digit' })}</p><div className="mt-2 flex flex-wrap gap-1.5">{row.changes.map(({ shift, note, kind }) => <span key={`${shift}-${note || ''}-${kind}`} className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-extrabold leading-4 ${shiftChangeTone[kind].className}`}><span className={`h-1.5 w-1.5 rounded-full ${shiftChangeTone[kind].dotClassName}`} />{shiftChangeTone[kind].label} · {managementShiftLabel({ shift, note }).replace('Ca ', '')}</span>)}</div></div>
           </div>
         ))}
       </div>

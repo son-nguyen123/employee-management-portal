@@ -10,7 +10,7 @@ export async function submitStaffRequest(input: {
   type: StaffRequestType
   content: string
   weekStart?: Date
-  shifts?: Array<{ date: Date; shift: StaffRequestShift['shift'] }>
+  shifts?: Array<{ date: Date; shift: StaffRequestShift['shift']; note?: string }>
   removedShifts?: Array<{ scheduleId: string; date: Date; shift: StaffRequestShift['shift'] }>
   restoredShifts?: Array<{ scheduleId: string; date: Date; shift: StaffRequestShift['shift'] }>
 }): Promise<{ id: string }> {
@@ -19,7 +19,11 @@ export async function submitStaffRequest(input: {
     type: input.type,
     content: input.content,
     weekStart: input.weekStart?.toISOString(),
-    shifts: input.shifts?.map((item) => ({ date: item.date.toISOString(), shift: item.shift })),
+    shifts: input.shifts?.map((item) => ({
+      date: item.date.toISOString(),
+      shift: item.shift,
+      ...(item.note ? { note: item.note } : {}),
+    })),
     removedShifts: input.removedShifts?.map((item) => ({
       scheduleId: item.scheduleId,
       date: item.date.toISOString(),
