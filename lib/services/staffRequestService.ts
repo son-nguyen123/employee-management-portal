@@ -2,6 +2,7 @@ import { collection, getDocs, onSnapshot, query, where } from 'firebase/firestor
 import { db } from '@/lib/firebase'
 import type { StaffRequest, StaffRequestShift, StaffRequestType } from '@/lib/models/types'
 import { callWorkflowApi, newWorkflowRequestId } from '@/lib/services/workflowApi'
+import type { FactoryId } from '@/lib/models/factory'
 
 const COLLECTION = 'staffRequests'
 
@@ -38,12 +39,16 @@ function fromSnapshot(item: { id: string; data: () => Record<string, unknown> })
 
 export function subscribeToPendingStaffRequests(
   callback: (items: StaffRequest[]) => void,
-  onError?: (error: Error) => void
+  onError?: (error: Error) => void,
+  factoryId?: FactoryId
 ): () => void {
-  const requestQuery = query(collection(db, COLLECTION), where('status', '==', 'Pending'))
+  const requestQuery = query(
+    collection(db, COLLECTION),
+    where(factoryId ? 'factoryId' : 'status', '==', factoryId || 'Pending')
+  )
   return onSnapshot(
     requestQuery,
-    (snapshot) => callback(snapshot.docs.map(fromSnapshot).sort((left, right) => {
+    (snapshot) => callback(snapshot.docs.map(fromSnapshot).filter((item) => item.status === 'Pending').sort((left, right) => {
       const leftDate = left.createdAt instanceof Date ? left.createdAt : left.createdAt.toDate()
       const rightDate = right.createdAt instanceof Date ? right.createdAt : right.createdAt.toDate()
       return rightDate.getTime() - leftDate.getTime()

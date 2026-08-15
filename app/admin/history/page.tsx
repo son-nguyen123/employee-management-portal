@@ -13,6 +13,7 @@ import { updateStaffRequestStatus } from '@/lib/services/staffRequestService'
 import { restoreAdminCancelledWorkSchedules, reviewWorkScheduleBatch } from '@/lib/services/scheduleService'
 import { subscribeToWeeklyDecisionHistory, type DecisionHistoryItem, type DecisionStatus } from '@/lib/services/decisionHistoryService'
 import type { Employee } from '@/lib/models/types'
+import { employeeFactoryId } from '@/lib/models/factory'
 
 function startOfWeek(offset = 0): Date {
   const date = new Date()
@@ -54,7 +55,7 @@ function previewHistory(): DecisionHistoryItem[] {
 }
 
 export default function DecisionHistoryPage() {
-  const { authUser, isPreviewMode } = useAuth()
+  const { authUser, employee: currentEmployee, isPreviewMode } = useAuth()
   const role = useUserRole()
   const [weekOffset, setWeekOffset] = useState(0)
   const [items, setItems] = useState<DecisionHistoryItem[]>([])
@@ -68,6 +69,7 @@ export default function DecisionHistoryPage() {
   const [message, setMessage] = useState('')
   const weekStart = useMemo(() => startOfWeek(weekOffset), [weekOffset])
   const weekEnd = useMemo(() => endOfWeek(weekStart), [weekStart])
+  const factoryScope = role === 'director' ? undefined : employeeFactoryId(currentEmployee)
 
   useEffect(() => {
     if (!authUser) return
@@ -93,17 +95,17 @@ export default function DecisionHistoryPage() {
       setEmployees(next)
       employeesReady = true
       done()
-    }, handleError)
+    }, handleError, factoryScope)
     const unsubscribeHistory = subscribeToWeeklyDecisionHistory(weekStart, weekEnd, (next) => {
       setItems(next)
       historyReady = true
       done()
-    }, handleError)
+    }, handleError, factoryScope)
     return () => {
       unsubscribeEmployees()
       unsubscribeHistory()
     }
-  }, [authUser, isPreviewMode, weekEnd, weekOffset, weekStart])
+  }, [authUser, factoryScope, isPreviewMode, weekEnd, weekOffset, weekStart])
 
   const employeeMap = useMemo(() => new Map(employees.map((employee) => [employee.uid, employee])), [employees])
   const groups = useMemo(() => {

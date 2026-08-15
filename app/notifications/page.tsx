@@ -49,6 +49,7 @@ import { subscribeToWeeklyDecisionHistory, type DecisionHistoryItem } from '@/li
 import { setEmployeeAccountStatus, subscribeToAllEmployees } from '@/lib/services/employeeService'
 import type { Employee } from '@/lib/models/types'
 import { getEmployeeReviewContext } from '@/lib/services/employeeReviewService'
+import { employeeFactoryId } from '@/lib/models/factory'
 
 type ManagementView = 'schedule' | 'pending'
 
@@ -311,7 +312,7 @@ function ReviewAssessment({
 
 export default function NotificationsPage() {
   const router = useRouter()
-  const { authUser, isPreviewMode } = useAuth()
+  const { authUser, employee: currentEmployee, isPreviewMode } = useAuth()
   const { employeeNotifications, employeeNotificationsReady, managementPendingItems, managementPendingReady } = useNotificationFeed()
   const role = useUserRole()
   const isManagement = role === 'admin' || role === 'manager' || role === 'director'
@@ -434,8 +435,9 @@ export default function NotificationsPage() {
 
     if (isManagement) {
       const window = recentNotificationWindow()
-      const unsubscribeHistory = subscribeToWeeklyDecisionHistory(window.start, new Date(window.end.getTime() - 1), setDecisions, () => setMessage('Chưa thể tải các quyết định đã xử lý.'))
-      const unsubscribeEmployees = subscribeToAllEmployees(setEmployees, () => undefined)
+      const factoryId = employeeFactoryId(currentEmployee)
+      const unsubscribeHistory = subscribeToWeeklyDecisionHistory(window.start, new Date(window.end.getTime() - 1), setDecisions, () => setMessage('Chưa thể tải các quyết định đã xử lý.'), factoryId)
+      const unsubscribeEmployees = subscribeToAllEmployees(setEmployees, () => undefined, factoryId)
       return () => {
         unsubscribeHistory()
         unsubscribeEmployees()
@@ -443,7 +445,7 @@ export default function NotificationsPage() {
     }
 
     return undefined
-  }, [authUser, isManagement, isPreviewMode, role])
+  }, [authUser, currentEmployee, isManagement, isPreviewMode, role])
 
   useEffect(() => {
     if (!authUser || !isManagement || isPreviewMode || role === 'director') return

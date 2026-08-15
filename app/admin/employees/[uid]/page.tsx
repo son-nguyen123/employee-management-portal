@@ -5,7 +5,7 @@ import { useParams } from 'next/navigation'
 import Image from 'next/image'
 import { CalendarDays, CalendarPlus, CircleDollarSign, Clock3, ExternalLink, FileText, Loader2, MessageSquareText, Phone, Power, ShieldCheck, ShieldX, UserRound, Crown } from 'lucide-react'
 import { useAuth, useUserRole } from '@/lib/hooks/useAuth'
-import { getEmployeeByUID, setEmployeeAccountStatus, setEmployeeRole } from '@/lib/services/employeeService'
+import { getEmployeeByUID, getFactoryManagerSeats, setEmployeeAccountStatus, setEmployeeRole } from '@/lib/services/employeeService'
 import { getEmployeeSchedules } from '@/lib/services/scheduleService'
 import { getEmployeeLeaves } from '@/lib/services/leaveService'
 import { getEmployeeLateRequests } from '@/lib/services/lateService'
@@ -17,7 +17,7 @@ import { Header } from '@/components/layout/header'
 import { PageContainer } from '@/components/layout/page-container'
 import { Badge } from '@/components/ui/badge'
 import { profileImageUrl } from '@/lib/utils/profileImage'
-import { FACTORY_LABELS } from '@/lib/models/factory'
+import { canHostManageFactorySeat, employeeFactoryId, FACTORY_LABELS, isFactoryManagerRole, type FactoryManagerSeat } from '@/lib/models/factory'
 import { isManagementScheduleRole } from '@/lib/schedule/registration-policy'
 
 type DetailSchedule = WorkSchedule & { id: string }
@@ -126,6 +126,8 @@ export default function EmployeeDetailPage() {
   const [changingStatus, setChangingStatus] = useState(false)
   const [confirmingStatus, setConfirmingStatus] = useState<'active' | 'inactive' | null>(null)
   const [changingRole, setChangingRole] = useState(false)
+  const [managerSeats, setManagerSeats] = useState<FactoryManagerSeat[]>([])
+  const [managerSeatsLoaded, setManagerSeatsLoaded] = useState(false)
 
   useEffect(() => {
     if (!authUser) return
@@ -138,15 +140,20 @@ export default function EmployeeDetailPage() {
           setSchedules(rows.map((item) => ({ id: item.id, employeeId: item.employeeId, date: new Date(item.date), shift: item.shift, status: item.status, note: item.note, reviewNote: item.reviewNote, createdAt: new Date(item.date), updatedAt: new Date(item.date) })))
           return
         }
-        const [employeeData, scheduleData, leaves, lates, salaries, staffRequests] = await Promise.all([
+        const [employeeData, scheduleData, leaves, lates, salaries, staffRequests, seatResult] = await Promise.all([
           getEmployeeByUID(params.uid),
           getEmployeeSchedules(params.uid),
           getEmployeeLeaves(params.uid),
           getEmployeeLateRequests(params.uid),
           role === 'director' ? Promise.resolve<SalaryAdvance[]>([]) : getEmployeeSalaryAdvances(params.uid),
           getEmployeeStaffRequests(params.uid),
+          role === 'director'
+            ? getFactoryManagerSeats().then((seats) => ({ seats, loaded: true })).catch(() => ({ seats: [] as FactoryManagerSeat[], loaded: false }))
+            : Promise.resolve({ seats: [] as FactoryManagerSeat[], loaded: false }),
         ])
         setEmployee(employeeData)
+        setManagerSeats(seatResult.seats)
+        setManagerSeatsLoaded(seatResult.loaded)
         setSchedules(scheduleData.map((item) => ({ ...item, id: item.id! })))
         setOtherActivities([
           ...leaves.map((item): Activity => ({ id: `leave-${item.id}`, type: 'leave', title: 'Yêu cầu xin nghỉ', summary: `${toDate(item.leaveDate).toLocaleDateString('vi-VN')}${item.endDate ? `–${toDate(item.endDate).toLocaleDateString('vi-VN')}` : ''}`, status: item.status, sortAt: toDate(item.updatedAt), note: item.reason, reviewNote: item.reviewNote })),
@@ -164,6 +171,16 @@ export default function EmployeeDetailPage() {
   }, [authUser, isPreviewMode, params.uid, role])
 
   const activities = useMemo(() => [...buildScheduleActivities(schedules), ...otherActivities].sort((a, b) => b.sortAt.getTime() - a.sortAt.getTime()), [schedules, otherActivities])
+  const employeeFactory = employeeFactoryId(employee)
+  const employeeManagerSeat = managerSeats.find((seat) => seat.factoryId === employeeFactory)
+  const employeeIsFactoryManager = isFactoryManagerRole(employee?.role)
+  const canManageEmployeeRole = Boolean(employee && (employeeIsFactoryManager || employee.status === 'active') && canHostManageFactorySeat({
+    viewerRole: role,
+    targetRole: employee.role,
+    targetId: employee.uid,
+    seatManagerId: employeeManagerSeat?.managerId,
+    seatsLoaded: managerSeatsLoaded,
+  }))
 
   const changeAccountStatus = async () => {
     if (!employee || !confirmingStatus || changingStatus) return
@@ -183,14 +200,22 @@ export default function EmployeeDetailPage() {
     }
   }
 
-  const changeAccountRole = async (nextRole: 'employee' | 'manager' | 'director' | 'admin') => {
-    if (!employee || employee.role === 'admin' || nextRole === employee.role || changingRole) return
+  const changeAccountRole = async (nextRole: 'employee' | 'admin') => {
+    const currentRole = employeeIsFactoryManager ? 'admin' : employee?.role
+    if (!employee || nextRole === currentRole || changingRole) return
     setChangingRole(true)
     setMessage('')
     try {
       await setEmployeeRole(employee.uid, nextRole)
       setEmployee((current) => current ? { ...current, role: nextRole } : current)
-      setMessage(`Đã cập nhật vai trò ${employee.fullName}.`)
+      setManagerSeats((current) => current.map((seat) => seat.factoryId === employeeFactory
+        ? nextRole === 'admin'
+          ? { ...seat, managerId: employee.uid, managerName: employee.fullName, status: 'occupied' }
+          : { ...seat, managerId: null, managerName: undefined, status: 'vacant' }
+        : seat))
+      setMessage(nextRole === 'admin'
+        ? `Đã giao ghế Admin ${FACTORY_LABELS[employeeFactory]} cho ${employee.fullName}.`
+        : `Đã trả ghế Admin ${FACTORY_LABELS[employeeFactory]}; ${employee.fullName} trở lại vai trò Nhân viên.`)
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'Chưa thể cập nhật vai trò tài khoản.')
     } finally {
@@ -236,22 +261,20 @@ export default function EmployeeDetailPage() {
                 {employee.status === 'active' ? 'Vô hiệu hóa tài khoản' : employee.status === 'pending' ? 'Chấp nhận tài khoản' : 'Bật lại tài khoản'}
               </button>
             )}
-            {['admin', 'director'].includes(role || '') && employee.role !== 'admin' && (
+            {canManageEmployeeRole && (
               <div className="mt-3 rounded-3xl border border-violet-200/80 bg-white/75 p-4 shadow-sm">
                 <div className="flex items-start gap-3">
                   <div className="grid h-10 w-10 shrink-0 place-items-center rounded-2xl bg-violet-100 text-violet-700"><Crown className="h-5 w-5" /></div>
-                  <div className="min-w-0 flex-1"><p className="text-sm font-black">Vai trò truy cập</p><p className="mt-1 text-xs leading-5 text-slate-600">Sếp/giám đốc xem danh sách ứng lương đã duyệt, không có nút duyệt hoặc từ chối.</p></div>
+                  <div className="min-w-0 flex-1"><p className="text-sm font-black">Ghế quản lý {FACTORY_LABELS[employeeFactory]}</p><p className="mt-1 text-xs leading-5 text-slate-600">Ghế thuộc về xưởng, không thuộc tài khoản. Khi trả về Nhân viên, toàn bộ dữ liệu xưởng vẫn giữ nguyên để giao cho Admin mới.</p></div>
                 </div>
                 <select
-                  value={employee.role}
+                  value={employeeIsFactoryManager ? 'admin' : 'employee'}
                   disabled={changingRole}
-                  onChange={(event) => void changeAccountRole(event.target.value as 'employee' | 'manager' | 'director' | 'admin')}
+                  onChange={(event) => void changeAccountRole(event.target.value as 'employee' | 'admin')}
                   className="mt-3 min-h-11 w-full rounded-2xl border border-violet-200 bg-white px-3 text-sm font-extrabold text-slate-900 outline-none ring-violet-500 transition focus:ring-2"
                 >
                   <option value="employee">Nhân viên</option>
-                  <option value="manager">Quản lý</option>
-                  <option value="admin">Admin xưởng</option>
-                  <option value="director">Sếp / Giám đốc</option>
+                  <option value="admin">Admin {FACTORY_LABELS[employeeFactory]}</option>
                 </select>
                 {changingRole && <p className="mt-2 flex items-center gap-2 text-xs font-bold text-violet-700"><Loader2 className="h-3.5 w-3.5 animate-spin" /> Đang cập nhật quyền...</p>}
               </div>

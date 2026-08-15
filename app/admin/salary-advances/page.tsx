@@ -363,7 +363,7 @@ export default function AdminSalaryAdvancesPage() {
     const unsubscribeRequests = subscribeToAllSalaryAdvances((items) => {
       setLiveRequests(items)
       setReady((current) => ({ ...current, requests: true }))
-    }, fail, { startDate: currentMonthWindow.start, endDate: currentMonthWindow.end })
+    }, fail, { startDate: currentMonthWindow.start, endDate: currentMonthWindow.end }, employeeFactoryId(currentEmployee))
     return () => {
       unsubscribeEmployees()
       unsubscribeRequests()

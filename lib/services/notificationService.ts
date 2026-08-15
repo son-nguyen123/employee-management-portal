@@ -19,6 +19,7 @@ import {
   type StaffRequestType,
 } from '@/lib/models/types'
 import { FACTORY_LABELS, isFactoryId } from '@/lib/models/factory'
+import type { FactoryId } from '@/lib/models/factory'
 
 const NOTIFICATIONS_COLLECTION = 'notifications'
 
@@ -278,7 +279,8 @@ export function subscribeToManagementPendingCount(
  */
 export function subscribeToManagementPendingItems(
   callback: (items: ManagementPendingItem[]) => void,
-  onError?: (error: Error) => void
+  onError?: (error: Error) => void,
+  factoryId?: FactoryId
 ): () => void {
   const state: Record<string, Array<{ id: string; data: Record<string, unknown> }>> = {
     employees: [],
@@ -345,6 +347,7 @@ export function subscribeToManagementPendingItems(
 
     const scheduleBatches = new Map<string, Array<{ id: string; data: Record<string, unknown> }>>()
     state.schedules.forEach((row) => {
+      if (row.data.status !== 'Pending' && row.data.status !== 'Registered') return
       const date = asDate(row.data.date)
       if (!date.getTime() || date < nextMonday || date > nextSunday) return
       const employeeId = String(row.data.employeeId || '')
@@ -462,6 +465,7 @@ export function subscribeToManagementPendingItems(
     })
 
     state.salaryAdvances.forEach(({ id, data }) => {
+      if (data.status !== 'Pending') return
       const employeeId = String(data.employeeId || '')
       if (!activeEmployeeIds.has(employeeId)) return
       const employee = identity(employeeId)
@@ -485,6 +489,7 @@ export function subscribeToManagementPendingItems(
     })
 
     state.staffRequests.forEach(({ id, data }) => {
+      if (data.status !== 'Pending') return
       const employeeId = String(data.employeeId || '')
       if (!activeEmployeeIds.has(employeeId)) return
       const employee = identity(employeeId)
@@ -554,6 +559,10 @@ export function subscribeToManagementPendingItems(
     collection(db, collectionName),
     where('status', '==', 'Pending')
   )
+  const factoryQuery = (collectionName: string) => query(
+    collection(db, collectionName),
+    where('factoryId', '==', factoryId)
+  )
   const penaltyStart = new Date(nextMonday)
   penaltyStart.setDate(penaltyStart.getDate() - 14)
   penaltyStart.setHours(0, 0, 0, 0)
@@ -563,18 +572,18 @@ export function subscribeToManagementPendingItems(
     // The pending workspace keeps the enabled schedule-change workflow, while
     // the two feature-disabled request types (leave and late arrival) stay out
     // of the listener fan-out.
-    watch('employees', query(collection(db, 'employees'))),
-    watch('schedules', query(
+    watch('employees', factoryId ? factoryQuery('employees') : query(collection(db, 'employees'))),
+    watch('schedules', factoryId ? factoryQuery('workSchedules') : query(
       collection(db, 'workSchedules'),
       where('status', 'in', ['Pending', 'Registered']),
       where('date', '>=', Timestamp.fromDate(nextMonday)),
       where('date', '<=', Timestamp.fromDate(nextSunday)),
     )),
-    watch('salaryAdvances', pendingQuery('salaryAdvances')),
-    watch('staffRequests', pendingQuery('staffRequests')),
+    watch('salaryAdvances', factoryId ? factoryQuery('salaryAdvances') : pendingQuery('salaryAdvances')),
+    watch('staffRequests', factoryId ? factoryQuery('staffRequests') : pendingQuery('staffRequests')),
     // Keep current automatic/manual penalties available for schedule warnings
     // without replaying the complete penalty history on every manager page.
-    watch('penalties', query(
+    watch('penalties', factoryId ? factoryQuery('penalties') : query(
       collection(db, 'penalties'),
       where('penaltyDate', '>=', Timestamp.fromDate(penaltyStart)),
       where('penaltyDate', '<=', Timestamp.fromDate(penaltyEnd)),

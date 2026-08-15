@@ -42,7 +42,10 @@ export async function POST(request: Request) {
     const employeeRef = adminDb.collection('employees').doc(token.uid)
     const codeRef = adminDb.collection('employeeCodes').doc(codeKey)
     const managerIds = (await adminDb.collection('employees').where('status', '==', 'active').get()).docs
-      .filter((item) => item.get('role') === 'admin' && String(item.get('factoryId') || 'factory-1') === factoryId)
+      .filter((item) => item.get('role') === 'director' || (
+        ['admin', 'manager'].includes(String(item.get('role'))) &&
+        String(item.get('factoryId') || 'factory-1') === factoryId
+      ))
       .map((item) => item.id)
     await adminDb.runTransaction(async (transaction) => {
       const [existing, reservation] = await Promise.all([transaction.get(employeeRef), transaction.get(codeRef)])

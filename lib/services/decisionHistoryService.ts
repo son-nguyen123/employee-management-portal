@@ -1,6 +1,6 @@
 import { collection, onSnapshot, orderBy, query, Timestamp, where } from 'firebase/firestore'
 import { db } from '@/lib/firebase'
-import { FACTORY_LABELS, isFactoryId } from '@/lib/models/factory'
+import { FACTORY_LABELS, isFactoryId, type FactoryId } from '@/lib/models/factory'
 
 export type DecisionResource = 'leave' | 'late' | 'salary' | 'staff' | 'schedule'
 export type DecisionStatus = 'Approved' | 'Rejected' | 'Cancelled'
@@ -218,7 +218,8 @@ export function subscribeToWeeklyDecisionHistory(
   start: Date,
   end: Date,
   callback: (items: DecisionHistoryItem[]) => void,
-  onError?: (error: Error) => void
+  onError?: (error: Error) => void,
+  factoryId?: FactoryId
 ): () => void {
   const sources: Array<{ resource: DecisionResource; collectionName: string }> = [
     { resource: 'leave', collectionName: 'leaveRequests' },
@@ -237,14 +238,21 @@ export function subscribeToWeeklyDecisionHistory(
   const endTimestamp = Timestamp.fromDate(end)
 
   const unsubscribers = sources.map(({ resource, collectionName }) => onSnapshot(
-    query(
-      collection(db, collectionName),
-      where('reviewedAt', '>=', startTimestamp),
-      where('reviewedAt', '<=', endTimestamp),
-      orderBy('reviewedAt', 'desc')
-    ),
+    factoryId
+      ? query(collection(db, collectionName), where('factoryId', '==', factoryId))
+      : query(
+        collection(db, collectionName),
+        where('reviewedAt', '>=', startTimestamp),
+        where('reviewedAt', '<=', endTimestamp),
+        orderBy('reviewedAt', 'desc')
+      ),
     (snapshot) => {
-      data[resource] = snapshot.docs.map((item) => ({ id: item.id, ...item.data() }))
+      data[resource] = snapshot.docs
+        .map((item) => ({ id: item.id, ...item.data() }) as SnapshotRow)
+        .filter((item) => {
+          const reviewedAt = asDate(item.reviewedAt)
+          return reviewedAt >= start && reviewedAt <= end
+        })
       ready.add(resource)
       if (ready.size === sources.length && penaltiesReady) callback(buildRows(data, penaltyRows))
     },
@@ -252,14 +260,21 @@ export function subscribeToWeeklyDecisionHistory(
   ))
 
   const unsubscribePenalties = onSnapshot(
-    query(
-      collection(db, 'penalties'),
-      where('penaltyDate', '>=', startTimestamp),
-      where('penaltyDate', '<=', endTimestamp),
-      orderBy('penaltyDate', 'desc')
-    ),
+    factoryId
+      ? query(collection(db, 'penalties'), where('factoryId', '==', factoryId))
+      : query(
+        collection(db, 'penalties'),
+        where('penaltyDate', '>=', startTimestamp),
+        where('penaltyDate', '<=', endTimestamp),
+        orderBy('penaltyDate', 'desc')
+      ),
     (snapshot) => {
-      penaltyRows = snapshot.docs.map((item) => ({ id: item.id, ...item.data() }))
+      penaltyRows = snapshot.docs
+        .map((item) => ({ id: item.id, ...item.data() }) as SnapshotRow)
+        .filter((item) => {
+          const penaltyDate = asDate(item.penaltyDate)
+          return penaltyDate >= start && penaltyDate <= end
+        })
       penaltiesReady = true
       if (ready.size === sources.length) callback(buildRows(data, penaltyRows))
     },

@@ -2,6 +2,7 @@ import { collection, getDocs, onSnapshot, query, where, orderBy } from 'firebase
 import { db } from '@/lib/firebase'
 import { Penalty } from '@/lib/models/types'
 import { callWorkflowApi, newWorkflowRequestId } from '@/lib/services/workflowApi'
+import type { FactoryId } from '@/lib/models/factory'
 
 const PENALTIES_COLLECTION = 'penalties'
 
@@ -150,8 +151,11 @@ export function subscribeToAllPenalties(
   callback: (penalties: Penalty[]) => void,
   onError?: (error: Error) => void,
   dateRange?: { startDate: Date; endDate: Date },
+  factoryId?: FactoryId,
 ): () => void {
-  const penaltiesQuery = dateRange
+  const penaltiesQuery = factoryId
+    ? query(collection(db, PENALTIES_COLLECTION), where('factoryId', '==', factoryId))
+    : dateRange
     ? query(
       collection(db, PENALTIES_COLLECTION),
       where('penaltyDate', '>=', dateRange.startDate),
@@ -167,7 +171,15 @@ export function subscribeToAllPenalties(
     (snapshot) => callback(snapshot.docs.map((item) => ({
       id: item.id,
       ...item.data(),
-    } as Penalty))),
+    } as Penalty)).filter((item) => {
+      if (!dateRange) return true
+      const penaltyDate = item.penaltyDate instanceof Date ? item.penaltyDate : item.penaltyDate.toDate()
+      return penaltyDate >= dateRange.startDate && penaltyDate < dateRange.endDate
+    }).sort((left, right) => {
+      const leftDate = left.penaltyDate instanceof Date ? left.penaltyDate : left.penaltyDate.toDate()
+      const rightDate = right.penaltyDate instanceof Date ? right.penaltyDate : right.penaltyDate.toDate()
+      return rightDate.getTime() - leftDate.getTime()
+    })),
     (error) => onError?.(error)
   )
 }

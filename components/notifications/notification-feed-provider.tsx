@@ -9,6 +9,7 @@ import {
 } from '@/lib/services/notificationService'
 import type { Notification } from '@/lib/models/types'
 import { currentVietnamMonth } from '@/lib/archive/retention'
+import { employeeFactoryId } from '@/lib/models/factory'
 
 type NotificationFeedValue = {
   employeeNotifications: Notification[]
@@ -21,7 +22,7 @@ type NotificationFeedValue = {
 const NotificationFeedContext = createContext<NotificationFeedValue | null>(null)
 
 export function NotificationFeedProvider({ children }: { children: React.ReactNode }) {
-  const { authUser, isPreviewMode } = useAuth()
+  const { authUser, employee: currentEmployee, isPreviewMode } = useAuth()
   const role = useUserRole()
   const isManagement = role === 'admin' || role === 'manager' || role === 'director'
   const [employeeNotifications, setEmployeeNotifications] = useState<Notification[]>([])
@@ -61,6 +62,7 @@ export function NotificationFeedProvider({ children }: { children: React.ReactNo
           setPendingNotificationCount(items.filter((item) => item.createdAt >= start && (role === 'admin' || item.type !== 'account')).length)
         },
         () => setManagementPendingReady(true),
+        employeeFactoryId(currentEmployee),
       )
       : () => undefined
 
@@ -68,7 +70,7 @@ export function NotificationFeedProvider({ children }: { children: React.ReactNo
       unsubscribeEmployee()
       unsubscribeManagement()
     }
-  }, [authUser?.uid, isManagement, isPreviewMode, role])
+  }, [authUser?.uid, currentEmployee, isManagement, isPreviewMode, role])
 
   const value = useMemo<NotificationFeedValue>(() => ({
     employeeNotifications,

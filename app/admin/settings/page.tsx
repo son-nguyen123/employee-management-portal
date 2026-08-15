@@ -168,7 +168,7 @@ export default function AdminSettingsPage() {
             </button>
           </div>
         </section>
-        {role === 'admin' && (
+        {['admin', 'director'].includes(role || '') && (
           <section className="mt-4 overflow-hidden rounded-3xl border border-fuchsia-200 bg-transparent shadow-sm dark:border-fuchsia-500/30">
             <div className="flex items-center gap-3 p-4">
               <div className={`grid h-12 w-12 shrink-0 place-items-center rounded-2xl ${registration.isOpen ? 'bg-fuchsia-100 text-fuchsia-700' : 'bg-slate-100 text-slate-500'}`}>

@@ -12,6 +12,7 @@ import { updateSalaryAdvanceStatus } from '@/lib/services/salaryService'
 import { updateStaffRequestStatus } from '@/lib/services/staffRequestService'
 import { subscribeToWeeklyDecisionHistory, type DecisionHistoryItem } from '@/lib/services/decisionHistoryService'
 import { RequestIdentityAvatar } from '@/components/admin/request-identity-avatar'
+import { employeeFactoryId } from '@/lib/models/factory'
 
 type RequestRow =
   | { kind: 'pending'; pending: ManagementPendingItem; sortAt: Date; status: 'Pending' }
@@ -80,7 +81,7 @@ function decisionFromPending(
 }
 
 export function OtherRequestWorkspace({ employees }: { employees: Employee[] }) {
-  const { authUser, isPreviewMode } = useAuth()
+  const { authUser, employee: currentEmployee, isPreviewMode } = useAuth()
   const { managementPendingItems, managementPendingReady } = useNotificationFeed()
   const [pending, setPending] = useState<ManagementPendingItem[]>([])
   const [decisions, setDecisions] = useState<DecisionHistoryItem[]>([])
@@ -119,10 +120,11 @@ export function OtherRequestWorkspace({ employees }: { employees: Employee[] }) 
       weekWindow.start,
       new Date(weekWindow.end.getTime() - 1),
       (items) => setDecisions(items.filter((item): item is DecisionHistoryItem & { status: 'Approved' | 'Rejected' } => item.resource !== 'schedule' && item.status !== 'Cancelled')),
-      () => setMessage('Chưa thể tải lịch sử xử lý trong tuần.')
+      () => setMessage('Chưa thể tải lịch sử xử lý trong tuần.'),
+      employeeFactoryId(currentEmployee)
     )
     return () => unsubscribeHistory()
-  }, [authUser, isPreviewMode])
+  }, [authUser, currentEmployee, isPreviewMode])
 
   useEffect(() => {
     if (!authUser || isPreviewMode || !managementPendingReady) return

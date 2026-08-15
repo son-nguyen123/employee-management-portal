@@ -12,7 +12,7 @@ import { vietnamWeekContaining } from '@/lib/archive/retention'
 import { decisionReviewIsEditable } from '@/lib/review/decision-policy'
 import { isManagementScheduleRole, isPastRegistrationDate, reactivationWaiverApplies, registrationTargetsNextWeek, restrictPastRegistration } from '@/lib/schedule/registration-policy'
 import { salaryAdvanceWindowState } from '@/lib/salary/advance-policy'
-import { FACTORY_LABELS, isFactoryId, type FactoryId } from '@/lib/models/factory'
+import { FACTORY_IDS, FACTORY_LABELS, isFactoryId, type FactoryId } from '@/lib/models/factory'
 
 type Shift = 'Morning' | 'Afternoon' | 'Evening'
 type ReviewStatus = 'Approved' | 'Rejected' | 'ChangesRequested'
@@ -413,33 +413,108 @@ function hasCompleteBankAccount(data: Record<string, unknown> | undefined): bool
 }
 
 export async function manageEmployeeRole(actor: RequestActor, raw: unknown) {
-  requireManager(actor)
-  if (!['admin', 'director'].includes(actor.role)) throw new ApiError(403, 'Chỉ admin hoặc giám đốc được phân quyền tài khoản.')
+  if (actor.role !== 'director') throw new ApiError(403, 'Chỉ Host được phân quyền tài khoản.')
   const body = objectBody(raw)
   const employeeId = text(body.employeeId, 'Nhân viên', 128)
-  const role = text(body.role, 'Vai trò', 20) as 'employee' | 'manager' | 'director' | 'admin'
-  if (!['employee', 'manager', 'director', 'admin'].includes(role)) {
+  const role = text(body.role, 'Vai trò', 20) as 'employee' | 'admin'
+  if (!['employee', 'admin'].includes(role)) {
     throw new ApiError(400, 'Vai trò tài khoản không hợp lệ.')
   }
-  if (employeeId === actor.uid) throw new ApiError(409, 'Không thể thay đổi vai trò của admin đang đăng nhập.')
+  if (employeeId === actor.uid) throw new ApiError(409, 'Host không thể tự thay đổi vai trò của mình.')
 
   const employeeRef = adminDb.collection('employees').doc(employeeId)
   await adminDb.runTransaction(async (transaction) => {
     const employee = await transaction.get(employeeRef)
     if (!employee.exists) throw new ApiError(404, 'Không tìm thấy nhân viên.')
-    if (actor.role !== 'director' && String(employee.get('factoryId') || 'factory-1') !== actor.factoryId) {
-      throw new ApiError(403, 'Bạn chỉ được phân quyền nhân viên thuộc xưởng mình.')
+    const factoryId: FactoryId = isFactoryId(employee.get('factoryId'))
+      ? employee.get('factoryId')
+      : 'factory-1'
+    const currentRole = String(employee.get('role') || 'employee')
+    if (currentRole === 'director') {
+      throw new ApiError(409, 'Không thể thay đổi tài khoản Host bằng luồng phân quyền xưởng.')
     }
-    if (employee.get('role') === 'admin') throw new ApiError(409, 'Không thể thay đổi vai trò admin bằng luồng này.')
+    if (role === 'admin' && employee.get('status') !== 'active') {
+      throw new ApiError(409, 'Chỉ tài khoản đang hoạt động mới có thể nhận quyền Admin xưởng.')
+    }
+
+    const seatRef = adminDb.collection('factoryManagerSeats').doc(factoryId)
+    const managersQuery = adminDb.collection('employees').where('role', 'in', ['admin', 'manager'])
+    const [seat, managers] = await Promise.all([
+      transaction.get(seatRef),
+      transaction.get(managersQuery),
+    ])
+    const otherFactoryManager = managers.docs.find((item) =>
+      item.id !== employeeId &&
+      String(item.get('factoryId') || 'factory-1') === factoryId
+    )
+    const seatManagerId = typeof seat.get('managerId') === 'string' ? seat.get('managerId') as string : null
+    const now = FieldValue.serverTimestamp()
+
+    if (role === 'admin') {
+      if ((seatManagerId && seatManagerId !== employeeId) || otherFactoryManager) {
+        const occupiedName = otherFactoryManager?.get('fullName') || seat.get('managerName') || 'một tài khoản khác'
+        throw new ApiError(409, `${FACTORY_LABELS[factoryId]} đã có Admin xưởng là ${occupiedName}. Hãy trả người đó về Nhân viên trước.`)
+      }
+      transaction.set(seatRef, {
+        factoryId,
+        managerId: employeeId,
+        managerName: String(employee.get('fullName') || ''),
+        status: 'occupied',
+        assignedBy: actor.uid,
+        assignedAt: now,
+        releasedBy: FieldValue.delete(),
+        releasedAt: FieldValue.delete(),
+        updatedAt: now,
+      }, { merge: true })
+    } else if (['admin', 'manager'].includes(currentRole) && (!seatManagerId || seatManagerId === employeeId)) {
+      transaction.set(seatRef, {
+        factoryId,
+        managerId: null,
+        managerName: FieldValue.delete(),
+        status: 'vacant',
+        previousManagerId: employeeId,
+        releasedBy: actor.uid,
+        releasedAt: now,
+        updatedAt: now,
+      }, { merge: true })
+    }
+
     transaction.set(employeeRef, {
       role,
-      updatedAt: FieldValue.serverTimestamp(),
+      updatedAt: now,
       roleChangedBy: actor.uid,
-      roleChangedAt: FieldValue.serverTimestamp(),
+      roleChangedAt: now,
     }, { merge: true })
   })
 
   return { employeeId, role }
+}
+
+export async function getFactoryManagerSeats(actor: RequestActor) {
+  if (actor.role !== 'director') throw new ApiError(403, 'Chỉ Host được xem trạng thái phân quyền xưởng.')
+  const [seatSnapshots, managerSnapshots] = await Promise.all([
+    adminDb.collection('factoryManagerSeats').get(),
+    adminDb.collection('employees').where('role', 'in', ['admin', 'manager']).get(),
+  ])
+  const seatsByFactory = new Map(seatSnapshots.docs.map((item) => [item.id, item]))
+
+  return FACTORY_IDS.map((factoryId) => {
+    const storedSeat = seatsByFactory.get(factoryId)
+    const storedManagerId = typeof storedSeat?.get('managerId') === 'string'
+      ? storedSeat.get('managerId') as string
+      : null
+    const storedManager = storedManagerId
+      ? managerSnapshots.docs.find((item) => item.id === storedManagerId && String(item.get('factoryId') || 'factory-1') === factoryId)
+      : null
+    const legacyManager = managerSnapshots.docs.find((item) => String(item.get('factoryId') || 'factory-1') === factoryId)
+    const manager = storedManager || legacyManager || null
+    return {
+      factoryId,
+      managerId: manager?.id || null,
+      managerName: manager ? String(manager.get('fullName') || '') : undefined,
+      status: manager ? 'occupied' as const : 'vacant' as const,
+    }
+  })
 }
 
 export async function getAccountRegistrationWindow(actor: RequestActor) {
@@ -455,7 +530,7 @@ export async function getAccountRegistrationWindow(actor: RequestActor) {
 
 export async function updateAccountRegistrationWindow(actor: RequestActor, raw: unknown) {
   requireManager(actor)
-  if (actor.role !== 'admin') throw new ApiError(403, 'Chỉ admin được mở cổng đăng ký tài khoản.')
+  if (!['admin', 'director'].includes(actor.role)) throw new ApiError(403, 'Chỉ Host hoặc Admin xưởng được mở cổng đăng ký tài khoản.')
   const body = objectBody(raw)
   if (typeof body.open !== 'boolean') throw new ApiError(400, 'Trạng thái mở đăng ký không hợp lệ.')
   const now = new Date()
@@ -562,6 +637,7 @@ export async function respondPenaltyConsent(actor: RequestActor, raw: unknown) {
       transaction.set(penaltyRef, {
         ...penaltyData({
           employeeId: actor.uid,
+          factoryId: actor.factoryId,
           title: 'Nghỉ được duyệt kèm mức trừ',
           description: 'Nhân viên đã đồng ý mức trừ do quản lý đề xuất khi duyệt yêu cầu nghỉ.',
           category: 'Late',
@@ -1298,13 +1374,14 @@ export async function submitSchedules(actor: RequestActor, raw: unknown) {
     if (shouldPenalize && workflowPolicy.scheduleLatePenalty > 0) {
       transaction.create(penaltyRef, {
         ...penaltyData({
-        employeeId: actor.uid,
-        title: 'Đăng ký lịch trễ hạn',
-        description: `Gửi lịch sau hạn quy định. Khấu trừ ${workflowPolicy.scheduleLatePenalty.toLocaleString('vi-VN')}đ.`,
-        category: 'Late',
-        amount: workflowPolicy.scheduleLatePenalty,
-        sourceType: 'scheduleSubmission',
-        sourceId: id,
+          employeeId: actor.uid,
+          factoryId: actor.factoryId,
+          title: 'Đăng ký lịch trễ hạn',
+          description: `Gửi lịch sau hạn quy định. Khấu trừ ${workflowPolicy.scheduleLatePenalty.toLocaleString('vi-VN')}đ.`,
+          category: 'Late',
+          amount: workflowPolicy.scheduleLatePenalty,
+          sourceType: 'scheduleSubmission',
+          sourceId: id,
         }),
         status: 'Active',
         confirmedBy: 'system:auto-schedule',
@@ -3142,6 +3219,7 @@ export async function reviewRequest(actor: RequestActor, raw: unknown) {
         transaction.set(decisionPenaltyRef, {
           ...penaltyData({
             employeeId,
+            factoryId: String(data.factoryId || actor.factoryId),
             title: resource === 'late'
               ? 'Xử lý thông báo đi trễ'
               : isLate ? 'Xin nghỉ sau 16:00 hôm trước' : 'Yêu cầu nghỉ không được duyệt',

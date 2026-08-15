@@ -10,7 +10,7 @@ import {
 import { db } from '@/lib/firebase'
 import { auth } from '@/lib/firebase'
 import { Employee, EmployeeScheduleMode } from '@/lib/models/types'
-import { REGISTRATION_FACTORY_STORAGE_KEY, isFactoryId, type FactoryId } from '@/lib/models/factory'
+import { REGISTRATION_FACTORY_STORAGE_KEY, isFactoryId, type FactoryId, type FactoryManagerSeat } from '@/lib/models/factory'
 import { callWorkflowApi, newWorkflowRequestId } from '@/lib/services/workflowApi'
 
 const EMPLOYEES_COLLECTION = 'employees'
@@ -193,15 +193,17 @@ export function subscribeToAllEmployees(
 
 export function subscribeToActiveEmployees(
   callback: (employees: Employee[]) => void,
-  onError?: (error: Error) => void
+  onError?: (error: Error) => void,
+  factoryId?: FactoryId
 ): () => void {
-  const activeQuery = query(
-    collection(db, EMPLOYEES_COLLECTION),
-    where('status', '==', 'active')
-  )
+  const activeQuery = factoryId
+    ? query(collection(db, EMPLOYEES_COLLECTION), where('factoryId', '==', factoryId))
+    : query(collection(db, EMPLOYEES_COLLECTION), where('status', '==', 'active'))
   return onSnapshot(
     activeQuery,
-    (snapshot) => callback(snapshot.docs.map((item) => item.data() as Employee)),
+    (snapshot) => callback(snapshot.docs
+      .map((item) => item.data() as Employee)
+      .filter((employee) => employee.status === 'active')),
     (error) => onError?.(error)
   )
 }
@@ -210,8 +212,12 @@ export async function setEmployeeAccountStatus(employeeId: string, status: 'acti
   return callWorkflowApi('manageEmployeeStatus', { employeeId, status })
 }
 
-export async function setEmployeeRole(employeeId: string, role: 'employee' | 'manager' | 'director' | 'admin'): Promise<{ employeeId: string; role: 'employee' | 'manager' | 'director' | 'admin' }> {
+export async function setEmployeeRole(employeeId: string, role: 'employee' | 'admin'): Promise<{ employeeId: string; role: 'employee' | 'admin' }> {
   return callWorkflowApi('manageEmployeeRole', { employeeId, role })
+}
+
+export async function getFactoryManagerSeats(): Promise<FactoryManagerSeat[]> {
+  return callWorkflowApi('getFactoryManagerSeats', {})
 }
 
 export async function setInitialEmployeeScheduleMode(mode: EmployeeScheduleMode): Promise<{ mode: EmployeeScheduleMode }> {

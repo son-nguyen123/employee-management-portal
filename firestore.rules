@@ -28,6 +28,8 @@ service cloud.firestore {
     // workflowRequests/{id}, pushDispatches/{id}: server-only idempotency/outbox docs
     // auditEvents/{id}: append-only server audit records, readable by the
     //   affected employee and management; auditHeads/auditEmailOutbox are server-only
+    // factoryManagerSeats/{factoryId}: server-only management seat owned by
+    //   a factory, with the UID of the account currently occupying that seat
 
     // ===============================================================
     // Authentication and authorization helpers
@@ -278,11 +280,16 @@ service cloud.firestore {
               ]) &&
             request.resource.data.role == resource.data.role &&
             request.resource.data.status == resource.data.status
-          ) ||
-          (isAdmin() && resourceFactoryId() == currentFactoryId())
+          )
         );
 
-      allow delete: if isAdmin() && resourceFactoryId() == currentFactoryId();
+      // Status and role changes are server-only workflows. In particular, an
+      // Admin xưởng cannot grant roles through a direct Firestore write.
+      allow delete: if false;
+    }
+
+    match /factoryManagerSeats/{factoryId} {
+      allow read, write: if false;
     }
 
     match /employeeCodes/{code} {
@@ -296,28 +303,29 @@ service cloud.firestore {
     }
 
     match /leaveRequests/{leaveId} {
-      allow read: if ownsResource('employeeId') || isManagementReader();
+      allow read: if ownsResource('employeeId') || canReadFactoryResource();
       allow create, update, delete: if false;
     }
 
     match /lateRequests/{lateId} {
-      allow read: if ownsResource('employeeId') || isManagementReader();
+      allow read: if ownsResource('employeeId') || canReadFactoryResource();
       allow create, update, delete: if false;
     }
 
     match /salaryAdvances/{advanceId} {
       // Director salary data is served through the approved-only backend endpoint.
-      allow read: if ownsResource('employeeId') || isManagerOrAdmin();
+      allow read: if ownsResource('employeeId') ||
+        (isManagerOrAdmin() && resourceFactoryId() == currentFactoryId());
       allow create, update, delete: if false;
     }
 
     match /staffRequests/{requestId} {
-      allow read: if ownsResource('employeeId') || isManagementReader();
+      allow read: if ownsResource('employeeId') || canReadFactoryResource();
       allow create, update, delete: if false;
     }
 
     match /penalties/{penaltyId} {
-      allow read: if ownsResource('employeeId') || isManagementReader();
+      allow read: if ownsResource('employeeId') || canReadFactoryResource();
       allow create, update, delete: if false;
     }
 

@@ -30,6 +30,7 @@ type WorkflowAction =
   | 'updateAuditReceiptSettings'
   | 'manageEmployeeStatus'
   | 'manageEmployeeRole'
+  | 'getFactoryManagerSeats'
   | 'setInitialScheduleMode'
   | 'submitScheduleModeChangeRequest'
   | 'submitFactoryChangeRequest'

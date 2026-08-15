@@ -17,7 +17,7 @@ import { subscribeToActiveEmployees } from '@/lib/services/employeeService'
 import { adjustPenalty, cancelPenalty, createManualPenalty, subscribeToAllPenalties } from '@/lib/services/penaltyService'
 import { subscribeToPendingStaffRequests, updateStaffRequestStatus } from '@/lib/services/staffRequestService'
 import type { Employee, Penalty, StaffRequest } from '@/lib/models/types'
-import { FACTORY_LABELS } from '@/lib/models/factory'
+import { employeeFactoryId, FACTORY_LABELS } from '@/lib/models/factory'
 import { MonthNavigator } from '@/components/ui/month-navigator'
 import { invalidateMonthData, readPenaltyMonth } from '@/lib/services/monthDataService'
 import { currentVietnamMonth } from '@/lib/archive/retention'
@@ -126,7 +126,7 @@ function buildRequestRows(
 }
 
 export default function AdminRequestsPage() {
-  const { authUser, isPreviewMode } = useAuth()
+  const { authUser, employee: currentEmployee, isPreviewMode } = useAuth()
   const [filter, setFilter] = useState<'all' | RequestType>('all')
   const [rows, setRows] = useState<RequestRow[]>([])
   const [loading, setLoading] = useState(true)
@@ -156,6 +156,7 @@ export default function AdminRequestsPage() {
   const [penaltyExportMonth, setPenaltyExportMonth] = useState(currentVietnamMonth(new Date()).key)
   const [exportingPenalties, setExportingPenalties] = useState(false)
   const [penaltyMonthLoading, setPenaltyMonthLoading] = useState(true)
+  const factoryScope = currentEmployee?.role === 'director' ? undefined : employeeFactoryId(currentEmployee)
 
   useEffect(() => {
     if (!rejectingRow && !editingPenalty) return
@@ -223,21 +224,21 @@ export default function AdminRequestsPage() {
         salaries = items
         ready.add('salary')
         publish()
-      }, handleError),
+      }, handleError, factoryScope),
       subscribeToPendingStaffRequests((items) => {
         staffRequests = items
         ready.add('staff')
         publish()
-      }, handleError),
+      }, handleError, factoryScope),
       subscribeToActiveEmployees((items) => {
         employeeList = items
         ready.add('employees')
         publish()
-      }, handleError),
+      }, handleError, factoryScope),
     ]
 
     return () => unsubscribers.forEach((unsubscribe) => unsubscribe())
-  }, [authUser, isPreviewMode])
+  }, [authUser, factoryScope, isPreviewMode])
 
   useEffect(() => {
     if (!authUser || isPreviewMode || pageMode !== 'penalties') return
@@ -264,7 +265,7 @@ export default function AdminRequestsPage() {
         mergeRecords()
       }, () => {
         if (active) setMessage('Không thể cập nhật khoản phạt theo thời gian thực.')
-      }, { startDate: currentMonthWindow.start, endDate: currentMonthWindow.end })
+      }, { startDate: currentMonthWindow.start, endDate: currentMonthWindow.end }, factoryScope)
       : undefined
     setPenalties([])
     setPenaltyMonthLoading(true)
@@ -286,7 +287,7 @@ export default function AdminRequestsPage() {
       active = false
       unsubscribe?.()
     }
-  }, [authUser, isPreviewMode, pageMode, penaltyExportMonth])
+  }, [authUser, factoryScope, isPreviewMode, pageMode, penaltyExportMonth])
 
   useEffect(() => {
     if (!manualPenaltyOpen) return

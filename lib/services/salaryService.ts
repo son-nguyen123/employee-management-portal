@@ -2,6 +2,7 @@ import { collection, getDocs, onSnapshot, query, where, orderBy } from 'firebase
 import { db } from '@/lib/firebase'
 import { SalaryAdvance } from '@/lib/models/types'
 import { callWorkflowApi, newWorkflowRequestId } from '@/lib/services/workflowApi'
+import type { FactoryId } from '@/lib/models/factory'
 
 const SALARY_ADVANCES_COLLECTION = 'salaryAdvances'
 
@@ -140,16 +141,21 @@ export function subscribeToEmployeeSalaryAdvances(
 
 export function subscribeToPendingSalaryAdvances(
   callback: (requests: SalaryAdvance[]) => void,
-  onError?: (error: Error) => void
+  onError?: (error: Error) => void,
+  factoryId?: FactoryId
 ): () => void {
-  const salaryQuery = query(
-    collection(db, SALARY_ADVANCES_COLLECTION),
-    where('status', '==', 'Pending'),
-    orderBy('createdAt', 'desc')
-  )
+  const salaryQuery = factoryId
+    ? query(collection(db, SALARY_ADVANCES_COLLECTION), where('factoryId', '==', factoryId))
+    : query(collection(db, SALARY_ADVANCES_COLLECTION), where('status', '==', 'Pending'), orderBy('createdAt', 'desc'))
   return onSnapshot(
     salaryQuery,
-    (snapshot) => callback(snapshot.docs.map(salaryFromSnapshot)),
+    (snapshot) => callback(snapshot.docs.map(salaryFromSnapshot)
+      .filter((item) => item.status === 'Pending')
+      .sort((left, right) => {
+        const leftDate = left.createdAt instanceof Date ? left.createdAt : left.createdAt.toDate()
+        const rightDate = right.createdAt instanceof Date ? right.createdAt : right.createdAt.toDate()
+        return rightDate.getTime() - leftDate.getTime()
+      })),
     (error) => onError?.(error)
   )
 }
@@ -158,8 +164,11 @@ export function subscribeToAllSalaryAdvances(
   callback: (requests: SalaryAdvance[]) => void,
   onError?: (error: Error) => void,
   dateRange?: { startDate: Date; endDate: Date },
+  factoryId?: FactoryId,
 ): () => void {
-  const salaryQuery = dateRange
+  const salaryQuery = factoryId
+    ? query(collection(db, SALARY_ADVANCES_COLLECTION), where('factoryId', '==', factoryId))
+    : dateRange
     ? query(
       collection(db, SALARY_ADVANCES_COLLECTION),
       where('createdAt', '>=', dateRange.startDate),
@@ -172,7 +181,17 @@ export function subscribeToAllSalaryAdvances(
     )
   return onSnapshot(
     salaryQuery,
-    (snapshot) => callback(snapshot.docs.map(salaryFromSnapshot)),
+    (snapshot) => callback(snapshot.docs.map(salaryFromSnapshot)
+      .filter((item) => {
+        if (!dateRange) return true
+        const createdAt = item.createdAt instanceof Date ? item.createdAt : item.createdAt.toDate()
+        return createdAt >= dateRange.startDate && createdAt < dateRange.endDate
+      })
+      .sort((left, right) => {
+        const leftDate = left.createdAt instanceof Date ? left.createdAt : left.createdAt.toDate()
+        const rightDate = right.createdAt instanceof Date ? right.createdAt : right.createdAt.toDate()
+        return rightDate.getTime() - leftDate.getTime()
+      })),
     (error) => onError?.(error)
   )
 }
