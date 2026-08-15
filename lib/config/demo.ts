@@ -51,7 +51,7 @@ export const DEMO_EMPLOYEE = {
   uid: DEMO_USER.uid,
   email: DEMO_USER.email,
   fullName: DEMO_USER.displayName,
-  employeeCode: 'EMP-2024-001',
+  employeeCode: '001',
   phone: '0901 234 567',
   joinDate: new Date('2024-01-15'),
   role: DEMO_USER.role,

@@ -365,7 +365,7 @@ export default function NotificationsPage() {
         const previewNow = new Date()
         setEmployees([{
           uid: 'demo-user-001',
-          employeeCode: 'NV-001',
+          employeeCode: '001',
           fullName: 'Nguyễn Minh An',
           phone: '0901 234 567',
           email: 'minhan@example.test',
@@ -400,7 +400,7 @@ export default function NotificationsPage() {
           staffRequestType: 'scheduleChange',
           employeeId: 'demo-user-001',
           employeeName: 'Nguyễn Minh An',
-          employeeCode: 'NV-001',
+          employeeCode: '001',
           employeePhone: '0901 234 567',
           employeeFacebookURL: 'https://www.facebook.com/',
           title: 'Yêu cầu đổi / thêm ca',

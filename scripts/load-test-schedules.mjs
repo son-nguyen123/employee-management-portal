@@ -149,13 +149,15 @@ async function provisionUsers(count) {
   const passwordBytes = 18
   const users = []
   const created = []
+  const codePrefix = Date.now().toString().slice(-6)
 
   for (let index = 0; index < count; index += 1) {
     const ordinal = String(index + 1).padStart(3, '0')
     const email = `${prefix}${ordinal}@${domain}`
     const password = randomBytes(passwordBytes).toString('base64url')
     const user = await auth.createUser({ email, password, displayName: `Load Test ${ordinal}` })
-    const employeeCode = `LT-${Date.now().toString(36).toUpperCase()}-${ordinal}`
+    if (index >= 999) throw new Error('Load test supports at most 999 numeric employee codes per run.')
+    const employeeCode = `${codePrefix}${ordinal}`
     const now = new Date()
     await db.collection('employees').doc(user.uid).set({
       uid: user.uid,
@@ -170,8 +172,7 @@ async function provisionUsers(count) {
       createdAt: now,
       updatedAt: now,
     })
-    const codeKey = employeeCode.replace(/[^A-Z0-9]/g, '')
-    await db.collection('employeeCodes').doc(codeKey).set({ uid: user.uid, employeeCode, createdAt: now })
+    await db.collection('employeeCodes').doc(employeeCode).set({ uid: user.uid, employeeCode, createdAt: now })
     users.push({ email, password, index })
     created.push({ uid: user.uid, employeeCode, requestId: '' })
     process.stdout.write(`\rĐã chuẩn bị ${index + 1}/${count} tài khoản trên ${projectId}...`)
@@ -256,7 +257,7 @@ async function cleanup({ admin, created, weekStart }) {
     refs.push(...penalties.docs.map((snapshot) => snapshot.ref))
     refs.push(...notifications.docs.map((snapshot) => snapshot.ref))
     refs.push(db.collection('employees').doc(item.uid))
-    refs.push(db.collection('employeeCodes').doc(item.employeeCode.replace(/[^A-Z0-9]/g, '')))
+    refs.push(db.collection('employeeCodes').doc(item.employeeCode))
     if (item.requestId) refs.push(db.collection('workflowRequests').doc(`${item.uid}-${item.requestId}`))
     for (const managerId of managerIds) {
       const batchKey = `${item.uid}-${weekStart}`

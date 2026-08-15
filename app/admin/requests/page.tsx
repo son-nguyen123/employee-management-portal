@@ -183,7 +183,7 @@ export default function AdminRequestsPage() {
     if (isPreviewMode) {
       const employeeList = [{
         uid: 'demo-user-001',
-        employeeCode: 'NV-001',
+        employeeCode: '001',
         fullName: 'Nguyễn Minh An',
         phone: '0901234567',
         email: 'demo@example.com',

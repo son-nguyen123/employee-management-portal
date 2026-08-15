@@ -3,8 +3,8 @@ import ExcelJS from 'exceljs'
 
 const mocks = vi.hoisted(() => {
   const employeeDocs = [
-    { id: 'employee-1', data: () => ({ fullName: 'Nguyễn Minh An', employeeCode: 'NV-001', status: 'active' }) },
-    { id: 'employee-2', data: () => ({ fullName: 'Nhân viên đã nghỉ', employeeCode: 'NV-002', status: 'inactive' }) },
+    { id: 'employee-1', data: () => ({ fullName: 'Nguyễn Minh An', employeeCode: '001', status: 'active' }) },
+    { id: 'employee-2', data: () => ({ fullName: 'Nhân viên đã nghỉ', employeeCode: '002', status: 'inactive' }) },
   ]
   const currentWeekStart = new Date()
   const day = currentWeekStart.getDay() || 7

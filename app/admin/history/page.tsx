@@ -36,11 +36,11 @@ function shortDate(date: Date): string {
 
 const previewEmployees: Employee[] = [
   {
-    uid: 'demo-user-001', employeeCode: 'NV-001', fullName: 'Nguyễn Minh An', phone: '0901234567',
+    uid: 'demo-user-001', employeeCode: '001', fullName: 'Nguyễn Minh An', phone: '0901234567',
     email: 'demo@example.com', role: 'employee', status: 'active', joinDate: new Date(), createdAt: new Date(), updatedAt: new Date(),
   },
   {
-    uid: 'preview-employee-2', employeeCode: 'NV-002', fullName: 'Trần Thu Hà', phone: '0907654321',
+    uid: 'preview-employee-2', employeeCode: '002', fullName: 'Trần Thu Hà', phone: '0907654321',
     email: 'ha@example.com', role: 'employee', status: 'active', joinDate: new Date(), createdAt: new Date(), updatedAt: new Date(),
   },
 ]

@@ -663,7 +663,7 @@ export default function SchedulePage() {
           id: `preview-${Date.now()}-${index}`,
           employeeId: authUser.uid,
           employeeName: authUser.displayName || 'Nguyễn Minh An',
-          employeeCode: 'NV-001',
+          employeeCode: '001',
           phone: '0901 234 567',
           facebookUrl: 'https://facebook.com/',
           date: (row.date as Date).toISOString(),

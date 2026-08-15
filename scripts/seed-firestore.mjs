@@ -47,7 +47,7 @@ if (!employeeSnapshot.exists()) {
   const batch = writeBatch(db)
   batch.set(employeeRef, {
     uid: user.uid,
-    employeeCode: `EMP-${user.uid.slice(0, 8).toUpperCase()}`,
+    employeeCode: String(Date.now()).slice(-9),
     fullName: user.displayName || email.split('@')[0],
     phone: '',
     email: user.email || email,

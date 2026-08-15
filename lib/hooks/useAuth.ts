@@ -56,7 +56,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         uid: mockAuthUser.uid,
         email: mockAuthUser.email,
         fullName: mockAuthUser.displayName,
-        employeeCode: previewRole === 'admin' ? 'QL-001' : DEMO_EMPLOYEE.employeeCode,
+        employeeCode: previewRole === 'admin' ? '002' : DEMO_EMPLOYEE.employeeCode,
         role: previewRole,
       } as Employee)
       setIsLoading(false)

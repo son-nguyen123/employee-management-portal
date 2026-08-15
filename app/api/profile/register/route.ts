@@ -3,6 +3,7 @@ import { FieldValue, Timestamp } from 'firebase-admin/firestore'
 import { adminAuth, adminDb } from '@/lib/server/firebase-admin'
 import { isFactoryId } from '@/lib/models/factory'
 import { invalidateMonthDataCache } from '@/lib/server/month-data-cache'
+import { employeeCodeAssignedToAnother, isValidEmployeeCode, normalizeEmployeeCode } from '@/lib/models/employee-code'
 
 export const runtime = 'nodejs'
 
@@ -21,22 +22,27 @@ export async function POST(request: Request) {
     if (!authorization?.startsWith('Bearer ')) return NextResponse.json({ error: 'Bạn cần đăng nhập.' }, { status: 401 })
     const token = await adminAuth.verifyIdToken(authorization.slice(7), true)
     const body = await request.json() as Record<string, unknown>
-    const employeeCode = clean(body.employeeCode, 30).toUpperCase()
-    const codeKey = employeeCode.replace(/[^A-Z0-9]/g, '')
+    const employeeCode = normalizeEmployeeCode(body.employeeCode)
+    const codeKey = employeeCode
     const fullName = clean(body.fullName, 100)
     const phone = clean(body.phone, 30)
     const photoURL = clean(body.photoURL, 500)
     const facebookUrl = clean(body.facebookUrl, 500)
     const scheduleMode = body.scheduleMode === 'fixed' ? 'fixed' : 'rotating'
     const factoryId = isFactoryId(body.factoryId) ? body.factoryId : null
-    if (!factoryId || codeKey.length < 3 || !fullName || !phone || !/^https?:\/\//i.test(photoURL) || !/^https?:\/\//i.test(facebookUrl)) {
+    if (!isValidEmployeeCode(employeeCode)) {
+      return NextResponse.json({ error: 'Mã nhân viên chỉ được gồm từ 1 đến 9 chữ số.' }, { status: 400 })
+    }
+    if (!factoryId || !fullName || !phone || !/^https?:\/\//i.test(photoURL) || !/^https?:\/\//i.test(facebookUrl)) {
       return NextResponse.json({ error: 'Thông tin hồ sơ không hợp lệ.' }, { status: 400 })
     }
     const legacyEmployees = await adminDb.collection('employees').get()
-    const legacyDuplicate = legacyEmployees.docs.find((item) =>
-      String(item.get('employeeCode') || '').toUpperCase().replace(/[^A-Z0-9]/g, '') === codeKey && item.id !== token.uid
+    const codeAlreadyAssigned = employeeCodeAssignedToAnother(
+      legacyEmployees.docs.map((item) => ({ uid: item.id, employeeCode: item.get('employeeCode') })),
+      employeeCode,
+      token.uid,
     )
-    if (legacyDuplicate) {
+    if (codeAlreadyAssigned) {
       return NextResponse.json({ error: 'Mã nhân viên này đã được liên kết với tài khoản khác.' }, { status: 409 })
     }
     const employeeRef = adminDb.collection('employees').doc(token.uid)
@@ -73,6 +79,8 @@ export async function POST(request: Request) {
         createdAt: now,
         updatedAt: now,
       })
+      // Reservations are permanent across pending, active, and inactive states.
+      // Returning employees must reactivate their original account.
       transaction.set(codeRef, { uid: token.uid, employeeCode, createdAt: now })
       managerIds.forEach((managerId) => transaction.set(
         adminDb.collection('notifications').doc(`account-approval-${managerId}-${token.uid}`),

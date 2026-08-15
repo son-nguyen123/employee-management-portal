@@ -34,9 +34,9 @@ describe('câu gửi lịch tự động', () => {
   it('có tên, mã và khoảng tuần', () => {
     expect(scheduleShareText({
       fullName: 'Nguyễn Văn An',
-      employeeCode: 'NV-018',
+      employeeCode: '018',
       weekStart: new Date(2026, 7, 10),
       weekEnd: new Date(2026, 7, 16),
-    })).toBe('Em là Nguyễn Văn An, mã NV-018, gửi lịch làm tuần 10/8–16/8.')
+    })).toBe('Em là Nguyễn Văn An, mã 018, gửi lịch làm tuần 10/8–16/8.')
   })
 })

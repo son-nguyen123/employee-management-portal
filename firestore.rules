@@ -4,7 +4,7 @@ service cloud.firestore {
     // ===============================================================
     // Assumed data model
     // ===============================================================
-    // employees/{uid}: uid, employeeCode, fullName, phone, email,
+    // employees/{uid}: uid, employeeCode (1-9 ASCII digits), fullName, phone, email,
     //   optional photoURL/facebookUrl and optional bankName/bankAccountName/
     //   bankAccountNumber, role, status, joinDate, createdAt, updatedAt
     // workSchedules/{id}: employeeId, date, shift, status, note, optional reviewNote,
@@ -159,6 +159,14 @@ service cloud.firestore {
     // ===============================================================
     // Domain validators
     // ===============================================================
+    function validEmployeeCode(data) {
+      // New profiles must use 1-9 digits. An unchanged legacy code remains
+      // readable/updateable until management assigns an explicit numeric code.
+      return (validString(data.employeeCode, 1, 9) &&
+          data.employeeCode.matches('^[0-9]{1,9}$')) ||
+        data.employeeCode == resource.data.employeeCode;
+    }
+
     function validEmployee(data) {
       return data.keys().hasAll([
           'uid', 'employeeCode', 'fullName', 'phone', 'email', 'factoryId',
@@ -174,7 +182,7 @@ service cloud.firestore {
           'statusChangedBy', 'statusChangedAt', 'roleChangedBy', 'roleChangedAt'
         ]) &&
         validString(data.uid, 1, 128) &&
-        validString(data.employeeCode, 3, 30) &&
+        validEmployeeCode(data) &&
         validString(data.fullName, 1, 100) &&
         validString(data.phone, 0, 30) &&
         validOptionalUrl(data, 'photoURL') &&

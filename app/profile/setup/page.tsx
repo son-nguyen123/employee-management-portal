@@ -9,6 +9,7 @@ import { createEmployee, setInitialEmployeeScheduleMode, updateEmployee } from '
 import { updateUserProfile } from '@/lib/services/authService'
 import { profileImageUrl } from '@/lib/utils/profileImage'
 import type { EmployeeScheduleMode } from '@/lib/models/types'
+import { employeeCodeInput, EMPLOYEE_CODE_MAX_DIGITS, isValidEmployeeCode } from '@/lib/models/employee-code'
 
 export default function ProfileSetupPage() {
   const router = useRouter()
@@ -148,6 +149,10 @@ export default function ProfileSetupPage() {
       setMessage('Vui lòng hoàn thiện đầy đủ thông tin cá nhân.')
       return
     }
+    if (!isValidEmployeeCode(values.employeeCode)) {
+      setMessage('Mã nhân viên chỉ được gồm từ 1 đến 9 chữ số.')
+      return
+    }
     if (!/^https?:\/\//i.test(values.photoURL) || !/^https?:\/\//i.test(values.facebookUrl)) {
       setMessage('Link ảnh đại diện và Facebook phải bắt đầu bằng http:// hoặc https://.')
       return
@@ -225,7 +230,7 @@ export default function ProfileSetupPage() {
 
   const fields = [
     { key: 'fullName' as const, label: 'Họ và tên', placeholder: 'Nguyễn Văn An', icon: UserRound },
-    { key: 'employeeCode' as const, label: 'Mã nhân viên', placeholder: 'NV-001', icon: IdCard },
+    { key: 'employeeCode' as const, label: 'Mã nhân viên', placeholder: 'Ví dụ: 14 hoặc 001', icon: IdCard },
     { key: 'phone' as const, label: 'Số điện thoại', placeholder: '0901 234 567', icon: Phone },
     { key: 'facebookUrl' as const, label: 'Facebook', placeholder: 'https://facebook.com/ten-cua-ban', icon: LinkIcon },
   ]
@@ -289,7 +294,17 @@ export default function ProfileSetupPage() {
               {label}
               <div className="relative mt-2">
                 <Icon className="absolute left-4 top-3.5 h-5 w-5 text-muted-foreground" />
-                <input value={form[key]} onChange={(event) => setValue(key, event.target.value)} className="mobile-field !rounded-2xl !border-slate-200 !bg-slate-50/60 !pl-12 !font-semibold focus:!border-fuchsia-400 focus:!ring-fuchsia-200" placeholder={placeholder} disabled={saving || signingOut || (key === 'employeeCode' && Boolean(employee))} required />
+                <input
+                  value={form[key]}
+                  onChange={(event) => setValue(key, key === 'employeeCode' ? employeeCodeInput(event.target.value) : event.target.value)}
+                  className="mobile-field !rounded-2xl !border-slate-200 !bg-slate-50/60 !pl-12 !font-semibold focus:!border-fuchsia-400 focus:!ring-fuchsia-200"
+                  placeholder={placeholder}
+                  disabled={saving || signingOut || (key === 'employeeCode' && Boolean(employee))}
+                  inputMode={key === 'employeeCode' ? 'numeric' : undefined}
+                  pattern={key === 'employeeCode' ? '[0-9]{1,9}' : undefined}
+                  maxLength={key === 'employeeCode' ? EMPLOYEE_CODE_MAX_DIGITS : undefined}
+                  required
+                />
               </div>
             </label>
           ))}
