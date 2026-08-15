@@ -28,7 +28,7 @@ const workflowSections = [
     icon: CalendarDays,
     tone: 'bg-indigo-50 text-indigo-600 dark:bg-indigo-500/15 dark:text-indigo-300',
     items: [
-      ['Nhân viên đăng ký', 'Từ thứ Bảy, nhân viên nhập lịch cho tuần kế tiếp. Bảng đăng ký trong Điều hành dùng để kiểm tra người đã gửi và các ca cần lưu ý.'],
+      ['Nhân viên đăng ký', 'Từ thứ Sáu, nhân viên nhập lịch cho tuần kế tiếp. Thứ Sáu và thứ Bảy không bị trừ tiền; từ Chủ nhật áp dụng khoản trừ đăng ký trễ. Bảng đăng ký trong Điều hành dùng để kiểm tra người đã gửi và các ca cần lưu ý.'],
       ['Nhân sự tuần này', 'Mở mục này vào đầu tuần để xem người làm và người trực của tuần đang chạy; không dùng mục này để đoán danh sách tuần kế tiếp.'],
       ['Tự động duyệt và hủy lịch', 'Lịch đạt điều kiện có thể được hệ thống tự duyệt. Admin vẫn mở từng nhân viên để kiểm tra, từ chối hoặc hủy ca khi có trường hợp không phù hợp.'],
       ['Chủ nhật ngoại lệ', 'Nếu được bật cho phép gửi lại, nhân viên có thể sửa lịch trong Chủ nhật mà không bị trừ tiền. Qua 00:00 thứ Hai, lịch gửi trễ áp dụng luật bình thường.'],

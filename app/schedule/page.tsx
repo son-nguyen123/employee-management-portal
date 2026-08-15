@@ -41,7 +41,7 @@ import { scheduleShareText } from '@/lib/archive/retention'
 import { submitStaffRequest } from '@/lib/services/staffRequestService'
 import { subscribeToEmployeePenalties } from '@/lib/services/penaltyService'
 import type { Penalty } from '@/lib/models/types'
-import { isPastRegistrationDate } from '@/lib/schedule/registration-policy'
+import { isPastRegistrationDate, registrationTargetsNextWeek } from '@/lib/schedule/registration-policy'
 
 type Shift = 'Morning' | 'Afternoon' | 'Evening' | 'Custom'
 type DayItem = { key: string; name: string; shortName: string; date: Date }
@@ -220,7 +220,7 @@ export default function SchedulePage() {
     const weekday = new Date().getDay()
     setOvertimeMode(mode === 'overtime')
     setChangeMode(mode === 'change')
-    setCurrentWeekMode(mode === 'change' ? weekday !== 0 : week === 'current' && weekday >= 1 && weekday <= 5)
+    setCurrentWeekMode(mode === 'change' ? weekday !== 0 : week === 'current' && weekday >= 1 && weekday <= 4)
   }, [])
 
   useEffect(() => {
@@ -257,7 +257,7 @@ export default function SchedulePage() {
     const now = new Date()
     const currentDay = now.getDay()
     const regularRegistration = !overtimeMode && !changeMode
-    const useCurrentWeek = currentWeekMode || (regularRegistration && (reactivationWaiverWeekActive || (currentDay >= 1 && currentDay <= 5)))
+    const useCurrentWeek = currentWeekMode || (regularRegistration && (reactivationWaiverWeekActive || !registrationTargetsNextWeek(currentDay || 7)))
     const daysUntilNextMonday = useCurrentWeek
       ? -((currentDay || 7) - 1)
       : ((8 - currentDay) % 7) || 7
@@ -1015,7 +1015,7 @@ export default function SchedulePage() {
         {lateScheduleWarning && (
           <div className="mb-4 flex items-start gap-3 rounded-3xl border border-rose-200 bg-rose-50 p-4 text-rose-900 shadow-sm dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-100">
             <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-rose-600 dark:text-rose-300" />
-            <div className="text-sm leading-6"><p className="font-extrabold">Đăng ký lịch tuần này đã trễ hạn</p><p className="mt-1">Nếu bạn xác nhận, hệ thống sẽ ghi nhận khoản phạt đăng ký trễ <strong>{latePenaltyDisplayAmount.toLocaleString('vi-VN')}đ</strong>. Nếu đang nghỉ bệnh, bạn có thể liên hệ quản lý và chờ đến Thứ Bảy để nhập lịch tuần sau.</p></div>
+            <div className="text-sm leading-6"><p className="font-extrabold">Đăng ký lịch tuần này đã trễ hạn</p><p className="mt-1">Nếu bạn xác nhận, hệ thống sẽ ghi nhận khoản phạt đăng ký trễ <strong>{latePenaltyDisplayAmount.toLocaleString('vi-VN')}đ</strong>. Nếu đang nghỉ bệnh, bạn có thể liên hệ quản lý và chờ đến Thứ Sáu để nhập lịch tuần sau.</p></div>
           </div>
         )}
         {changeMode && submittedChangeSummary && (
@@ -1273,7 +1273,7 @@ export default function SchedulePage() {
             </div>
             <div className="mt-4 rounded-2xl border border-rose-200 bg-rose-50 p-4 text-sm leading-6 text-rose-900 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-100">
               <p className="font-black">Bạn sẽ bị trừ {latePenaltyDisplayAmount.toLocaleString('vi-VN')}đ.</p>
-              <p className="mt-1">Nếu tuần này bạn nghỉ bệnh hoặc có lý do chính đáng, hãy liên hệ quản lý và chờ đến Thứ Bảy để nhập lịch tuần sau. Nếu vẫn xác nhận, khoản trừ sẽ tiếp tục được ghi nhận.</p>
+              <p className="mt-1">Nếu tuần này bạn nghỉ bệnh hoặc có lý do chính đáng, hãy liên hệ quản lý và chờ đến Thứ Sáu để nhập lịch tuần sau. Nếu vẫn xác nhận, khoản trừ sẽ tiếp tục được ghi nhận.</p>
             </div>
             <div className="mt-5 grid grid-cols-2 gap-2">
               <button type="button" onClick={() => setLatePenaltyConfirmationOpen(false)} className="min-h-12 rounded-2xl border border-slate-200 font-bold dark:border-slate-700">Hủy xác nhận</button>

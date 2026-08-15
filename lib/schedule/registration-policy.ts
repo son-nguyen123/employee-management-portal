@@ -23,3 +23,8 @@ export function restrictPastRegistration(params: {
 export function isPastRegistrationDate(dateKey: string, todayKey: string, restricted: boolean): boolean {
   return restricted && dateKey < todayKey
 }
+
+/** ISO weekday: Monday = 1, ..., Sunday = 7. */
+export function registrationTargetsNextWeek(isoWeekday: number): boolean {
+  return isoWeekday >= 5
+}

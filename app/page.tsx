@@ -33,6 +33,7 @@ import { getManagementSchedulesByDateRange, getSchedulesByDateRange, hasEmployee
 import { getPreviewSchedules } from '@/lib/services/previewWorkflow'
 import { getUserFeatureSettings, getWeeklyScheduleTarget } from '@/lib/services/managementSettingsService'
 import { AppLoadingScreen } from '@/components/ui/app-loading-screen'
+import { registrationTargetsNextWeek } from '@/lib/schedule/registration-policy'
 import { useNotificationFeed } from '@/components/notifications/notification-feed-provider'
 import { profileImageUrl } from '@/lib/utils/profileImage'
 import { defaultUserFeatureSettings, type UserFeatureKey, type UserFeatureSettings } from '@/lib/models/userFeatureSettings'
@@ -219,7 +220,7 @@ export default function Page() {
          */
         const hasCurrentWeek = currentSchedules.some((item) => item.status !== 'Cancelled')
         const hasNextWeek = nextSchedules.some((item) => item.status !== 'Cancelled')
-        const shouldUseCurrentWeek = weekday >= 1 && weekday <= 5
+        const shouldUseCurrentWeek = !registrationTargetsNextWeek(weekday || 7)
         const targetHasSchedule = shouldUseCurrentWeek ? hasCurrentWeek : hasNextWeek
         setSchedulePrompt({
           visible: !targetHasSchedule,

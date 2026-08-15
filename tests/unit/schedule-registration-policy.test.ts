@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { isPastRegistrationDate, reactivationWaiverApplies, restrictPastRegistration } from '@/lib/schedule/registration-policy'
+import { isPastRegistrationDate, reactivationWaiverApplies, registrationTargetsNextWeek, restrictPastRegistration } from '@/lib/schedule/registration-policy'
 
 describe('schedule registration policy', () => {
   it('waives late registration only in the reactivation week', () => {
@@ -31,5 +31,13 @@ describe('schedule registration policy', () => {
   it('keeps first schedules and fixed schedules exempt from the past-date lock', () => {
     expect(restrictPastRegistration({ fixedModeActive: false, hasPreviousSchedule: false, currentWeekStart: '2026-08-10', scheduleWeekStart: '2026-08-10' })).toBe(false)
     expect(restrictPastRegistration({ fixedModeActive: true, hasPreviousSchedule: true, currentWeekStart: '2026-08-10', scheduleWeekStart: '2026-08-10' })).toBe(false)
+  })
+
+  it('opens next-week registration from Friday through Sunday', () => {
+    expect(registrationTargetsNextWeek(1)).toBe(false)
+    expect(registrationTargetsNextWeek(4)).toBe(false)
+    expect(registrationTargetsNextWeek(5)).toBe(true)
+    expect(registrationTargetsNextWeek(6)).toBe(true)
+    expect(registrationTargetsNextWeek(7)).toBe(true)
   })
 })

@@ -10,7 +10,7 @@ import { deleteAllProfileImages } from '@/lib/server/google-drive-archive'
 import { defaultUserFeatureSettings, userFeatureKeys, type UserFeatureKey, type UserFeatureSettings } from '@/lib/models/userFeatureSettings'
 import { vietnamWeekContaining } from '@/lib/archive/retention'
 import { decisionReviewIsEditable } from '@/lib/review/decision-policy'
-import { isPastRegistrationDate, reactivationWaiverApplies, restrictPastRegistration } from '@/lib/schedule/registration-policy'
+import { isPastRegistrationDate, reactivationWaiverApplies, registrationTargetsNextWeek, restrictPastRegistration } from '@/lib/schedule/registration-policy'
 import { salaryAdvanceWindowState } from '@/lib/salary/advance-policy'
 import { FACTORY_LABELS, isFactoryId, type FactoryId } from '@/lib/models/factory'
 
@@ -1197,13 +1197,14 @@ export async function submitSchedules(actor: RequestActor, raw: unknown) {
     currentWeekStart: currentWeekStartKey,
     scheduleWeekStart: scheduleWeekStartKey,
   })
-  const openWeekStartKey = vietnamWeekdayNumber(requestTime) >= 6
+  const targetsNextWeek = registrationTargetsNextWeek(vietnamWeekdayNumber(requestTime))
+  const openWeekStartKey = targetsNextWeek
     ? vietnamWeekStartKey(requestTime, 1)
     : vietnamWeekStartKey(requestTime)
   if (!fixedModeActive && !reactivationWaiverActive && scheduleWeekStartKey !== openWeekStartKey) {
-    throw new ApiError(409, vietnamWeekdayNumber(requestTime) >= 6
-      ? 'Tuần đăng ký mới đã được mở từ Thứ Bảy. Hãy chọn tuần kế tiếp.'
-      : 'Từ Thứ Hai đến Thứ Sáu, bạn chỉ được nhập lịch tuần hiện tại. Lịch tuần sau sẽ mở vào Thứ Bảy.')
+    throw new ApiError(409, targetsNextWeek
+      ? 'Tuần đăng ký mới đã được mở từ Thứ Sáu. Hãy chọn tuần kế tiếp.'
+      : 'Từ Thứ Hai đến Thứ Năm, bạn chỉ được nhập lịch tuần hiện tại. Lịch tuần sau sẽ mở vào Thứ Sáu.')
   }
   if (schedules.some((schedule) => vietnamWeekStartKey(schedule.date) !== scheduleWeekStartKey)) {
     throw new ApiError(400, 'Các ca đăng ký phải thuộc cùng một tuần.')

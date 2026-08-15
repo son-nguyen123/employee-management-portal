@@ -16,6 +16,7 @@ import { Badge } from '@/components/ui/badge'
 import { OtherRequestWorkspace } from '@/components/admin/other-request-workspace'
 import { RequestIdentityAvatar } from '@/components/admin/request-identity-avatar'
 import { profileImageUrl } from '@/lib/utils/profileImage'
+import { registrationTargetsNextWeek } from '@/lib/schedule/registration-policy'
 
 type ScheduleRow = WorkSchedule & {
   id: string
@@ -63,8 +64,8 @@ function nextMondayKey() {
 }
 
 function activeRegistrationWeekKey(value = new Date()) {
-  const weekday = value.getDay()
-  return weekday === 0 || weekday === 6 ? nextMondayKey() : mondayKey(value)
+  const isoWeekday = value.getDay() || 7
+  return registrationTargetsNextWeek(isoWeekday) ? nextMondayKey() : mondayKey(value)
 }
 
 function scheduleActivityAt(schedule: ScheduleRow) {
