@@ -28,3 +28,7 @@ export function isPastRegistrationDate(dateKey: string, todayKey: string, restri
 export function registrationTargetsNextWeek(isoWeekday: number): boolean {
   return isoWeekday >= 5
 }
+
+export function isManagementScheduleRole(role: unknown): boolean {
+  return role === 'admin' || role === 'manager' || role === 'director'
+}

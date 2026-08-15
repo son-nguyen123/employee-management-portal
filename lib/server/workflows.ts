@@ -10,7 +10,7 @@ import { deleteAllProfileImages } from '@/lib/server/google-drive-archive'
 import { defaultUserFeatureSettings, userFeatureKeys, type UserFeatureKey, type UserFeatureSettings } from '@/lib/models/userFeatureSettings'
 import { vietnamWeekContaining } from '@/lib/archive/retention'
 import { decisionReviewIsEditable } from '@/lib/review/decision-policy'
-import { isPastRegistrationDate, reactivationWaiverApplies, registrationTargetsNextWeek, restrictPastRegistration } from '@/lib/schedule/registration-policy'
+import { isManagementScheduleRole, isPastRegistrationDate, reactivationWaiverApplies, registrationTargetsNextWeek, restrictPastRegistration } from '@/lib/schedule/registration-policy'
 import { salaryAdvanceWindowState } from '@/lib/salary/advance-policy'
 import { FACTORY_LABELS, isFactoryId, type FactoryId } from '@/lib/models/factory'
 
@@ -797,6 +797,12 @@ function scheduleEditDeadline(firstShift: Date, firstSubmittedAt: Date): Date {
   return new Date(submittedMidnight.getTime() + 24 * 60 * 60 * 1000)
 }
 
+function managementScheduleReset(firstShift: Date): Date {
+  const mondayKey = vietnamWeekStartKey(firstShift)
+  const monday = new Date(`${mondayKey}T00:00:00+07:00`)
+  return new Date(monday.getTime() + 4 * 24 * 60 * 60 * 1000)
+}
+
 function vietnamWeekStartKey(date: Date, weeksFromCurrent = 0): string {
   const dateKey = vietnamDateKey(date)
   const base = new Date(`${dateKey}T12:00:00+07:00`)
@@ -821,6 +827,7 @@ function parseScheduleMode(value: unknown): 'rotating' | 'fixed' | null {
 
 export async function setInitialScheduleMode(actor: RequestActor, raw: unknown) {
   requireStaff(actor)
+  if (actor.role !== 'employee') throw new ApiError(403, 'Tài khoản quản lý không sử dụng chế độ lịch cố định hoặc xoay ca.')
   const body = objectBody(raw)
   const mode = parseScheduleMode(body.mode)
   if (!mode) throw new ApiError(400, 'Chế độ lịch làm không hợp lệ.')
@@ -842,6 +849,7 @@ export async function setInitialScheduleMode(actor: RequestActor, raw: unknown) 
 
 export async function submitScheduleModeChangeRequest(actor: RequestActor, raw: unknown) {
   requireStaff(actor)
+  if (actor.role !== 'employee') throw new ApiError(403, 'Tài khoản quản lý không sử dụng chế độ lịch cố định hoặc xoay ca.')
   const body = objectBody(raw)
   const requestKey = requestId(body)
   const requestedMode = parseScheduleMode(body.mode)
@@ -1002,12 +1010,13 @@ export async function ensureFixedSchedule(actor: RequestActor, raw: unknown) {
   if (employeeId !== actor.uid && employeeFactoryId !== actor.factoryId) {
     throw new ApiError(403, 'Bạn chỉ được đồng bộ lịch của nhân viên thuộc xưởng mình.')
   }
-  if (employeeScheduleMode(employeeData) !== 'fixed') return { created: false, ids: [], needsSetup: false }
+  const managementSchedule = isManagementScheduleRole(employeeData.role)
+  if (!managementSchedule && employeeScheduleMode(employeeData) !== 'fixed') return { created: false, ids: [], needsSetup: false }
 
   const effectiveWeekStart = String(employeeData.scheduleModeEffectiveWeekStart || '')
-  if (effectiveWeekStart && targetWeekStart < effectiveWeekStart) return { created: false, ids: [], needsSetup: false }
+  if (!managementSchedule && effectiveWeekStart && targetWeekStart < effectiveWeekStart) return { created: false, ids: [], needsSetup: false }
   const needsSetupWeekStart = String(employeeData.fixedScheduleNeedsSetupWeekStart || '')
-  if (needsSetupWeekStart && targetWeekStart >= needsSetupWeekStart) return { created: false, ids: [], needsSetup: true }
+  if (!managementSchedule && needsSetupWeekStart && targetWeekStart >= needsSetupWeekStart) return { created: false, ids: [], needsSetup: true }
 
   const targetStart = new Date(`${targetWeekStart}T00:00:00+07:00`)
   const targetEnd = new Date(targetStart.getTime() + 7 * 24 * 60 * 60 * 1000)
@@ -1023,9 +1032,12 @@ export async function ensureFixedSchedule(actor: RequestActor, raw: unknown) {
   const allSchedules = await adminDb.collection('workSchedules').where('employeeId', '==', employeeId).get()
   const candidates = allSchedules.docs.filter((snapshot) => {
     const data = snapshot.data()
-    if (['Cancelled', 'Rejected', 'Draft'].includes(String(data.status))) return false
+    if (['Rejected', 'Draft'].includes(String(data.status))) return false
+    if (data.status === 'Cancelled') return data.fixedSchedule === true && data.preserveFixedTemplate === true
     if (data.fixedSchedule === true) return true
-    return !employeeData.scheduleModeEffectiveWeekStart && data.status === 'Approved'
+    return managementSchedule
+      ? data.status === 'Approved'
+      : !employeeData.scheduleModeEffectiveWeekStart && data.status === 'Approved'
   })
   if (!candidates.length) return { created: false, ids: [], needsSetup: false }
 
@@ -1076,7 +1088,7 @@ export async function ensureFixedSchedule(actor: RequestActor, raw: unknown) {
         reviewedBy: 'system:fixed-schedule',
         reviewedAt: serverNow,
         firstSubmittedAt: Timestamp.fromDate(now),
-        editDeadlineAt: Timestamp.fromDate(targetMonday),
+        editDeadlineAt: Timestamp.fromDate(managementSchedule ? managementScheduleReset(targetMonday) : targetMonday),
         createdAt: serverNow,
         updatedAt: serverNow,
         lockedAt: serverNow,
@@ -1122,6 +1134,7 @@ function leaveNoticeDeadline(firstShift: Date): Date {
 
 export async function submitSchedules(actor: RequestActor, raw: unknown) {
   requireStaff(actor)
+  const managementSchedule = isManagementScheduleRole(actor.role)
   const body = objectBody(raw)
   const id = requestId(body)
   if (!Array.isArray(body.schedules) || body.schedules.length < 1 || body.schedules.length > 21) {
@@ -1140,7 +1153,7 @@ export async function submitSchedules(actor: RequestActor, raw: unknown) {
     }
   })
   const actualShiftCount = schedules.filter((row) => !row.note.includes('[NO_SHIFTS]') && !row.note.includes('[DUTY_ONLY]')).length
-  const underMinimum = actualShiftCount < workflowPolicy.minimumWeeklyShifts
+  const underMinimum = !managementSchedule && actualShiftCount < workflowPolicy.minimumWeeklyShifts
   if (underMinimum && body.confirmUnderMinimum !== true) {
     throw new ApiError(409, `Bạn mới đăng ký ${actualShiftCount} ca, dưới mức tối thiểu ${workflowPolicy.minimumWeeklyShifts} ca/tuần. Vui lòng xác nhận trước khi gửi.`)
   }
@@ -1148,7 +1161,9 @@ export async function submitSchedules(actor: RequestActor, raw: unknown) {
   const firstDate = schedules.reduce((min, row) => row.date < min ? row.date : min, schedules[0].date)
   const requestTime = new Date()
   const isLate = requestTime.getTime() >= scheduleDeadline(firstDate).getTime()
-  const editDeadlineAt = scheduleEditDeadline(firstDate, requestTime)
+  const editDeadlineAt = managementSchedule
+    ? managementScheduleReset(firstDate)
+    : scheduleEditDeadline(firstDate, requestTime)
   const weekStart = mondayFor(firstDate)
   const scheduleWeekStartKey = vietnamWeekStartKey(firstDate)
   const weekEnd = new Date(weekStart)
@@ -1184,7 +1199,7 @@ export async function submitSchedules(actor: RequestActor, raw: unknown) {
   const employeeData = employeeSnapshot.data() as Record<string, unknown> | undefined
   const scheduleMode = employeeData ? employeeScheduleMode(employeeData) : 'rotating'
   const effectiveWeekStart = String(employeeData?.scheduleModeEffectiveWeekStart || '')
-  const fixedModeActive = scheduleMode === 'fixed' && (!effectiveWeekStart || scheduleWeekStartKey >= effectiveWeekStart)
+  const fixedModeActive = managementSchedule || (scheduleMode === 'fixed' && (!effectiveWeekStart || scheduleWeekStartKey >= effectiveWeekStart))
   // A "new employee" means an employee who has never submitted a schedule.
   // The durable profile marker remains reliable after old schedule rows move
   // to Drive; legacy rows are retained as a fallback during migration.
@@ -1201,7 +1216,7 @@ export async function submitSchedules(actor: RequestActor, raw: unknown) {
   const openWeekStartKey = targetsNextWeek
     ? vietnamWeekStartKey(requestTime, 1)
     : vietnamWeekStartKey(requestTime)
-  if (!fixedModeActive && !reactivationWaiverActive && scheduleWeekStartKey !== openWeekStartKey) {
+  if ((managementSchedule || !fixedModeActive) && !reactivationWaiverActive && scheduleWeekStartKey !== openWeekStartKey) {
     throw new ApiError(409, targetsNextWeek
       ? 'Tuần đăng ký mới đã được mở từ Thứ Sáu. Hãy chọn tuần kế tiếp.'
       : 'Từ Thứ Hai đến Thứ Năm, bạn chỉ được nhập lịch tuần hiện tại. Lịch tuần sau sẽ mở vào Thứ Sáu.')
@@ -1209,12 +1224,12 @@ export async function submitSchedules(actor: RequestActor, raw: unknown) {
   if (schedules.some((schedule) => vietnamWeekStartKey(schedule.date) !== scheduleWeekStartKey)) {
     throw new ApiError(400, 'Các ca đăng ký phải thuộc cùng một tuần.')
   }
-  const pastDateRestricted = restrictPastRegistration({ fixedModeActive, hasPreviousSchedule, currentWeekStart: currentWeekStartKey, scheduleWeekStart: scheduleWeekStartKey })
+  const pastDateRestricted = !managementSchedule && restrictPastRegistration({ fixedModeActive, hasPreviousSchedule, currentWeekStart: currentWeekStartKey, scheduleWeekStart: scheduleWeekStartKey })
   const todayKey = vietnamDateKey(requestTime)
   if (schedules.some((schedule) => isPastRegistrationDate(vietnamDateKey(schedule.date), todayKey, pastDateRestricted))) {
     throw new ApiError(409, 'Bạn chỉ được đăng ký lịch từ hôm nay đến Chủ Nhật. Các ngày trước hôm nay đã khóa.')
   }
-  const shouldPenalize = isLate && !hasCoveringLongLeave && !fixedModeActive && hasPreviousSchedule && !reactivationWaiverActive
+  const shouldPenalize = !managementSchedule && isLate && !hasCoveringLongLeave && !fixedModeActive && hasPreviousSchedule && !reactivationWaiverActive
   const alreadyHasWeek = existingSchedules.docs.some((snapshot) => {
     const data = snapshot.data()
     if (data.status === 'Cancelled') return false
@@ -1423,15 +1438,12 @@ export async function submitStaffRequest(actor: RequestActor, raw: unknown) {
       if (!requestedShifts.length && !removedShifts.length && !restoredShifts.length) {
         throw new ApiError(400, 'Vui lòng chọn ít nhất một ca cần đổi, hủy hoặc đăng ký thêm.')
       }
-      if (removedShifts.length && !requestedShifts.length && !restoredShifts.length) {
-        throw new ApiError(400, 'Khi xin hủy ca cũ, bạn phải chọn ít nhất một ca mới để thay thế.')
-      }
       if ([...requestedShifts, ...removedShifts, ...restoredShifts].some((item) =>
         vietnamDateKey(item.date) < vietnamDateKey(new Date())
       )) {
         throw new ApiError(400, 'Không thể đổi hoặc đăng ký thêm cho ngày đã qua.')
       }
-      shouldPenalizeSameDayChange = removedShifts.some((item) =>
+      shouldPenalizeSameDayChange = !isManagementScheduleRole(actor.role) && removedShifts.some((item) =>
         vietnamDateKey(item.date) === vietnamDateKey(new Date())
       )
     }
@@ -1441,7 +1453,7 @@ export async function submitStaffRequest(actor: RequestActor, raw: unknown) {
       throw new ApiError(400, 'Các ca làm thêm phải thuộc cùng một tuần.')
     }
     const weekEnd = new Date(weekStart.getTime() + 7 * 24 * 60 * 60 * 1000)
-    const [existing, existingStaffRequests] = await Promise.all([
+    const [existing, existingStaffRequests, employeeSnapshot] = await Promise.all([
       adminDb.collection('workSchedules')
         .where('employeeId', '==', actor.uid)
         .where('date', '>=', Timestamp.fromDate(weekStart))
@@ -1451,7 +1463,15 @@ export async function submitStaffRequest(actor: RequestActor, raw: unknown) {
         .where('employeeId', '==', actor.uid)
         .where('status', '==', 'Pending')
         .get(),
+      adminDb.collection('employees').doc(actor.uid).get(),
     ])
+    const fixedScheduleOwner = employeeSnapshot.exists && (
+      isManagementScheduleRole(employeeSnapshot.get('role')) ||
+      employeeSnapshot.get('scheduleMode') === 'fixed'
+    )
+    if (type === 'scheduleChange' && removedShifts.length && !requestedShifts.length && !restoredShifts.length && !fixedScheduleOwner) {
+      throw new ApiError(400, 'Chỉ người có lịch cố định mới được xin nghỉ ca mà không chọn ca thay thế.')
+    }
     const removedIds = new Set(removedShifts.map((item) => item.scheduleId))
     if (removedShifts.some((removed) => !existing.docs.some((snapshot) => {
       const schedule = snapshot.data()
@@ -1593,6 +1613,7 @@ export async function submitStaffRequest(actor: RequestActor, raw: unknown) {
 
 export async function replaceSchedules(actor: RequestActor, raw: unknown) {
   requireStaff(actor)
+  const managementSchedule = isManagementScheduleRole(actor.role)
   const body = objectBody(raw)
   const id = requestId(body)
   if (!Array.isArray(body.scheduleIds) || body.scheduleIds.length < 1 || body.scheduleIds.length > 21) {
@@ -1656,7 +1677,7 @@ export async function replaceSchedules(actor: RequestActor, raw: unknown) {
     const retainedFixedSchedule = oldData.some((schedule) => schedule.fixedSchedule === true)
     const retainedFirstScheduleException = oldData.some((schedule) => schedule.firstScheduleException === true)
     const oldWeekStartKey = vietnamWeekStartKey((oldData[0].date as Timestamp).toDate())
-    const restrictPastDates = !retainedFixedSchedule && !retainedFirstScheduleException && oldWeekStartKey === vietnamWeekStartKey(requestTime)
+    const restrictPastDates = !managementSchedule && !retainedFixedSchedule && !retainedFirstScheduleException && oldWeekStartKey === vietnamWeekStartKey(requestTime)
     const existingPastShiftKeys = new Set(oldData.map((schedule) =>
       `${vietnamDateKey((schedule.date as Timestamp).toDate())}-${schedule.shift}`
     ))
@@ -1671,7 +1692,9 @@ export async function replaceSchedules(actor: RequestActor, raw: unknown) {
       .map((schedule) => firestoreDate(schedule.firstSubmittedAt) || firestoreDate(schedule.createdAt))
       .filter((value): value is Date => Boolean(value))
       .sort((left, right) => left.getTime() - right.getTime())[0] || requestTime
-    const editDeadlineAt = scheduleEditDeadline((oldData[0].date as Timestamp).toDate(), firstSubmittedAt)
+    const editDeadlineAt = managementSchedule
+      ? managementScheduleReset((oldData[0].date as Timestamp).toDate())
+      : scheduleEditDeadline((oldData[0].date as Timestamp).toDate(), firstSubmittedAt)
     resultingEditDeadline = editDeadlineAt
     const rejectedByManager = oldData.every((schedule) => schedule.status === 'Rejected')
     if (!rejectedByManager && requestTime.getTime() >= editDeadlineAt.getTime()) {
@@ -1682,12 +1705,16 @@ export async function replaceSchedules(actor: RequestActor, raw: unknown) {
     const hasSundayWaiver = oldData.some((schedule) => schedule.allowSundayResubmissionWithoutPenalty === true) && requestTime < waiverDeadline
     const reactivationWaiverActive = employeeSnapshot.get('reactivationScheduleWaiverWeekStart') === vietnamWeekStartKey(requestTime) &&
       oldWeekStartKey === vietnamWeekStartKey(requestTime)
-    const lateRejectedResubmission = rejectedByManager && requestTime >= scheduleDeadline((oldData[0].date as Timestamp).toDate()) && !hasSundayWaiver && !reactivationWaiverActive
-    const retainedPenaltyId = previousPenaltyId || (lateRejectedResubmission ? `schedule-resubmit-${actor.uid}-${id}` : null)
-    const retainedPenaltyAmount = Math.max(
-      lateRejectedResubmission ? workflowPolicy.scheduleLatePenalty : 0,
-      ...oldData.map((schedule) => Number(schedule.penaltyAmount || 0))
-    )
+    const lateRejectedResubmission = !managementSchedule && rejectedByManager && requestTime >= scheduleDeadline((oldData[0].date as Timestamp).toDate()) && !hasSundayWaiver && !reactivationWaiverActive
+    const retainedPenaltyId = managementSchedule
+      ? null
+      : previousPenaltyId || (lateRejectedResubmission ? `schedule-resubmit-${actor.uid}-${id}` : null)
+    const retainedPenaltyAmount = managementSchedule
+      ? 0
+      : Math.max(
+        lateRejectedResubmission ? workflowPolicy.scheduleLatePenalty : 0,
+        ...oldData.map((schedule) => Number(schedule.penaltyAmount || 0))
+      )
     resultingPenaltyAmount = retainedPenaltyAmount
 
     const now = FieldValue.serverTimestamp()
@@ -1695,6 +1722,15 @@ export async function replaceSchedules(actor: RequestActor, raw: unknown) {
     const batchKey = scheduleBatchKey(actor.uid, weekStart)
     const revisionCount = Math.max(0, ...oldData.map((schedule) => Number(schedule.revisionCount || 0))) + 1
     oldRefs.forEach((ref) => transaction.delete(ref))
+    if (managementSchedule && previousPenaltyId) {
+      transaction.set(adminDb.collection('penalties').doc(previousPenaltyId), {
+        status: 'Cancelled',
+        amount: 0,
+        cancellationReason: 'Tài khoản quản lý được miễn khoản trừ đăng ký lịch.',
+        cancelledAt: now,
+        updatedAt: now,
+      }, { merge: true })
+    }
     if (lateRejectedResubmission && !previousPenaltyId && retainedPenaltyId && workflowPolicy.scheduleLatePenalty > 0) {
       transaction.create(adminDb.collection('penalties').doc(retainedPenaltyId), {
         ...penaltyData({
@@ -1790,6 +1826,7 @@ export async function replaceSchedules(actor: RequestActor, raw: unknown) {
 
 export async function setScheduleBatchEditing(actor: RequestActor, raw: unknown) {
   requireStaff(actor)
+  const managementSchedule = isManagementScheduleRole(actor.role)
   const body = objectBody(raw)
   if (!Array.isArray(body.ids) || body.ids.length < 1 || body.ids.length > 21) {
     throw new ApiError(400, 'Bảng lịch cần từ 1 đến 21 ca.')
@@ -1821,7 +1858,9 @@ export async function setScheduleBatchEditing(actor: RequestActor, raw: unknown)
         .map((schedule) => firestoreDate(schedule.firstSubmittedAt) || firestoreDate(schedule.createdAt))
         .filter((value): value is Date => Boolean(value))
         .sort((left, right) => left.getTime() - right.getTime())[0] || new Date()
-      const editDeadlineAt = firestoreDate(schedules[0].editDeadlineAt) || scheduleEditDeadline((schedules[0].date as Timestamp).toDate(), firstSubmittedAt)
+      const editDeadlineAt = managementSchedule
+        ? managementScheduleReset((schedules[0].date as Timestamp).toDate())
+        : firestoreDate(schedules[0].editDeadlineAt) || scheduleEditDeadline((schedules[0].date as Timestamp).toDate(), firstSubmittedAt)
       if (Date.now() >= editDeadlineAt.getTime()) {
         throw new ApiError(409, 'Bảng lịch đã hết hạn điều chỉnh và hiện đã được khóa.')
       }
@@ -3158,6 +3197,7 @@ export async function reviewRequest(actor: RequestActor, raw: unknown) {
       })
     }
     if (resource === 'staff' && status === 'Approved' && ['overtime', 'scheduleChange'].includes(data.type)) {
+      const fixedScheduleOwner = isManagementScheduleRole(employeeSnapshot.get('role')) || employeeSnapshot.get('scheduleMode') === 'fixed'
       const removedItems = data.type === 'scheduleChange' && Array.isArray(data.removedShifts)
         ? data.removedShifts as Array<{ scheduleId: string; date: Timestamp; shift: Shift }>
         : []
@@ -3192,8 +3232,10 @@ export async function reviewRequest(actor: RequestActor, raw: unknown) {
       const currentSchedules = await transaction.get(
         adminDb.collection('workSchedules').where('employeeId', '==', employeeId)
       )
-      removedRefs.forEach((ref) => transaction.set(ref, {
+      removedRefs.forEach((ref, index) => transaction.set(ref, {
         status: 'Cancelled',
+        cancellationReason: 'Nghỉ theo yêu cầu đổi / thêm ca của tuần này.',
+        preserveFixedTemplate: fixedScheduleOwner && removedSnapshots[index].get('fixedSchedule') === true,
         lockedAt: null,
         reviewedBy: actor.uid,
         reviewedAt: now,
@@ -3201,6 +3243,7 @@ export async function reviewRequest(actor: RequestActor, raw: unknown) {
       }, { merge: true }))
       restoredRefs.forEach((ref) => transaction.set(ref, {
         status: 'Approved',
+        preserveFixedTemplate: FieldValue.delete(),
         cancellationReason: FieldValue.delete(),
         cancelledByLeaveRequestId: FieldValue.delete(),
         cancelledBy: FieldValue.delete(),

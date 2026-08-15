@@ -180,11 +180,11 @@ export default function ProfileSetupPage() {
           ? employee.scheduleModeInitialSelectionDeadlineAt
           : employee.scheduleModeInitialSelectionDeadlineAt?.toDate()
         const isInitialSelectionOpen = Boolean(initialDeadline && Date.now() < initialDeadline.getTime())
-        if (scheduleMode !== (employee.scheduleMode || 'rotating') && !isInitialSelectionOpen) {
+        if (employee.role === 'employee' && scheduleMode !== (employee.scheduleMode || 'rotating') && !isInitialSelectionOpen) {
           throw new Error('Chế độ đã khóa. Vào Cá nhân để gửi yêu cầu quản lý.')
         }
         await updateEmployee(authUser.uid, profileValues)
-        if (scheduleMode !== (employee.scheduleMode || 'rotating')) {
+        if (employee.role === 'employee' && scheduleMode !== (employee.scheduleMode || 'rotating')) {
           await setInitialEmployeeScheduleMode(scheduleMode)
         }
       } else {
@@ -320,7 +320,7 @@ export default function ProfileSetupPage() {
               </div>
             </label>
           </div>
-          <section className="rounded-3xl border border-fuchsia-100 bg-gradient-to-br from-fuchsia-50 to-violet-50/80 p-4 shadow-sm dark:border-fuchsia-500/20 dark:from-fuchsia-500/10 dark:to-violet-500/10">
+          {(!employee || employee.role === 'employee') && <section className="rounded-3xl border border-fuchsia-100 bg-gradient-to-br from-fuchsia-50 to-violet-50/80 p-4 shadow-sm dark:border-fuchsia-500/20 dark:from-fuchsia-500/10 dark:to-violet-500/10">
             <div className="flex items-start gap-3">
               <div className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-violet-600 text-white"><CalendarDays className="h-5 w-5" /></div>
               <div className="min-w-0 flex-1"><h2 className="font-extrabold">Cách xếp lịch làm</h2><p className="mt-1 text-xs leading-5 text-muted-foreground">Lịch cố định được tự động xác nhận và lặp lại theo tuần. Xoay ca sẽ đăng ký lại từng tuần.</p></div>
@@ -334,7 +334,7 @@ export default function ProfileSetupPage() {
             </div>
             {employee && !isInitialSelectionOpen && <p className="mt-3 rounded-2xl bg-amber-50 px-3 py-2 text-xs font-bold leading-5 text-amber-800 dark:bg-amber-500/10 dark:text-amber-200">Chế độ đã khóa. Vào mục Cá nhân để gửi yêu cầu quản lý; thay đổi chỉ áp dụng từ tuần kế tiếp.</p>}
             {employee && isInitialSelectionOpen && initialDeadline && <p className="mt-3 rounded-2xl bg-white/75 px-3 py-2 text-xs font-bold leading-5 text-violet-800 dark:bg-slate-900/60 dark:text-violet-200">Bạn có thể chọn chế độ ban đầu đến {initialDeadline.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })} ngày {initialDeadline.toLocaleDateString('vi-VN')}.</p>}
-          </section>
+          </section>}
           <button type="submit" disabled={saving} className="mobile-primary-button mt-2 !bg-gradient-to-r !from-violet-600 !via-fuchsia-600 !to-rose-500 shadow-xl shadow-fuchsia-600/20">
             {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
             {saving ? 'Đang lưu...' : 'Lưu và tiếp tục'}

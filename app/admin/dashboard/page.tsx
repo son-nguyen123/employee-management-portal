@@ -16,7 +16,7 @@ import { Badge } from '@/components/ui/badge'
 import { OtherRequestWorkspace } from '@/components/admin/other-request-workspace'
 import { RequestIdentityAvatar } from '@/components/admin/request-identity-avatar'
 import { profileImageUrl } from '@/lib/utils/profileImage'
-import { registrationTargetsNextWeek } from '@/lib/schedule/registration-policy'
+import { isManagementScheduleRole, registrationTargetsNextWeek } from '@/lib/schedule/registration-policy'
 
 type ScheduleRow = WorkSchedule & {
   id: string
@@ -210,10 +210,11 @@ export default function AdminDashboardPage() {
   const activeEmployeeIds = useMemo(() => new Set(activeEmployees.map((item) => item.uid)), [activeEmployees])
   const fixedForNextWeek = useMemo(() => activeEmployees.filter((employee) => {
     const targetWeek = nextMondayKey()
-    if (employee.scheduleMode !== 'fixed') return false
+    const managementSchedule = isManagementScheduleRole(employee.role)
+    if (!managementSchedule && employee.scheduleMode !== 'fixed') return false
     const effective = employee.scheduleModeEffectiveWeekStart || ''
     const needsSetup = employee.fixedScheduleNeedsSetupWeekStart || ''
-    return (!effective || effective <= targetWeek) && (!needsSetup || targetWeek < needsSetup)
+    return managementSchedule || ((!effective || effective <= targetWeek) && (!needsSetup || targetWeek < needsSetup))
   }), [activeEmployees])
   useEffect(() => {
     if (isPreviewMode || !authUser || !['admin', 'manager', 'director'].includes(role || '') || !fixedForNextWeek.length) return
@@ -430,7 +431,7 @@ export default function AdminDashboardPage() {
                     <h2 className="truncate text-sm font-extrabold">{employee.fullName}</h2>
                     <p className="mt-1 truncate text-xs text-muted-foreground">{employee.employeeCode} · {employee.phone || 'Chưa có SĐT'}</p>
                   </div>
-                  {employee.scheduleMode === 'fixed' && <span className="shrink-0 rounded-full bg-violet-50 px-2 py-1 text-[10px] font-black text-violet-700 dark:bg-violet-500/10 dark:text-violet-200">Cố định</span>}
+                  {!isManagementScheduleRole(employee.role) && employee.scheduleMode === 'fixed' && <span className="shrink-0 rounded-full bg-violet-50 px-2 py-1 text-[10px] font-black text-violet-700 dark:bg-violet-500/10 dark:text-violet-200">Cố định</span>}
                   <ChevronRight className="h-4 w-4 shrink-0 text-slate-400" />
                 </Link>
               ))}

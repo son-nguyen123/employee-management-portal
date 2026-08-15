@@ -33,7 +33,7 @@ import { getManagementSchedulesByDateRange, getSchedulesByDateRange, hasEmployee
 import { getPreviewSchedules } from '@/lib/services/previewWorkflow'
 import { getUserFeatureSettings, getWeeklyScheduleTarget } from '@/lib/services/managementSettingsService'
 import { AppLoadingScreen } from '@/components/ui/app-loading-screen'
-import { registrationTargetsNextWeek } from '@/lib/schedule/registration-policy'
+import { isManagementScheduleRole, registrationTargetsNextWeek } from '@/lib/schedule/registration-policy'
 import { useNotificationFeed } from '@/components/notifications/notification-feed-provider'
 import { profileImageUrl } from '@/lib/utils/profileImage'
 import { defaultUserFeatureSettings, type UserFeatureKey, type UserFeatureSettings } from '@/lib/models/userFeatureSettings'
@@ -140,10 +140,11 @@ export default function Page() {
           getWeeklyScheduleTarget(weekKey),
         ])
         const fixedForNextWeek = employees.filter((employee) => {
-          if (employee.status !== 'active' || employee.scheduleMode !== 'fixed') return false
+          const managementSchedule = isManagementScheduleRole(employee.role)
+          if (employee.status !== 'active' || (!managementSchedule && employee.scheduleMode !== 'fixed')) return false
           const effective = employee.scheduleModeEffectiveWeekStart || ''
           const needsSetup = employee.fixedScheduleNeedsSetupWeekStart || ''
-          return (!effective || effective <= weekKey) && (!needsSetup || weekKey < needsSetup)
+          return managementSchedule || ((!effective || effective <= weekKey) && (!needsSetup || weekKey < needsSetup))
         })
         const confirmed = new Set(schedules.filter((item) => item.status !== 'Cancelled' && inRegistrationWeek(item.date)).map((item) => item.employeeId))
         fixedForNextWeek.forEach((employee) => confirmed.add(employee.uid))

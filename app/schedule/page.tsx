@@ -41,7 +41,7 @@ import { scheduleShareText } from '@/lib/archive/retention'
 import { submitStaffRequest } from '@/lib/services/staffRequestService'
 import { subscribeToEmployeePenalties } from '@/lib/services/penaltyService'
 import type { Penalty } from '@/lib/models/types'
-import { isPastRegistrationDate, registrationTargetsNextWeek } from '@/lib/schedule/registration-policy'
+import { isManagementScheduleRole, isPastRegistrationDate, registrationTargetsNextWeek } from '@/lib/schedule/registration-policy'
 
 type Shift = 'Morning' | 'Afternoon' | 'Evening' | 'Custom'
 type DayItem = { key: string; name: string; shortName: string; date: Date }
@@ -242,7 +242,9 @@ export default function SchedulePage() {
       .catch(() => setHasExistingSchedules(false))
   }, [authUser, isPreviewMode])
 
-  const isNewEmployee = employee?.hasSubmittedSchedule !== true && hasExistingSchedules === false && !overtimeMode && !changeMode
+  const managementSchedule = isManagementScheduleRole(employee?.role)
+  const fixedScheduleOwner = managementSchedule || (employee?.role === 'employee' && employee.scheduleMode === 'fixed')
+  const isNewEmployee = !managementSchedule && employee?.hasSubmittedSchedule !== true && hasExistingSchedules === false && !overtimeMode && !changeMode
 
   const currentWeekKey = useMemo(() => {
     const now = new Date(referenceNow)
@@ -284,7 +286,7 @@ export default function SchedulePage() {
   }, [days])
 
   const reactivationWaiverActive = reactivationWaiverWeekActive && targetIsCurrentWeek
-  const restrictPastRegistration = targetIsCurrentWeek && !isNewEmployee && employee?.scheduleMode !== 'fixed'
+  const restrictPastRegistration = !managementSchedule && targetIsCurrentWeek && !isNewEmployee && employee?.scheduleMode !== 'fixed'
   const todayKey = localDateKey(new Date(referenceNow))
   const isPastRegistrationDay = useCallback(
     (dayKey: string) => isPastRegistrationDate(dayKey, todayKey, restrictPastRegistration),
@@ -292,9 +294,9 @@ export default function SchedulePage() {
   )
 
   useEffect(() => {
-    if (!authUser || isPreviewMode || employee?.scheduleMode !== 'fixed' || !days.length) return
+    if (!authUser || isPreviewMode || (!managementSchedule && employee?.scheduleMode !== 'fixed') || !days.length) return
     void ensureFixedSchedule(days[0].key).catch(() => undefined)
-  }, [authUser, days, employee?.scheduleMode, isPreviewMode])
+  }, [authUser, days, employee?.scheduleMode, isPreviewMode, managementSchedule])
 
   const loadDutyAvailability = useCallback(async () => {
     if (!authUser || !days.length) return
@@ -583,8 +585,8 @@ export default function SchedulePage() {
         setMessage(changeMode ? 'Vui lòng chọn ca cần hủy, đổi hoặc đăng ký thêm.' : 'Vui lòng chọn ít nhất một ca muốn làm thêm.')
         return
       }
-      if (changeMode && removedShifts.length && !requestedShifts.length && !restoredShifts.length) {
-        setMessage('Bạn đã xin hủy ca cũ nên phải chọn ít nhất một ca mới để thay thế.')
+      if (changeMode && removedShifts.length && !requestedShifts.length && !restoredShifts.length && !fixedScheduleOwner) {
+        setMessage('Chỉ người có lịch cố định mới được xin nghỉ ca mà không chọn ca thay thế.')
         return
       }
       setSubmitting(true)
@@ -669,9 +671,9 @@ export default function SchedulePage() {
           status: 'Approved' as const,
           note: row.note,
           weeklyShiftCount: selectedCount,
-          underMinimumWarning: selectedCount < 6,
+          underMinimumWarning: !managementSchedule && selectedCount < 6,
           autoApproved: true,
-          fixedSchedule: employee?.scheduleMode === 'fixed',
+          fixedSchedule: managementSchedule || employee?.scheduleMode === 'fixed',
           reviewedAt: new Date().toISOString(),
         }))
         addPreviewSchedules(previewRows)
@@ -701,7 +703,9 @@ export default function SchedulePage() {
       setEditing(false)
       setEditingOriginStatus(null)
       setCelebrating(true)
-      setMessage(penaltyAmount > 0
+      setMessage(managementSchedule
+        ? `Đã xác nhận lịch ${selectedCount} ca. Nếu không thay đổi, lịch này sẽ tự hiển thị lại cho tuần kế tiếp.`
+        : penaltyAmount > 0
         ? `Đã xác nhận lịch ${selectedCount} ca. Khoản phạt đăng ký trễ ${penaltyAmount.toLocaleString('vi-VN')}đ đã được ghi nhận.`
         : selectedCount < 6
         ? `Đã xác nhận lịch ${selectedCount}/6 ca. Hệ thống đã duyệt và đánh dấu màu vàng để quản lý lưu ý.`
@@ -779,12 +783,12 @@ export default function SchedulePage() {
     total + selectedShifts.filter((shift) => Boolean(returnableLeaveShifts[`${dayKey}-${shift}`])).length, 0)
   const removedCount = Object.entries(original).reduce((total, [dayKey, originalShifts]) =>
     total + originalShifts.filter((shift) => !selected[dayKey]?.includes(shift)).length, 0)
-  const missingDays = days.filter((day) => !isPastRegistrationDay(day.key) && !selected[day.key]?.length && dutyDay !== day.key)
+  const missingDays = managementSchedule ? [] : days.filter((day) => !isPastRegistrationDay(day.key) && !selected[day.key]?.length && dutyDay !== day.key)
   const compactMode = submittedIds.length > 0 && !editing && !overtimeMode && !changeMode
   const canEditStatus = ['Pending', 'Rejected', 'Approved'].includes(submittedStatus || '')
   const editWindowOpen = !submittedEditDeadline || clockNow < submittedEditDeadline.getTime()
   const canEdit = canEditStatus && editWindowOpen
-  const lateScheduleWarning = !overtimeMode && !changeMode && !editing && !submittedIds.length && targetIsCurrentWeek && !isNewEmployee && !reactivationWaiverActive && employee?.scheduleMode !== 'fixed'
+  const lateScheduleWarning = !managementSchedule && !overtimeMode && !changeMode && !editing && !submittedIds.length && targetIsCurrentWeek && !isNewEmployee && !reactivationWaiverActive && employee?.scheduleMode !== 'fixed'
   const scheduleWeekEnd = new Date(days[days.length - 1]?.date || days[0]?.date || new Date())
   scheduleWeekEnd.setHours(23, 59, 59, 999)
   const fallbackSchedulePenalty = employeePenalties.find((item) => {
@@ -792,7 +796,7 @@ export default function SchedulePage() {
     const penaltyDate = item.penaltyDate instanceof Date ? item.penaltyDate : item.penaltyDate.toDate()
     return penaltyDate >= (days[0]?.date || new Date(0)) && penaltyDate <= scheduleWeekEnd
   })
-  const effectivePenaltyAmount = submittedPenaltyAmount || Number(fallbackSchedulePenalty?.amount || 0)
+  const effectivePenaltyAmount = managementSchedule ? 0 : submittedPenaltyAmount || Number(fallbackSchedulePenalty?.amount || 0)
   const schedulePenaltyActive = effectivePenaltyAmount > 0
   const latePenaltyDisplayAmount = Number(process.env.NEXT_PUBLIC_PENALTY_LATE_SCHEDULE_AMOUNT || 1000)
 
@@ -1045,7 +1049,7 @@ export default function SchedulePage() {
               <div className="flex items-center gap-2"><span className="h-3 w-3 shrink-0 rounded-full bg-rose-600" /> Màu đỏ là ca đã duyệt{changeMode ? '; chạm lại để xin hủy.' : ', không thể thay đổi.'}</div>
               {changeMode && <div className="mt-2 flex items-center gap-2"><span className="h-3 w-3 shrink-0 rounded-full bg-emerald-600" /> Ca đỏ nhạt là ca đã nghỉ; chạm để xin đi làm lại.</div>}
               <div className="mt-2 flex items-center gap-2"><span className="h-3 w-3 shrink-0 rounded-full bg-sky-600" /> Màu xanh là ca mới / ca thêm.</div>
-              {changeMode && <p className="mt-3 rounded-xl bg-amber-50 p-2 font-semibold text-amber-800">Hủy ca của hôm nay bị phạt 1.000đ. Đổi từ ngày mai hoặc chỉ đăng ký thêm ca thì không bị phạt.</p>}
+              {changeMode && <p className="mt-3 rounded-xl bg-amber-50 p-2 font-semibold text-amber-800">{managementSchedule ? 'Tài khoản quản lý không bị trừ tiền khi điều chỉnh lịch.' : fixedScheduleOwner ? 'Có thể chọn bỏ ca cố định để nghỉ trong tuần này hoặc thêm ca khác. Hủy ca hôm nay bị phạt 1.000đ.' : 'Hủy ca của hôm nay bị phạt 1.000đ. Đổi từ ngày mai hoặc chỉ đăng ký thêm ca thì không bị phạt.'}</p>}
             </div>
           </details>
         )}
@@ -1255,7 +1259,7 @@ export default function SchedulePage() {
             <button type="button" onClick={overtimeMode || changeMode ? () => { setSelected(cloneSelection(original)); setWeekNote('') } : editing ? () => void cancelEditing() : saveDraft} disabled={submitting} className="flex min-h-12 items-center justify-center gap-2 rounded-2xl border border-slate-200 font-bold disabled:opacity-60 dark:border-slate-700">
               {overtimeMode || changeMode || editing ? <RotateCcw className="h-4 w-4" /> : <Save className="h-4 w-4" />} {overtimeMode || changeMode ? 'Chọn lại' : editing ? 'Hủy sửa' : 'Lưu nháp'}
             </button>
-            <button type="button" onClick={() => void submitSchedule()} disabled={submitting || ((overtimeMode || changeMode) && ((!overtimeCount && !removedCount && !restoredCount) || (changeMode && removedCount > 0 && !overtimeCount && !restoredCount) || !submittedIds.length))} className="mobile-primary-button disabled:opacity-50">
+            <button type="button" onClick={() => void submitSchedule()} disabled={submitting || ((overtimeMode || changeMode) && ((!overtimeCount && !removedCount && !restoredCount) || (changeMode && removedCount > 0 && !overtimeCount && !restoredCount && !fixedScheduleOwner) || !submittedIds.length))} className="mobile-primary-button disabled:opacity-50">
               {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : overtimeMode || changeMode ? <CalendarPlus className="h-4 w-4" /> : <Send className="h-4 w-4" />}
               {submitting ? 'Đang xác nhận...' : changeMode ? 'Gửi yêu cầu' : overtimeMode ? `Gửi ${overtimeCount} ca` : editing ? 'Xác nhận điều chỉnh' : 'Xác nhận lịch'}
             </button>

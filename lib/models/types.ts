@@ -84,6 +84,7 @@ export interface WorkSchedule {
   underMinimumWarning?: boolean
   autoApproved?: boolean
   fixedSchedule?: boolean
+  preserveFixedTemplate?: boolean
   firstScheduleException?: boolean
   pastDateRestricted?: boolean
   createdAt: Timestamp | Date
