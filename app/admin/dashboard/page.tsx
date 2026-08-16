@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
 import Image from 'next/image'
-import { ArrowLeft, CalendarCheck, Check, ChevronRight, ExternalLink, Loader2, MessageSquareText, Phone, RotateCcw, UsersRound, X } from 'lucide-react'
+import { AlertTriangle, ArrowLeft, CalendarCheck, Check, ChevronRight, ExternalLink, Loader2, MessageSquareText, Phone, RotateCcw, UsersRound, X } from 'lucide-react'
 import { useAuth, useUserRole } from '@/lib/hooks/useAuth'
 import { employeeFactoryId, FACTORY_LABELS } from '@/lib/models/factory'
 import { setEmployeeAccountStatus, subscribeToAllEmployees } from '@/lib/services/employeeService'
@@ -17,6 +17,7 @@ import { OtherRequestWorkspace } from '@/components/admin/other-request-workspac
 import { RequestIdentityAvatar } from '@/components/admin/request-identity-avatar'
 import { profileImageUrl } from '@/lib/utils/profileImage'
 import { isManagementScheduleRole, registrationTargetsNextWeek } from '@/lib/schedule/registration-policy'
+import { getOperationalHealth, type OperationalHealthSnapshot } from '@/lib/services/operationalHealthService'
 
 type ScheduleRow = WorkSchedule & {
   id: string
@@ -37,6 +38,44 @@ type ScheduleBatch = {
 }
 
 type ProcessedScheduleBatch = ScheduleBatch & { status: 'Approved' | 'Rejected' }
+
+function OperationalAlertBanner({ health }: { health: OperationalHealthSnapshot | null }) {
+  const activeAlerts = health?.alerts
+    .filter((item) => item.status === 'active')
+    .sort((left, right) => Number(right.severity === 'critical') - Number(left.severity === 'critical')) || []
+  const alert = activeAlerts[0]
+  const fallbackService = health?.services.find((item) => item.severity === 'critical')
+    || health?.services.find((item) => item.severity === 'warning')
+  const severity = alert?.severity || fallbackService?.severity
+  if (severity !== 'critical' && severity !== 'warning') return null
+  const title = alert?.title || fallbackService?.title || 'Hệ thống cần chú ý'
+  const message = alert?.message || fallbackService?.message || 'Mở tình trạng hệ thống để xem chi tiết.'
+  const remainingCount = Math.max(0, activeAlerts.length - 1)
+  const critical = severity === 'critical'
+
+  return (
+    <Link
+      href="/admin/settings#system-health"
+      className={`mb-4 flex items-start gap-3 rounded-3xl border p-4 shadow-sm transition active:scale-[.99] ${critical
+        ? 'border-rose-300 bg-rose-50 text-rose-950 dark:border-rose-500/40 dark:bg-rose-500/10 dark:text-rose-100'
+        : 'border-amber-300 bg-amber-50 text-amber-950 dark:border-amber-500/40 dark:bg-amber-500/10 dark:text-amber-100'}`}
+    >
+      <div className={`grid h-11 w-11 shrink-0 place-items-center rounded-2xl text-white ${critical ? 'bg-rose-600' : 'bg-amber-500'}`}>
+        <AlertTriangle className="h-5 w-5" />
+      </div>
+      <div className="min-w-0 flex-1">
+        <div className="flex flex-wrap items-center gap-2">
+          <p className="font-black">{critical ? 'Cảnh báo hệ thống khẩn cấp' : 'Hệ thống cần chú ý'}</p>
+          {remainingCount > 0 && <span className="rounded-full bg-white/70 px-2 py-0.5 text-[10px] font-black">+{remainingCount} cảnh báo</span>}
+        </div>
+        <p className="mt-1 text-sm font-bold">{title}</p>
+        <p className="mt-1 line-clamp-2 text-xs leading-5 opacity-80">{message}</p>
+        <p className="mt-2 text-xs font-black underline underline-offset-2">Xem tình trạng hệ thống</p>
+      </div>
+      <ChevronRight className="mt-3 h-5 w-5 shrink-0 opacity-60" />
+    </Link>
+  )
+}
 
 function toDate(value: WorkSchedule['date']) {
   return value instanceof Date ? value : value.toDate()
@@ -107,6 +146,7 @@ export default function AdminDashboardPage() {
   const [selectedPendingBatch, setSelectedPendingBatch] = useState<ScheduleBatch | null>(null)
   const [newEmployeeApprovalBatch, setNewEmployeeApprovalBatch] = useState<ScheduleBatch | null>(null)
   const [processedReason, setProcessedReason] = useState('')
+  const [operationalHealth, setOperationalHealth] = useState<OperationalHealthSnapshot | null>(null)
   const [referenceNow] = useState(() => Date.now())
   const legacyAutoApprovalRef = useRef(new Set<string>())
   const fixedSyncRef = useRef(new Set<string>())
@@ -205,6 +245,22 @@ export default function AdminDashboardPage() {
     })
     return () => cleanup?.()
   }, [authUser, currentEmployee, isPreviewMode, role])
+
+  useEffect(() => {
+    if (!authUser || isPreviewMode || !['admin', 'manager', 'director'].includes(role || '')) return
+    let active = true
+    const refresh = () => {
+      void getOperationalHealth()
+        .then((snapshot) => { if (active) setOperationalHealth(snapshot) })
+        .catch(() => undefined)
+    }
+    refresh()
+    const interval = window.setInterval(refresh, 5 * 60 * 1000)
+    return () => {
+      active = false
+      window.clearInterval(interval)
+    }
+  }, [authUser, isPreviewMode, role])
 
   const activeEmployees = useMemo(() => employees.filter((item) => item.status === 'active'), [employees])
   const activeEmployeeIds = useMemo(() => new Set(activeEmployees.map((item) => item.uid)), [activeEmployees])
@@ -401,6 +457,7 @@ export default function AdminDashboardPage() {
           backHref="/"
         />
         <PageContainer maxWidth="2xl">
+          <OperationalAlertBanner health={operationalHealth} />
           {message && <p className="mb-3 rounded-2xl bg-indigo-50 p-3 text-sm font-semibold text-indigo-900 dark:bg-indigo-500/10 dark:text-indigo-100">{message}</p>}
           {fixedForNextWeek.length > 0 && <section className="mb-5 rounded-3xl border border-violet-200 bg-violet-50 p-4 dark:border-violet-500/30 dark:bg-violet-500/10"><div className="flex items-center justify-between gap-3"><h2 className="font-black text-violet-900 dark:text-violet-100">Lịch cố định tuần sau</h2><span className="rounded-full bg-violet-600 px-2.5 py-1 text-xs font-black text-white">{fixedForNextWeek.length} người</span></div><p className="mt-2 text-sm leading-6 text-violet-800 dark:text-violet-200">{fixedForNextWeek.map((employee) => employee.fullName).join(' · ')}</p></section>}
           {['admin', 'director'].includes(role || '') && pendingEmployees.length > 0 && (
@@ -458,6 +515,7 @@ export default function AdminDashboardPage() {
     <main className="min-h-screen pb-8">
       <Header title="Điều hành" subtitle="Theo dõi lịch tự động duyệt và nhân viên" backHref="/" />
       <PageContainer maxWidth="2xl">
+        <OperationalAlertBanner health={operationalHealth} />
         <section className="grid grid-cols-3 gap-2">
           {[
             { label: 'Đang hoạt động', value: activeEmployees.length, icon: UsersRound, color: 'bg-indigo-600' },

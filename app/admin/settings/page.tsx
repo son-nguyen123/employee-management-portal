@@ -181,7 +181,7 @@ export default function AdminSettingsPage() {
       <Header title="Cài đặt" subtitle="Email biên nhận và tính minh bạch dữ liệu" />
       <PageContainer>
         {message && <p className="mb-4 rounded-2xl bg-indigo-50 p-3 text-sm font-semibold text-indigo-800">{message}</p>}
-        <section className={`mb-4 overflow-hidden rounded-3xl border ${healthTone[displayedHealth?.overall || 'unknown'].box}`}>
+        <section id="system-health" className={`mb-4 scroll-mt-24 overflow-hidden rounded-3xl border ${healthTone[displayedHealth?.overall || 'unknown'].box}`}>
           <div className="flex items-start gap-3 p-4">
             <div className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-white/70 shadow-sm dark:bg-slate-900/60">
               {displayedHealth?.overall === 'critical' ? <AlertTriangle className="h-5 w-5" /> : <Activity className="h-5 w-5" />}
