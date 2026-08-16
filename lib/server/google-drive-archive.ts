@@ -29,6 +29,16 @@ export interface WeeklyArchiveFile {
   archiveKind: 'weekly' | 'monthly'
 }
 
+export interface DriveStorageStatus {
+  configured: boolean
+  accountEmail: string
+  limitBytes: number | null
+  usageBytes: number
+  usageInDriveBytes: number
+  usageInTrashBytes: number
+  usagePercent: number | null
+}
+
 function requiredEnv(name: string): string {
   const value = process.env[name]?.trim()
   if (!value) throw new Error(`Missing server environment variable ${name}.`)
@@ -76,6 +86,28 @@ async function driveRequest<T>(
   }
 
   return response.json() as Promise<T>
+}
+
+export async function getDriveStorageStatus(): Promise<DriveStorageStatus> {
+  const accessToken = await googleAccessToken()
+  const result = await driveRequest<{
+    user?: { emailAddress?: string }
+    storageQuota?: { limit?: string; usage?: string; usageInDrive?: string; usageInDriveTrash?: string }
+  }>(accessToken, '/about?fields=user(emailAddress),storageQuota(limit,usage,usageInDrive,usageInDriveTrash)')
+  const limitBytes = result.storageQuota?.limit ? Number(result.storageQuota.limit) : null
+  const usageBytes = Number(result.storageQuota?.usage || 0)
+  const validLimitBytes = Number.isFinite(limitBytes) && Number(limitBytes) > 0 ? Number(limitBytes) : null
+  return {
+    configured: true,
+    accountEmail: String(result.user?.emailAddress || ''),
+    limitBytes: validLimitBytes,
+    usageBytes: Number.isFinite(usageBytes) ? usageBytes : 0,
+    usageInDriveBytes: Number(result.storageQuota?.usageInDrive || 0),
+    usageInTrashBytes: Number(result.storageQuota?.usageInDriveTrash || 0),
+    usagePercent: validLimitBytes
+      ? Math.round((usageBytes / validLimitBytes) * 10_000) / 100
+      : null,
+  }
 }
 
 function escapeDriveQuery(value: string): string {

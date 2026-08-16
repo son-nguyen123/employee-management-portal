@@ -15,6 +15,8 @@ const READ_ONLY_ACTIONS = new Set([
   'getAccountRegistrationWindow',
   'getUserFeatureSettings',
   'getSalaryAdvancePolicy',
+  'getOperationalHealth',
+  'runOperationalHealthNow',
 ])
 
 const EMAIL_RECEIPT_ACTIONS = new Set([

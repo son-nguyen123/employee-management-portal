@@ -77,6 +77,25 @@ async function sendGmail(params: { to: string; subject: string; text: string }):
   return result.id
 }
 
+export function operationalEmailConfigured(): boolean {
+  return Boolean(
+    env('GMAIL_CLIENT_ID') &&
+    env('GMAIL_CLIENT_SECRET') &&
+    env('GMAIL_REFRESH_TOKEN') &&
+    env('GMAIL_FROM_EMAIL') &&
+    (env('OPERATIONS_ALERT_EMAIL') || env('GMAIL_FROM_EMAIL'))
+  )
+}
+
+export async function sendOperationalEmail(params: { subject: string; text: string }): Promise<string | null> {
+  if (!operationalEmailConfigured()) return null
+  return sendGmail({
+    to: env('OPERATIONS_ALERT_EMAIL') || env('GMAIL_FROM_EMAIL'),
+    subject: params.subject,
+    text: params.text,
+  })
+}
+
 export async function dispatchQueuedAuditEmails(limit = 3): Promise<void> {
   if (!auditEmailConfigured()) return
   const setting = await adminDb.collection('managementSettings').doc('auditReceipts').get()

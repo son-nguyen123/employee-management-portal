@@ -65,3 +65,15 @@ function lazyService<T extends object>(factory: () => T): T {
 export const adminAuth = lazyService<Auth>(() => getAuth(getAdminApp()))
 export const adminDb = lazyService<Firestore>(() => getFirestore(getAdminApp()))
 export const adminMessaging = lazyService<Messaging>(() => getMessaging(getAdminApp()))
+
+export function firebaseAdminProjectId(): string {
+  return requiredEnv('FIREBASE_ADMIN_PROJECT_ID')
+}
+
+export async function firebaseAdminAccessToken(): Promise<string> {
+  const credential = getAdminApp().options.credential
+  if (!credential) throw new Error('Firebase Admin credential is unavailable.')
+  const token = await credential.getAccessToken()
+  if (!token.access_token) throw new Error('Firebase Admin access token is unavailable.')
+  return token.access_token
+}

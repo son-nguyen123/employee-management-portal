@@ -76,6 +76,8 @@ Sao chép `.env.local.example` thành `.env.local`, sau đó điền các nhóm 
 - `AUDIT_TRAIL_ENABLED`: công tắc nhật ký kiểm toán.
 - `AUDIT_EMAIL_ENABLED`: công tắc khẩn cấp cho email.
 - `CRON_SECRET`: bảo vệ endpoint cron lưu trữ.
+- `OPERATIONS_ALERT_EMAIL`: địa chỉ nhận cảnh báo vận hành; nếu để trống sẽ dùng `GMAIL_FROM_EMAIL`.
+- `FIRESTORE_*_ALERT_LIMIT`: các ngưỡng cảnh báo lượt đọc, ghi, xóa và dung lượng Firestore trong 24 giờ.
 
 Không commit `.env.local`, private key, refresh token hoặc client secret vào Git.
 
@@ -101,7 +103,11 @@ Sau đó có thể triển khai bằng Vercel CLI:
 npx vercel --prod
 ```
 
-Cron trong `vercel.json` gọi endpoint lưu trữ hằng tuần vào Chủ Nhật. Các biến môi trường production phải được cấu hình trên Vercel trước khi chạy.
+Cron trong `vercel.json` gọi các endpoint tạo lịch cố định, lưu trữ và kiểm tra tình trạng hệ thống. Kiểm tra hệ thống chạy mỗi ngày lúc 07:30 theo giờ Việt Nam. Các biến môi trường production phải được cấu hình trên Vercel trước khi chạy.
+
+Trang **Cài đặt → Tình trạng hệ thống** cho quản lý biết Firestore có sắp chạm giới hạn hay không, Google Drive có đầy hoặc mất kết nối hay không, và các tác vụ tự động/lưu trữ có bị lỗi hay không. Cảnh báo được chống gửi lặp trong 12 giờ, gửi trong ứng dụng và gửi email dự phòng.
+
+Để đọc số liệu Firestore, service account production cần quyền **Monitoring Viewer** và project phải bật **Cloud Monitoring API**. Nếu thiếu, hệ thống sẽ hiện cảnh báo cấu hình thay vì báo trạng thái an toàn sai.
 
 ## Bảo mật
 

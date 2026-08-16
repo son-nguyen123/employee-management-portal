@@ -42,6 +42,8 @@ type WorkflowAction =
   | 'getSalaryAdvancePolicy'
   | 'updateSalaryAdvancePolicy'
   | 'respondPenaltyConsent'
+  | 'getOperationalHealth'
+  | 'runOperationalHealthNow'
 
 export async function callWorkflowApi<T>(
   action: WorkflowAction,

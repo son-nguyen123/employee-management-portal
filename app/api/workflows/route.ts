@@ -46,6 +46,7 @@ import {
 import { recordCompletedWorkflowAudit } from '@/lib/server/audit-trail'
 import { dispatchQueuedAuditEmails } from '@/lib/server/audit-email'
 import { invalidateMonthDataCache } from '@/lib/server/month-data-cache'
+import { getOperationalHealth, reportOperationalFailure, runOperationalHealthNow } from '@/lib/server/operational-health'
 
 export const runtime = 'nodejs'
 export const maxDuration = 30
@@ -92,9 +93,11 @@ const handlers = {
   getSalaryAdvancePolicy,
   updateSalaryAdvancePolicy,
   respondPenaltyConsent,
+  getOperationalHealth,
+  runOperationalHealthNow,
 } as const
 
-const diagnosticActions = new Set(['getPushDiagnostics', 'sendTestPush'])
+const diagnosticActions = new Set(['getPushDiagnostics', 'sendTestPush', 'getOperationalHealth', 'runOperationalHealthNow'])
 
 const monthDataMutationActions = new Set([
   'submitSchedules',
@@ -205,7 +208,21 @@ export async function POST(request: Request) {
     return NextResponse.json({ ok: true, result })
   } catch (error) {
     const { status, message } = safeServerError(error)
-    if (!(error instanceof ApiError)) console.error('Workflow API error:', error)
+    if (!(error instanceof ApiError)) {
+      console.error('Workflow API error:', error)
+      const details = error instanceof Error ? error.message.toLowerCase() : ''
+      const incident = details.includes('resource_exhausted') || details.includes('quota') || details.includes('429')
+        ? { code: 'runtime-resource-exhausted', severity: 'critical' as const, title: 'Firestore đã chạm giới hạn khi nhân viên thao tác' }
+        : details.includes('permission_denied') || details.includes('permission denied')
+          ? { code: 'runtime-permission-denied', severity: 'warning' as const, title: 'Firestore từ chối quyền khi nhân viên thao tác' }
+          : details.includes('unavailable') || details.includes('deadline_exceeded')
+            ? { code: 'runtime-unavailable', severity: 'warning' as const, title: 'Firestore tạm thời không phản hồi' }
+            : null
+      if (incident) {
+        await reportOperationalFailure({ service: 'firestore', ...incident, message })
+          .catch((alertError) => console.error('Runtime operational alert failed:', alertError))
+      }
+    }
     return NextResponse.json({ ok: false, error: message }, { status })
   }
 }

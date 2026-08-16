@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { CalendarClock, Check, Clock3, Loader2, MailCheck, Power, ShieldCheck, UserPlus } from 'lucide-react'
+import { Activity, AlertTriangle, CalendarClock, Check, Clock3, Database, HardDrive, Loader2, MailCheck, Power, RefreshCw, ShieldCheck, UserPlus } from 'lucide-react'
 import { Header } from '@/components/layout/header'
 import { PageContainer } from '@/components/layout/page-container'
 import { useAuth, useUserRole } from '@/lib/hooks/useAuth'
@@ -17,6 +17,7 @@ import {
   type SalaryAdvancePolicy,
 } from '@/lib/services/managementSettingsService'
 import { defaultUserFeatureSettings, type UserFeatureKey, type UserFeatureSettings } from '@/lib/models/userFeatureSettings'
+import { getOperationalHealth, runOperationalHealthNow, type OperationalHealthSnapshot, type OperationalSeverity } from '@/lib/services/operationalHealthService'
 
 type ReceiptSettings = {
   emailEnabled: boolean
@@ -34,6 +35,20 @@ const userFeatureOptions: Array<{ key: UserFeatureKey; title: string; descriptio
   { key: 'shiftChanges', title: 'Đổi / thêm ca', description: 'Đổi ca cũ hoặc đăng ký làm thêm' },
   { key: 'companyRules', title: 'Điều khoản công ty', description: 'Quy định và hướng dẫn chung' },
 ]
+
+const healthTone: Record<OperationalSeverity, { label: string; box: string; dot: string }> = {
+  healthy: { label: 'Bình thường', box: 'border-emerald-200 bg-emerald-50 text-emerald-900 dark:border-emerald-500/30 dark:bg-emerald-500/10 dark:text-emerald-100', dot: 'bg-emerald-500' },
+  warning: { label: 'Cần chú ý', box: 'border-amber-200 bg-amber-50 text-amber-950 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-100', dot: 'bg-amber-500' },
+  critical: { label: 'Khẩn cấp', box: 'border-rose-200 bg-rose-50 text-rose-950 dark:border-rose-500/30 dark:bg-rose-500/10 dark:text-rose-100', dot: 'bg-rose-600' },
+  unknown: { label: 'Chưa kiểm tra', box: 'border-slate-200 bg-slate-50 text-slate-800 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-100', dot: 'bg-slate-400' },
+}
+
+const previewOperationalHealth: OperationalHealthSnapshot = {
+  overall: 'healthy', checkedAt: new Date().toISOString(), emailFallbackConfigured: true, alerts: [], services: [
+    { service: 'firestore', severity: 'healthy', title: 'Firebase / Firestore', message: 'Đang dưới ngưỡng cảnh báo.' },
+    { service: 'drive', severity: 'healthy', title: 'Google Drive', message: 'Kết nối và dung lượng bình thường.' },
+  ],
+}
 
 export default function AdminSettingsPage() {
   const { authUser, isPreviewMode } = useAuth()
@@ -53,6 +68,8 @@ export default function AdminSettingsPage() {
   const [userFeatureSaving, setUserFeatureSaving] = useState<UserFeatureKey | null>(null)
   const [salaryPolicy, setSalaryPolicy] = useState<SalaryAdvancePolicy>({ restrictionEnabled: false, canSubmit: true, vietnamDay: 1, allowedDays: [24, 25] })
   const [salaryPolicySaving, setSalaryPolicySaving] = useState(false)
+  const [health, setHealth] = useState<OperationalHealthSnapshot | null>(null)
+  const [healthLoading, setHealthLoading] = useState(false)
 
   useEffect(() => {
     if (!authUser) return
@@ -64,7 +81,22 @@ export default function AdminSettingsPage() {
       .then(([receipt, accountWindow, features, nextSalaryPolicy]) => { setSettings(receipt); setRegistration(accountWindow); setUserFeatures(features); setSalaryPolicy(nextSalaryPolicy) })
       .catch(() => setMessage('Chưa tải được đầy đủ cài đặt quản lý.'))
       .finally(() => setLoading(false))
+    void getOperationalHealth().then(setHealth).catch(() => setHealth(null))
   }, [authUser, isPreviewMode])
+
+  const checkHealthNow = async () => {
+    setHealthLoading(true)
+    setMessage('')
+    try {
+      const next = isPreviewMode ? previewOperationalHealth : await runOperationalHealthNow()
+      if (next) setHealth(next)
+      setMessage('Đã kiểm tra Firebase, Google Drive và các tác vụ tự động.')
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'Chưa thể kiểm tra tình trạng hệ thống.')
+    } finally {
+      setHealthLoading(false)
+    }
+  }
 
   const toggleEmail = async () => {
     const nextEnabled = !settings.emailEnabled
@@ -142,12 +174,51 @@ export default function AdminSettingsPage() {
   }
 
   if ((!role || !['admin', 'manager', 'director'].includes(role)) && !isPreviewMode) return null
+  const displayedHealth = isPreviewMode ? previewOperationalHealth : health
 
   return (
     <main className="min-h-screen pb-8">
       <Header title="Cài đặt" subtitle="Email biên nhận và tính minh bạch dữ liệu" />
       <PageContainer>
         {message && <p className="mb-4 rounded-2xl bg-indigo-50 p-3 text-sm font-semibold text-indigo-800">{message}</p>}
+        <section className={`mb-4 overflow-hidden rounded-3xl border ${healthTone[displayedHealth?.overall || 'unknown'].box}`}>
+          <div className="flex items-start gap-3 p-4">
+            <div className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-white/70 shadow-sm dark:bg-slate-900/60">
+              {displayedHealth?.overall === 'critical' ? <AlertTriangle className="h-5 w-5" /> : <Activity className="h-5 w-5" />}
+            </div>
+            <div className="min-w-0 flex-1">
+              <div className="flex flex-wrap items-center gap-2">
+                <h2 className="font-extrabold">Tình trạng hệ thống</h2>
+                <span className="inline-flex items-center gap-1.5 rounded-full bg-white/70 px-2 py-1 text-[10px] font-black uppercase tracking-wide dark:bg-slate-900/60">
+                  <span className={`h-2 w-2 rounded-full ${healthTone[displayedHealth?.overall || 'unknown'].dot}`} />
+                  {healthTone[displayedHealth?.overall || 'unknown'].label}
+                </span>
+              </div>
+              <p className="mt-1 text-xs leading-5 opacity-80">
+                {displayedHealth?.checkedAt ? `Lần cuối: ${new Date(displayedHealth.checkedAt).toLocaleString('vi-VN')}` : 'Chưa có lần kiểm tra tự động.'}
+              </p>
+            </div>
+            <button type="button" disabled={healthLoading} onClick={() => void checkHealthNow()} className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-slate-950 text-white disabled:opacity-50 dark:bg-white dark:text-slate-950" aria-label="Kiểm tra hệ thống ngay">
+              <RefreshCw className={`h-4 w-4 ${healthLoading ? 'animate-spin' : ''}`} />
+            </button>
+          </div>
+          {!!displayedHealth?.services.length && (
+            <div className="grid gap-2 border-t border-current/10 p-3 sm:grid-cols-2">
+              {displayedHealth.services.map((service) => {
+                const Icon = service.service === 'firestore' ? Database : service.service === 'drive' ? HardDrive : Clock3
+                return (
+                  <div key={service.service} className="flex gap-2.5 rounded-2xl bg-white/65 p-3 dark:bg-slate-950/35">
+                    <Icon className="mt-0.5 h-4 w-4 shrink-0" />
+                    <div><p className="text-xs font-extrabold">{service.title}</p><p className="mt-1 text-[11px] leading-4 opacity-75">{service.message}</p></div>
+                  </div>
+                )
+              })}
+            </div>
+          )}
+          <div className="border-t border-current/10 px-4 py-3 text-[11px] font-semibold opacity-80">
+            Email dự phòng: {displayedHealth?.emailFallbackConfigured ? 'đã cấu hình' : 'chưa cấu hình'} · Cảnh báo đang hoạt động: {displayedHealth?.alerts.filter((item) => item.status === 'active').length || 0}
+          </div>
+        </section>
         <section className="mobile-card p-4">
           <div className="flex items-center gap-3">
             <div className={`grid h-12 w-12 shrink-0 place-items-center rounded-2xl ${settings.emailEnabled ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}>

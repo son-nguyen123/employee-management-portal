@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { runFixedScheduleMaterialization } from '@/lib/server/fixed-schedule-cron'
+import { recordOperationalJobFailure, recordOperationalJobSuccess } from '@/lib/server/operational-health'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -16,9 +17,17 @@ export async function GET(request: Request) {
 
   try {
     const result = await runFixedScheduleMaterialization()
+    if (result.failures.length) {
+      await recordOperationalJobFailure('fixed-schedules', new Error(`${result.failures.length} nhân viên chưa tạo được lịch cố định.`))
+        .catch((alertError) => console.error('Operational alert failed:', alertError))
+    } else {
+      await recordOperationalJobSuccess('fixed-schedules', { targetWeekStart: result.targetWeekStart, createdSchedules: result.createdSchedules })
+        .catch((alertError) => console.error('Operational success record failed:', alertError))
+    }
     return NextResponse.json({ ok: result.failures.length === 0, result }, { status: result.failures.length ? 207 : 200 })
   } catch (error) {
     console.error('Fixed schedule materialization failed:', error)
+    await recordOperationalJobFailure('fixed-schedules', error).catch((alertError) => console.error('Operational alert failed:', alertError))
     return NextResponse.json({ ok: false, error: 'Không thể tự tạo lịch cố định tuần kế tiếp.' }, { status: 500 })
   }
 }
