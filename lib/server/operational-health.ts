@@ -341,6 +341,7 @@ export async function runOperationalHealthCheck(now = new Date()): Promise<Opera
     services.push(firestore.status)
     issues.push(...firestore.issues)
   } catch (error) {
+    console.error('Operational Firestore health check failed:', cleanError(error))
     const failed = failedService('firestore', 'Firebase / Firestore', error)
     services.push(failed.status)
     issues.push(failed.issue)
@@ -350,6 +351,7 @@ export async function runOperationalHealthCheck(now = new Date()): Promise<Opera
     services.push(drive.status)
     issues.push(...drive.issues)
   } catch (error) {
+    console.error('Operational Drive health check failed:', cleanError(error))
     const failed = failedService('drive', 'Google Drive', error)
     services.push(failed.status)
     issues.push(failed.issue)
@@ -359,6 +361,7 @@ export async function runOperationalHealthCheck(now = new Date()): Promise<Opera
     services.push(...jobs.statuses)
     issues.push(...jobs.issues)
   } catch (error) {
+    console.error('Operational job health check failed:', cleanError(error))
     const failed = failedService('cron', 'tác vụ tự động', error)
     services.push(failed.status)
     issues.push(failed.issue)
