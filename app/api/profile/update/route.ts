@@ -3,6 +3,7 @@ import { FieldValue } from 'firebase-admin/firestore'
 import { ApiError, authenticateRequest } from '@/lib/server/api-auth'
 import { adminAuth, adminDb } from '@/lib/server/firebase-admin'
 import { invalidateMonthDataCache } from '@/lib/server/month-data-cache'
+import { DEFAULT_PROFILE_IMAGE, isProfileImageUrl } from '@/lib/utils/profileImage'
 
 export const runtime = 'nodejs'
 
@@ -26,8 +27,9 @@ function textValue(value: unknown, field: string, max: number, required = true):
   return result
 }
 
-function urlValue(value: unknown, field: string): string {
+function urlValue(value: unknown, field: string, allowDefaultImage = false): string {
   const result = textValue(value, field, 500)
+  if (allowDefaultImage && result === DEFAULT_PROFILE_IMAGE) return result
   if (!/^https?:\/\//i.test(result)) throw new ApiError(400, `${field} phải là đường dẫn http hoặc https.`)
   return result
 }
@@ -57,8 +59,8 @@ export async function POST(request: Request) {
       ? textValue(body.phone, 'Số điện thoại', 30)
       : textValue(current.phone, 'Số điện thoại', 30)
     const photoURL = 'photoURL' in body
-      ? urlValue(body.photoURL, 'Ảnh đại diện')
-      : urlValue(current.photoURL, 'Ảnh đại diện')
+      ? urlValue(body.photoURL, 'Ảnh đại diện', true)
+      : isProfileImageUrl(current.photoURL) ? String(current.photoURL).trim() : DEFAULT_PROFILE_IMAGE
     const facebookUrl = 'facebookUrl' in body
       ? urlValue(body.facebookUrl, 'Facebook')
       : urlValue(current.facebookUrl, 'Facebook')

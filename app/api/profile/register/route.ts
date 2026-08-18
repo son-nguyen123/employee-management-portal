@@ -4,6 +4,7 @@ import { adminAuth, adminDb } from '@/lib/server/firebase-admin'
 import { isFactoryId } from '@/lib/models/factory'
 import { invalidateMonthDataCache } from '@/lib/server/month-data-cache'
 import { employeeCodeAssignedToAnother, isValidEmployeeCode, normalizeEmployeeCode } from '@/lib/models/employee-code'
+import { DEFAULT_PROFILE_IMAGE, isProfileImageUrl } from '@/lib/utils/profileImage'
 
 export const runtime = 'nodejs'
 
@@ -26,16 +27,18 @@ export async function POST(request: Request) {
     const codeKey = employeeCode
     const fullName = clean(body.fullName, 100)
     const phone = clean(body.phone, 30)
-    const photoURL = clean(body.photoURL, 500)
+    const photoURL = clean(body.photoURL, 500) || DEFAULT_PROFILE_IMAGE
     const facebookUrl = clean(body.facebookUrl, 500)
     const scheduleMode = body.scheduleMode === 'fixed' ? 'fixed' : 'rotating'
     const factoryId = isFactoryId(body.factoryId) ? body.factoryId : null
     if (!isValidEmployeeCode(employeeCode)) {
       return NextResponse.json({ error: 'Mã nhân viên chỉ được gồm từ 1 đến 9 chữ số.' }, { status: 400 })
     }
-    if (!factoryId || !fullName || !phone || !/^https?:\/\//i.test(photoURL) || !/^https?:\/\//i.test(facebookUrl)) {
-      return NextResponse.json({ error: 'Thông tin hồ sơ không hợp lệ.' }, { status: 400 })
-    }
+    if (!factoryId) return NextResponse.json({ error: 'Vui lòng chọn xưởng làm việc.' }, { status: 400 })
+    if (!fullName) return NextResponse.json({ error: 'Họ và tên không được để trống.' }, { status: 400 })
+    if (!phone) return NextResponse.json({ error: 'Số điện thoại không được để trống.' }, { status: 400 })
+    if (!isProfileImageUrl(photoURL)) return NextResponse.json({ error: 'Ảnh đại diện không hợp lệ.' }, { status: 400 })
+    if (!/^https?:\/\//i.test(facebookUrl)) return NextResponse.json({ error: 'Facebook phải là đường dẫn bắt đầu bằng http:// hoặc https://.' }, { status: 400 })
     const legacyEmployees = await adminDb.collection('employees').get()
     const codeAlreadyAssigned = employeeCodeAssignedToAnother(
       legacyEmployees.docs.map((item) => ({ uid: item.id, employeeCode: item.get('employeeCode') })),

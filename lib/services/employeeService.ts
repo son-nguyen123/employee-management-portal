@@ -101,7 +101,11 @@ export async function createEmployee(uid: string, employeeData: Omit<Employee, '
       : null
     const sanitized = {
       ...employeeData,
-      factoryId: isFactoryId(selectedFactory) ? selectedFactory : employeeData.factoryId,
+      // The setup form now carries the factory explicitly. Keep the session
+      // value only as a backwards-compatible fallback for older clients.
+      factoryId: isFactoryId(employeeData.factoryId)
+        ? employeeData.factoryId
+        : isFactoryId(selectedFactory) ? selectedFactory : undefined,
     }
     if (!(sanitized.bankName && sanitized.bankAccountName && sanitized.bankAccountNumber)) {
       delete sanitized.bankName

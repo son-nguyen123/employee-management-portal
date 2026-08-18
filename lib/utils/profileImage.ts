@@ -1,3 +1,11 @@
+export const DEFAULT_PROFILE_IMAGE = '/tricandy-logo.png'
+
+export function isProfileImageUrl(value: unknown): value is string {
+  if (typeof value !== 'string') return false
+  const url = value.trim()
+  return url === DEFAULT_PROFILE_IMAGE || /^https?:\/\//i.test(url)
+}
+
 export function profileImageUrl(value?: string | null): string {
   const url = value?.trim()
   if (!url) return ''

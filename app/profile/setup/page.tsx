@@ -7,9 +7,10 @@ import { useAuth } from '@/lib/hooks/useAuth'
 import { auth } from '@/lib/firebase'
 import { createEmployee, setInitialEmployeeScheduleMode, updateEmployee } from '@/lib/services/employeeService'
 import { updateUserProfile } from '@/lib/services/authService'
-import { profileImageUrl } from '@/lib/utils/profileImage'
+import { DEFAULT_PROFILE_IMAGE, isProfileImageUrl, profileImageUrl } from '@/lib/utils/profileImage'
 import type { EmployeeScheduleMode } from '@/lib/models/types'
 import { employeeCodeInput, EMPLOYEE_CODE_MAX_DIGITS, isValidEmployeeCode } from '@/lib/models/employee-code'
+import { FACTORY_IDS, FACTORY_LABELS, isFactoryId, REGISTRATION_FACTORY_STORAGE_KEY, type FactoryId } from '@/lib/models/factory'
 
 export default function ProfileSetupPage() {
   const router = useRouter()
@@ -18,8 +19,9 @@ export default function ProfileSetupPage() {
     fullName: '',
     employeeCode: '',
     phone: '',
-    photoURL: '',
+    photoURL: DEFAULT_PROFILE_IMAGE,
     facebookUrl: '',
+    factoryId: '' as FactoryId | '',
     bankName: '',
     bankAccountName: '',
     bankAccountNumber: '',
@@ -43,12 +45,16 @@ export default function ProfileSetupPage() {
   useEffect(() => {
     if (!isLoading && !authUser) router.replace('/auth/login')
     if (!authUser) return
+    const storedFactoryId = typeof window !== 'undefined'
+      ? window.sessionStorage.getItem(REGISTRATION_FACTORY_STORAGE_KEY)
+      : null
     setForm({
       fullName: employee?.fullName || authUser.displayName || '',
       employeeCode: employee?.employeeCode || '',
       phone: employee?.phone || '',
-      photoURL: employee?.photoURL || authUser.photoURL || '',
+      photoURL: employee?.photoURL || authUser.photoURL || DEFAULT_PROFILE_IMAGE,
       facebookUrl: employee?.facebookUrl || '',
+      factoryId: employee?.factoryId || (isFactoryId(storedFactoryId) ? storedFactoryId : ''),
       bankName: employee?.bankName || '',
       bankAccountName: employee?.bankAccountName || '',
       bankAccountNumber: employee?.bankAccountNumber || '',
@@ -145,16 +151,24 @@ export default function ProfileSetupPage() {
     const values = Object.fromEntries(
       Object.entries(form).map(([key, value]) => [key, value.trim()])
     ) as typeof form
-    if (['fullName', 'employeeCode', 'phone', 'photoURL', 'facebookUrl'].some((key) => !values[key as keyof typeof values])) {
+    if (['fullName', 'employeeCode', 'phone', 'facebookUrl'].some((key) => !values[key as keyof typeof values])) {
       setMessage('Vui lòng hoàn thiện đầy đủ thông tin cá nhân.')
+      return
+    }
+    if (!employee && !isFactoryId(values.factoryId)) {
+      setMessage('Vui lòng chọn xưởng làm việc.')
       return
     }
     if (!isValidEmployeeCode(values.employeeCode)) {
       setMessage('Mã nhân viên chỉ được gồm từ 1 đến 9 chữ số.')
       return
     }
-    if (!/^https?:\/\//i.test(values.photoURL) || !/^https?:\/\//i.test(values.facebookUrl)) {
-      setMessage('Link ảnh đại diện và Facebook phải bắt đầu bằng http:// hoặc https://.')
+    if (!isProfileImageUrl(values.photoURL)) {
+      setMessage('Ảnh đại diện không hợp lệ.')
+      return
+    }
+    if (!/^https?:\/\//i.test(values.facebookUrl)) {
+      setMessage('Link Facebook phải bắt đầu bằng http:// hoặc https://.')
       return
     }
     const hasAnyBankValue = Boolean(values.bankName || values.bankAccountName || values.bankAccountNumber)
@@ -194,7 +208,15 @@ export default function ProfileSetupPage() {
         }
       } else {
         await createEmployee(authUser.uid, {
-          ...values,
+          fullName: values.fullName,
+          employeeCode: values.employeeCode,
+          phone: values.phone,
+          photoURL: values.photoURL,
+          facebookUrl: values.facebookUrl,
+          factoryId: values.factoryId as FactoryId,
+          bankName: values.bankName,
+          bankAccountName: values.bankAccountName,
+          bankAccountNumber: values.bankAccountNumber,
           email: authUser.email || '',
           joinDate: new Date(),
           role: 'employee',
@@ -267,12 +289,30 @@ export default function ProfileSetupPage() {
 
         <form onSubmit={submit} className="space-y-4 p-5 sm:p-6">
           {message && <p className="rounded-2xl border border-rose-200 bg-rose-50 p-3 text-sm font-semibold text-rose-700">{message}</p>}
+          {!employee && (
+            <section className="rounded-3xl border border-indigo-100 bg-gradient-to-br from-indigo-50 to-sky-50/70 p-4 shadow-sm dark:border-indigo-500/20 dark:from-indigo-500/10 dark:to-sky-500/5">
+              <div className="flex items-start gap-3">
+                <div className="grid h-11 w-11 shrink-0 place-items-center rounded-2xl bg-indigo-600 text-white"><IdCard className="h-5 w-5" /></div>
+                <div className="min-w-0 flex-1"><h2 className="font-extrabold">Xưởng làm việc</h2><p className="mt-1 text-xs leading-5 text-muted-foreground">Chọn đúng xưởng để hồ sơ được gửi đến quản lý tương ứng.</p></div>
+              </div>
+              <select
+                value={form.factoryId}
+                onChange={(event) => setValue('factoryId', event.target.value)}
+                className="mobile-field mt-3 !rounded-2xl !border-indigo-100 !bg-white !font-semibold focus:!border-indigo-400 focus:!ring-indigo-200"
+                required
+                disabled={saving || signingOut}
+              >
+                <option value="">Chọn xưởng</option>
+                {FACTORY_IDS.map((factoryId) => <option key={factoryId} value={factoryId}>{FACTORY_LABELS[factoryId]}</option>)}
+              </select>
+            </section>
+          )}
           <div className="rounded-3xl border border-indigo-100/90 bg-gradient-to-br from-indigo-50 to-sky-50/70 p-4 shadow-sm dark:border-indigo-500/20 dark:from-indigo-500/10 dark:to-sky-500/5">
             <div className="flex items-center gap-3">
               <div className="grid h-12 w-12 shrink-0 place-items-center overflow-hidden rounded-2xl bg-white text-indigo-600 shadow-sm dark:bg-slate-900">
                 {form.photoURL ? <img src={profileImageUrl(form.photoURL)} alt="" className="h-full w-full object-cover" /> : <Camera className="h-5 w-5" />}
               </div>
-              <div className="min-w-0 flex-1"><h2 className="font-extrabold">Ảnh đại diện</h2><p className="mt-1 text-xs leading-5 text-muted-foreground">JPG, PNG hoặc WebP · tối đa 5 MB. Ảnh lưu trên Google Drive, Firebase chỉ giữ đường dẫn.</p></div>
+              <div className="min-w-0 flex-1"><h2 className="font-extrabold">Ảnh đại diện</h2><p className="mt-1 text-xs leading-5 text-muted-foreground">Không bắt buộc tải ảnh. Nếu bỏ qua, hệ thống dùng logo Trí Candy mặc định.</p></div>
             </div>
             <label className="mt-3 flex min-h-12 cursor-pointer items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-violet-600 via-fuchsia-600 to-rose-500 px-4 text-sm font-black text-white shadow-lg shadow-fuchsia-600/20 transition hover:brightness-105 active:scale-[0.98]">
               {uploadingImage ? <Loader2 className="h-4 w-4 animate-spin" /> : <ImageUp className="h-4 w-4" />}
