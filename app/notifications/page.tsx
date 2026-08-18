@@ -50,6 +50,7 @@ import { setEmployeeAccountStatus, subscribeToAllEmployees } from '@/lib/service
 import type { Employee } from '@/lib/models/types'
 import { getEmployeeReviewContext } from '@/lib/services/employeeReviewService'
 import { employeeFactoryId } from '@/lib/models/factory'
+import { isRequestOverdue, requestTimingLabel } from '@/lib/requests/request-timing'
 
 type ManagementView = 'schedule' | 'pending'
 
@@ -341,7 +342,13 @@ export default function NotificationsPage() {
   const [selectedDecision, setSelectedDecision] = useState<DecisionHistoryItem | null>(null)
   const [undoReason, setUndoReason] = useState('')
   const [approvalConfirmationItem, setApprovalConfirmationItem] = useState<ManagementPendingItem | null>(null)
+  const [now, setNow] = useState(() => new Date())
   const legacyAutoApprovalRef = useRef(new Set<string>())
+
+  useEffect(() => {
+    const interval = window.setInterval(() => setNow(new Date()), 60_000)
+    return () => window.clearInterval(interval)
+  }, [])
 
   const visibleItems = items.filter((item) => {
     const createdAt = item.createdAt instanceof Date ? item.createdAt : item.createdAt.toDate()
@@ -350,7 +357,8 @@ export default function NotificationsPage() {
   })
   const visiblePendingItems = pendingItems.filter((item) => {
     const window = recentNotificationWindow()
-    return item.createdAt >= window.start && item.createdAt < window.end && (item.type !== 'account' || role === 'admin')
+    const recent = item.createdAt >= window.start && item.createdAt < window.end
+    return (recent || isRequestOverdue(item, now)) && (item.type !== 'account' || role === 'admin')
   })
   const recentWindow = recentNotificationWindow()
   const visibleManagementHistory = [...decisions]
@@ -682,6 +690,8 @@ export default function NotificationsPage() {
   }
 
   const selectedPendingMeta = selectedPending ? managementMeta[selectedPending.type] : null
+  const selectedPendingOverdue = selectedPending ? isRequestOverdue(selectedPending, now) : false
+  const selectedPendingTimingLabel = selectedPending ? requestTimingLabel(selectedPending, now) : null
   const selectedReview = selectedPending ? reviewContexts[selectedPending.id] : undefined
   const selectedNotificationMeta = selectedNotification ? notificationMetaFor(selectedNotification) : null
 
@@ -717,7 +727,7 @@ export default function NotificationsPage() {
     <main className="min-h-screen">
       <Header
         title="Thông báo"
-        subtitle={isManagement ? 'Yêu cầu mới và kết quả xử lý theo tuần' : 'Cập nhật từ quản lý và hệ thống'}
+        subtitle={isManagement ? 'Yêu cầu mới, quá hạn và kết quả xử lý' : 'Cập nhật từ quản lý và hệ thống'}
       />
       <PageContainer>
         {isManagement ? (
@@ -752,6 +762,8 @@ export default function NotificationsPage() {
               const meta = managementMeta[item.type]
               const quick = quickReview(item)
               const quickTone = reviewTone[quick.level]
+              const overdue = isRequestOverdue(item, now)
+              const timingLabel = requestTimingLabel(item, now)
               const targetDates = item.type === 'schedule' || item.staffRequestType === 'scheduleChange' || item.staffRequestType === 'overtime'
                 ? [...(item.shifts || []), ...(item.removedShifts || []), ...(item.restoredShifts || [])].map((shift) => shift.date)
                 : []
@@ -762,8 +774,8 @@ export default function NotificationsPage() {
                     <div className="min-w-0 flex-1">
                       <div className="flex items-start justify-between gap-2">
                         <h2 className="font-extrabold">{item.title}</h2>
-                        <span className="shrink-0 rounded-full bg-amber-100 px-2 py-1 text-[10px] font-black uppercase tracking-wide text-amber-700">
-                          Cần xử lý
+                        <span className={`shrink-0 rounded-full px-2 py-1 text-[10px] font-black uppercase tracking-wide ${overdue ? 'bg-rose-100 text-rose-700' : 'bg-amber-100 text-amber-700'}`}>
+                          {overdue ? 'Quá hạn' : 'Cần xử lý'}
                         </span>
                       </div>
                       <p className="mt-1 font-bold text-slate-800 dark:text-slate-100">
@@ -772,6 +784,7 @@ export default function NotificationsPage() {
                       </p>
                       <p className="mt-1 text-sm text-muted-foreground">{item.detail}</p>
                       <SubmissionStamp date={item.createdAt} targetDates={targetDates} />
+                      {timingLabel && <p className="mt-1 text-xs font-bold text-rose-600">{timingLabel} · vẫn có thể xử lý</p>}
                     </div>
                   </div>
                   <div className={`mx-4 rounded-2xl border p-3 ${quickTone.box}`}>
@@ -787,7 +800,7 @@ export default function NotificationsPage() {
             })}
             {visiblePendingItems.length > 0 && visibleOtherHistory.length > 0 && <div className="flex items-center gap-3 py-2 text-[10px] font-black uppercase tracking-[0.16em] text-slate-400"><span className="h-px flex-1 bg-slate-200 dark:bg-slate-700" /><span>Đã xử lý</span><span className="h-px flex-1 bg-slate-200 dark:bg-slate-700" /></div>}
             {visibleOtherHistory.map(renderHistoryCard)}
-            {!visiblePendingItems.length && !visibleOtherHistory.length && <div className="mobile-card p-8 text-center"><CheckCheck className="mx-auto h-8 w-8 text-emerald-600" /><h2 className="mt-3 font-extrabold">Không có yêu cầu khác</h2><p className="mt-1 text-sm text-muted-foreground">Các yêu cầu mới hoặc đã xử lý trong 6 ngày gần nhất sẽ xuất hiện ở đây.</p></div>}
+            {!visiblePendingItems.length && !visibleOtherHistory.length && <div className="mobile-card p-8 text-center"><CheckCheck className="mx-auto h-8 w-8 text-emerald-600" /><h2 className="mt-3 font-extrabold">Không có yêu cầu khác</h2><p className="mt-1 text-sm text-muted-foreground">Yêu cầu mới trong 6 ngày gần nhất và yêu cầu quá hạn sẽ xuất hiện ở đây.</p></div>}
             </>}
             {managementView === 'schedule' && <>
             {visibleScheduleHistory.map(renderHistoryCard)}
@@ -866,11 +879,12 @@ export default function NotificationsPage() {
                   <div className="min-w-0 flex-1">
                     <div className="flex items-start justify-between gap-2">
                       <h2 className="text-xl font-black leading-tight">{selectedPending.title}</h2>
-                      <span className="shrink-0 rounded-full bg-white/20 px-2.5 py-1 text-[10px] font-black uppercase tracking-wide backdrop-blur">Cần xử lý</span>
+                      <span className="shrink-0 rounded-full bg-white/20 px-2.5 py-1 text-[10px] font-black uppercase tracking-wide backdrop-blur">{selectedPendingOverdue ? 'Quá hạn – vẫn xử lý được' : 'Cần xử lý'}</span>
                     </div>
                     <p className="mt-2 font-extrabold">{selectedPending.employeeName}{selectedPending.employeeCode ? ` · ${selectedPending.employeeCode}` : ''}</p>
                     <p className="mt-1 text-sm font-medium text-white/85">{selectedPending.detail}</p>
                     <p className="mt-2 text-xs font-semibold text-white/80">Gửi lúc {selectedPending.createdAt.toLocaleDateString('vi-VN')} · {selectedPending.createdAt.toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}</p>
+                    {selectedPendingTimingLabel && <p className="mt-1 text-xs font-bold text-white/85">{selectedPendingTimingLabel}</p>}
                   </div>
                 </div>
               </section>

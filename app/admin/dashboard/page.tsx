@@ -147,9 +147,16 @@ export default function AdminDashboardPage() {
   const [newEmployeeApprovalBatch, setNewEmployeeApprovalBatch] = useState<ScheduleBatch | null>(null)
   const [processedReason, setProcessedReason] = useState('')
   const [operationalHealth, setOperationalHealth] = useState<OperationalHealthSnapshot | null>(null)
-  const [referenceNow] = useState(() => Date.now())
+  const [referenceNow, setReferenceNow] = useState(() => Date.now())
   const legacyAutoApprovalRef = useRef(new Set<string>())
   const fixedSyncRef = useRef(new Set<string>())
+  const activeRegistrationWeek = activeRegistrationWeekKey(new Date(referenceNow))
+  const nextWeekKey = nextMondayKey()
+
+  useEffect(() => {
+    const interval = window.setInterval(() => setReferenceNow(Date.now()), 60_000)
+    return () => window.clearInterval(interval)
+  }, [])
 
   useEffect(() => {
     const timeout = window.setTimeout(() => {
@@ -244,7 +251,7 @@ export default function AdminDashboardPage() {
       cleanup = unsubscribe
     })
     return () => cleanup?.()
-  }, [authUser, currentEmployee, isPreviewMode, role])
+  }, [activeRegistrationWeek, authUser, currentEmployee, isPreviewMode, nextWeekKey, role])
 
   useEffect(() => {
     if (!authUser || isPreviewMode || !['admin', 'manager', 'director'].includes(role || '')) return
@@ -265,16 +272,16 @@ export default function AdminDashboardPage() {
   const activeEmployees = useMemo(() => employees.filter((item) => item.status === 'active'), [employees])
   const activeEmployeeIds = useMemo(() => new Set(activeEmployees.map((item) => item.uid)), [activeEmployees])
   const fixedForNextWeek = useMemo(() => activeEmployees.filter((employee) => {
-    const targetWeek = nextMondayKey()
+    const targetWeek = nextWeekKey
     const managementSchedule = isManagementScheduleRole(employee.role)
     if (!managementSchedule && employee.scheduleMode !== 'fixed') return false
     const effective = employee.scheduleModeEffectiveWeekStart || ''
     const needsSetup = employee.fixedScheduleNeedsSetupWeekStart || ''
     return managementSchedule || ((!effective || effective <= targetWeek) && (!needsSetup || targetWeek < needsSetup))
-  }), [activeEmployees])
+  }), [activeEmployees, nextWeekKey])
   useEffect(() => {
     if (isPreviewMode || !authUser || !['admin', 'manager', 'director'].includes(role || '') || !fixedForNextWeek.length) return
-    const targetWeek = nextMondayKey()
+    const targetWeek = nextWeekKey
     fixedForNextWeek.forEach((employee) => {
       const syncKey = `${employee.uid}-${targetWeek}`
       if (fixedSyncRef.current.has(syncKey)) return
@@ -283,7 +290,7 @@ export default function AdminDashboardPage() {
         fixedSyncRef.current.delete(syncKey)
       })
     })
-  }, [authUser, fixedForNextWeek, isPreviewMode, role])
+  }, [authUser, fixedForNextWeek, isPreviewMode, nextWeekKey, role])
   const pendingEmployees = useMemo(() => employees.filter((item) => item.status === 'pending'), [employees])
   const inactiveEmployees = useMemo(() => employees.filter((item) => item.status === 'inactive'), [employees])
 

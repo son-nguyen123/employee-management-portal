@@ -20,6 +20,7 @@ import {
 } from '@/lib/models/types'
 import { FACTORY_LABELS, isFactoryId } from '@/lib/models/factory'
 import type { FactoryId } from '@/lib/models/factory'
+import { requestDueAt } from '@/lib/requests/request-timing'
 
 const NOTIFICATIONS_COLLECTION = 'notifications'
 
@@ -46,6 +47,7 @@ export interface ManagementPendingItem {
   reason?: string
   createdAt: Date
   referenceDate: Date
+  dueAt?: Date | null
   targetIds: string[]
   staffRequestType?: StaffRequestType
   shifts?: ManagementShift[]
@@ -398,6 +400,7 @@ export function subscribeToManagementPendingItems(
     })
 
     state.leaveRequests.forEach(({ id, data }) => {
+      if (data.status !== 'Pending') return
       const employeeId = String(data.employeeId || '')
       if (!activeEmployeeIds.has(employeeId)) return
       const employee = identity(employeeId)
@@ -431,6 +434,7 @@ export function subscribeToManagementPendingItems(
     })
 
     state.lateRequests.forEach(({ id, data }) => {
+      if (data.status !== 'Pending') return
       const employeeId = String(data.employeeId || '')
       if (!activeEmployeeIds.has(employeeId)) return
       const employee = identity(employeeId)
@@ -541,7 +545,12 @@ export function subscribeToManagementPendingItems(
       })
     })
 
-    callback(items.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime()))
+    callback(items
+      .map((item) => ({
+        ...item,
+        dueAt: requestDueAt(item),
+      }))
+      .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime()))
   }
 
   const watch = (key: keyof typeof state, source: Query<DocumentData>) =>
@@ -571,9 +580,6 @@ export function subscribeToManagementPendingItems(
   const penaltyEnd = new Date(nextSunday)
 
   const unsubscribes = [
-    // The pending workspace keeps the enabled schedule-change workflow, while
-    // the two feature-disabled request types (leave and late arrival) stay out
-    // of the listener fan-out.
     watch('employees', factoryId ? factoryQuery('employees') : query(collection(db, 'employees'))),
     watch('schedules', factoryId ? factoryQuery('workSchedules') : query(
       collection(db, 'workSchedules'),
@@ -581,6 +587,8 @@ export function subscribeToManagementPendingItems(
       where('date', '>=', Timestamp.fromDate(nextMonday)),
       where('date', '<=', Timestamp.fromDate(nextSunday)),
     )),
+    watch('leaveRequests', factoryId ? factoryQuery('leaveRequests') : pendingQuery('leaveRequests')),
+    watch('lateRequests', factoryId ? factoryQuery('lateRequests') : pendingQuery('lateRequests')),
     watch('salaryAdvances', factoryId ? factoryQuery('salaryAdvances') : pendingQuery('salaryAdvances')),
     watch('staffRequests', factoryId ? factoryQuery('staffRequests') : pendingQuery('staffRequests')),
     // Keep current automatic/manual penalties available for schedule warnings

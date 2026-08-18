@@ -10,6 +10,7 @@ import {
 import type { Notification } from '@/lib/models/types'
 import { currentVietnamMonth } from '@/lib/archive/retention'
 import { employeeFactoryId } from '@/lib/models/factory'
+import { isRequestOverdue } from '@/lib/requests/request-timing'
 
 type NotificationFeedValue = {
   employeeNotifications: Notification[]
@@ -30,6 +31,13 @@ export function NotificationFeedProvider({ children }: { children: React.ReactNo
   const [managementPendingItems, setManagementPendingItems] = useState<ManagementPendingItem[]>([])
   const [managementPendingReady, setManagementPendingReady] = useState(false)
   const [pendingNotificationCount, setPendingNotificationCount] = useState(0)
+  const [now, setNow] = useState(() => new Date())
+
+  useEffect(() => {
+    if (!isManagement || isPreviewMode) return
+    const interval = window.setInterval(() => setNow(new Date()), 60_000)
+    return () => window.clearInterval(interval)
+  }, [isManagement, isPreviewMode])
 
   useEffect(() => {
     setEmployeeNotifications([])
@@ -71,6 +79,17 @@ export function NotificationFeedProvider({ children }: { children: React.ReactNo
       unsubscribeManagement()
     }
   }, [authUser?.uid, currentEmployee, isManagement, isPreviewMode, role])
+
+  useEffect(() => {
+    if (!isManagement || isPreviewMode || role === 'director') return
+    const start = new Date(now)
+    start.setDate(start.getDate() - 5)
+    start.setHours(0, 0, 0, 0)
+    setPendingNotificationCount(managementPendingItems.filter((item) => {
+      const recent = item.createdAt >= start
+      return (recent || isRequestOverdue(item, now)) && (role === 'admin' || item.type !== 'account')
+    }).length)
+  }, [isManagement, isPreviewMode, managementPendingItems, now, role])
 
   const value = useMemo<NotificationFeedValue>(() => ({
     employeeNotifications,
