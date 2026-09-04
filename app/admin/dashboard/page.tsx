@@ -602,7 +602,9 @@ export default function AdminDashboardPage() {
         )
       })()}
 
-      {selectedProcessedBatch && (
+      {selectedProcessedBatch && (() => {
+        const employee = employees.find((item) => item.uid === selectedProcessedBatch.employeeId)
+        return (
         <div className="fixed inset-0 z-[70] overflow-y-auto bg-slate-100 dark:bg-slate-950">
           <header className="sticky top-0 z-10 border-b border-slate-200 bg-white/95 backdrop-blur-xl dark:border-white/10 dark:bg-slate-950/95">
             <div className="mx-auto flex min-h-20 max-w-lg items-center gap-3 px-4 pt-[env(safe-area-inset-top)]">
@@ -619,9 +621,7 @@ export default function AdminDashboardPage() {
             <article className="overflow-hidden rounded-[2rem] border border-violet-100 bg-white shadow-xl dark:border-violet-500/20 dark:bg-slate-900">
               <section className="bg-gradient-to-r from-indigo-600 via-violet-600 to-fuchsia-600 p-5 text-white">
                 <div className="flex items-start gap-3">
-                  <div className="grid h-12 w-12 shrink-0 place-items-center rounded-2xl bg-white/15 text-sm font-black">
-                    {(selectedProcessedBatch.employeeName || 'NV').split(' ').slice(-2).map((word) => word[0]).join('')}
-                  </div>
+                  <RequestIdentityAvatar name={selectedProcessedBatch.employeeName || selectedProcessedBatch.employeeId} photoURL={employee?.photoURL} icon={CalendarCheck} iconColor="bg-indigo-600" />
                   <div className="min-w-0 flex-1">
                     <h2 className="truncate text-xl font-black">{selectedProcessedBatch.employeeName || selectedProcessedBatch.employeeId}</h2>
                     <p className="mt-1 text-sm text-white/80">{selectedProcessedBatch.employeeCode || 'Nhân viên'} · {actualShiftCount(selectedProcessedBatch)} ca</p>
@@ -629,6 +629,10 @@ export default function AdminDashboardPage() {
                       {selectedProcessedBatch.status === 'Rejected' ? 'Đã từ chối' : batchHasPenalty(selectedProcessedBatch) ? `Tự duyệt · ${batchPenaltyAmount(selectedProcessedBatch) ? `Trừ ${batchPenaltyAmount(selectedProcessedBatch).toLocaleString('vi-VN')}đ` : 'Bị phạt đăng ký trễ'}` : batchNeedsAttention(selectedProcessedBatch) ? 'Tự duyệt · Cần lưu ý' : 'Tự duyệt · Tốt'}
                     </span>
                   </div>
+                </div>
+                <div className="mt-4 grid grid-cols-2 gap-2">
+                  <a href={employee?.phone ? `tel:${employee.phone}` : undefined} aria-disabled={!employee?.phone} className="flex min-h-11 items-center justify-center gap-2 rounded-2xl bg-white/15 text-sm font-bold aria-disabled:pointer-events-none aria-disabled:opacity-50"><Phone className="h-4 w-4" /> Gọi điện</a>
+                  <a href={employee?.facebookUrl || undefined} target={employee?.facebookUrl ? '_blank' : undefined} rel={employee?.facebookUrl ? 'noreferrer' : undefined} aria-disabled={!employee?.facebookUrl} className="flex min-h-11 items-center justify-center gap-2 rounded-2xl bg-blue-600 text-sm font-bold aria-disabled:pointer-events-none aria-disabled:opacity-50"><ExternalLink className="h-4 w-4" /> Mở Facebook</a>
                 </div>
               </section>
               <section className="divide-y divide-slate-100 px-4 dark:divide-white/10">
@@ -692,7 +696,8 @@ export default function AdminDashboardPage() {
             </article>
           </main>
         </div>
-      )}
+        )
+      })()}
 
       {rejectingBatch && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/55 p-3 backdrop-blur-sm sm:p-4" onClick={() => !processingId && setRejectingBatch(null)}>
