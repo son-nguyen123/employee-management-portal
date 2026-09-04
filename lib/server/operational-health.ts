@@ -372,6 +372,7 @@ export async function runOperationalHealthCheck(now = new Date()): Promise<Opera
     checkedAt: Timestamp.fromDate(now),
     services,
     emailFallbackConfigured: operationalEmailConfigured(),
+    emailFallbackAddress: process.env.OPERATIONS_ALERT_EMAIL?.trim() || process.env.GMAIL_FROM_EMAIL?.trim() || '',
     updatedAt: FieldValue.serverTimestamp(),
   }, { merge: true })
   for (const issue of issues) await notifyIssue(issue)
@@ -419,6 +420,7 @@ async function getOperationalHealthSnapshot(): Promise<OperationalHealthSnapshot
     checkedAt: isoTimestamp(health.get('checkedAt')),
     services: Array.isArray(health.get('services')) ? health.get('services') : [],
     emailFallbackConfigured: health.get('emailFallbackConfigured') === true,
+    emailFallbackAddress: String(health.get('emailFallbackAddress') || process.env.OPERATIONS_ALERT_EMAIL?.trim() || process.env.GMAIL_FROM_EMAIL?.trim() || ''),
     alerts: alerts.docs.map((item) => ({
       service: item.get('service'), code: item.get('code'), severity: item.get('severity'), title: item.get('title'), message: item.get('message'),
       status: item.get('status'), updatedAt: isoTimestamp(item.get('updatedAt')), lastNotifiedAt: isoTimestamp(item.get('lastNotifiedAt')) || undefined,

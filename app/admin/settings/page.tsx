@@ -44,7 +44,7 @@ const healthTone: Record<OperationalSeverity, { label: string; box: string; dot:
 }
 
 const previewOperationalHealth: OperationalHealthSnapshot = {
-  overall: 'healthy', checkedAt: new Date().toISOString(), emailFallbackConfigured: true, alerts: [], services: [
+  overall: 'healthy', checkedAt: new Date().toISOString(), emailFallbackConfigured: true, emailFallbackAddress: '', alerts: [], services: [
     { service: 'firestore', severity: 'healthy', title: 'Firebase / Firestore', message: 'Đang dưới ngưỡng cảnh báo.' },
     { service: 'drive', severity: 'healthy', title: 'Google Drive', message: 'Kết nối và dung lượng bình thường.' },
   ],
@@ -175,6 +175,7 @@ export default function AdminSettingsPage() {
 
   if ((!role || !['admin', 'manager', 'director'].includes(role)) && !isPreviewMode) return null
   const displayedHealth = isPreviewMode ? previewOperationalHealth : health
+  const emailFallbackAddress = displayedHealth?.emailFallbackAddress || ''
 
   return (
     <main className="min-h-screen pb-8">
@@ -206,17 +207,24 @@ export default function AdminSettingsPage() {
             <div className="grid gap-2 border-t border-current/10 p-3 sm:grid-cols-2">
               {displayedHealth.services.map((service) => {
                 const Icon = service.service === 'firestore' ? Database : service.service === 'drive' ? HardDrive : Clock3
+                const driveAccountEmail = service.service === 'drive' && typeof service.metrics?.accountEmail === 'string'
+                  ? service.metrics.accountEmail
+                  : ''
                 return (
                   <div key={service.service} className="flex gap-2.5 rounded-2xl bg-white/65 p-3 dark:bg-slate-950/35">
                     <Icon className="mt-0.5 h-4 w-4 shrink-0" />
-                    <div><p className="text-xs font-extrabold">{service.title}</p><p className="mt-1 text-[11px] leading-4 opacity-75">{service.message}</p></div>
+                    <div>
+                      <p className="text-xs font-extrabold">{service.title}</p>
+                      <p className="mt-1 text-[11px] leading-4 opacity-75">{service.message}</p>
+                      {driveAccountEmail && <p className="mt-1 text-[11px] font-bold opacity-85">Tài khoản: {driveAccountEmail}</p>}
+                    </div>
                   </div>
                 )
               })}
             </div>
           )}
           <div className="border-t border-current/10 px-4 py-3 text-[11px] font-semibold opacity-80">
-            Email dự phòng: {displayedHealth?.emailFallbackConfigured ? 'đã cấu hình' : 'chưa cấu hình'} · Cảnh báo đang hoạt động: {displayedHealth?.alerts.filter((item) => item.status === 'active').length || 0}
+            Email gửi/cảnh báo: {emailFallbackAddress || (displayedHealth?.emailFallbackConfigured ? 'đã cấu hình' : 'chưa cấu hình')} · Cảnh báo đang hoạt động: {displayedHealth?.alerts.filter((item) => item.status === 'active').length || 0}
           </div>
         </section>
         <section className="mobile-card p-4">

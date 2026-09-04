@@ -21,5 +21,6 @@ export interface OperationalHealthSnapshot {
   checkedAt: string
   services: OperationalServiceStatus[]
   emailFallbackConfigured: boolean
+  emailFallbackAddress?: string
   alerts: Array<OperationalIssue & { status: 'active' | 'resolved'; updatedAt: string; lastNotifiedAt?: string }>
 }
