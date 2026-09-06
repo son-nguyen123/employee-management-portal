@@ -5,6 +5,7 @@ import { runArchivePreview } from '@/lib/server/weekly-archive'
 import { runMonthlyArchive } from '@/lib/server/monthly-archive'
 import { getCurrentMonthSnapshot } from '@/lib/server/current-month-snapshot'
 import { invalidateMonthDataCache } from '@/lib/server/month-data-cache'
+import { scopeArchivePayload, type ArchivePayload } from '@/lib/server/archive-scope'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -19,9 +20,9 @@ export async function GET(request: Request) {
     const liveMonth = searchParams.get('liveMonth')?.trim()
     if (liveMonth && !/^\d{4}-\d{2}$/.test(liveMonth)) throw new ApiError(400, 'Tháng cần có định dạng YYYY-MM.')
     const result = fileId
-      ? await readArchive(fileId)
+      ? scopeArchivePayload(actor, await readArchive(fileId) as ArchivePayload)
       : liveMonth
-        ? await getCurrentMonthSnapshot(liveMonth)
+        ? scopeArchivePayload(actor, await getCurrentMonthSnapshot(liveMonth))
         : await listAllArchives()
     return NextResponse.json({ ok: true, result })
   } catch (error) {

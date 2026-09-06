@@ -201,7 +201,7 @@ export default function AdminRequestsPage() {
       } as Employee]
       setEmployees(employeeList)
       setRows(buildRequestRows(mockLeaveRequests, mockLateRequests, mockSalaryAdvances, [], employeeList, true))
-      setPenaltyEmployeeId(employeeList[0].uid)
+      setPenaltyEmployeeId('')
       setLoading(false)
       setPenaltyMonthLoading(false)
       return
@@ -213,7 +213,6 @@ export default function AdminRequestsPage() {
     const ready = new Set<string>()
     const publish = () => {
       setEmployees(employeeList)
-      setPenaltyEmployeeId((current) => current || employeeList[0]?.uid || '')
       setRows(buildRequestRows([], [], salaries, staffRequests, employeeList))
       if (ready.size === 3) {
         setLoading(false)
@@ -325,6 +324,10 @@ export default function AdminRequestsPage() {
   }
 
   const toggleManualPenalty = () => {
+    if (!manualPenaltyOpen) {
+      setPenaltyEmployeeId('')
+      setPenaltyFormError('')
+    }
     setManualPenaltyOpen((current) => !current)
     setEmployeePickerOpen(false)
   }
@@ -344,7 +347,7 @@ export default function AdminRequestsPage() {
   const addManualPenalty = async (event: React.FormEvent) => {
     event.preventDefault()
     const amount = Number(penaltyAmount.replace(/\D/g, ''))
-    if (!penaltyEmployeeId || !penaltyDate || !Number.isSafeInteger(amount) || amount < 1 || !penaltyNote.trim()) {
+    if (!penaltyEmployeeId || !employees.some((employee) => employee.uid === penaltyEmployeeId) || !penaltyDate || !Number.isSafeInteger(amount) || amount < 1 || !penaltyNote.trim()) {
       setPenaltyFormError('Vui lòng chọn nhân viên, nhập số tiền là số nguyên dương và ghi rõ lý do.')
       return
     }
@@ -529,8 +532,8 @@ export default function AdminRequestsPage() {
             {!penaltyMonthLoading && !penalizedEmployees.length && <div className="mobile-card p-8 text-center text-sm font-semibold text-muted-foreground">Chưa có nhân viên bị phạt.</div>}
           </section>
         )}
-        <form ref={manualPenaltyFormRef} onSubmit={addManualPenalty} className={`${pageMode === 'penalties' && manualPenaltyOpen ? 'order-2' : 'hidden'} mb-5 scroll-mt-6 overflow-hidden rounded-3xl border border-rose-200 bg-white shadow-sm dark:border-rose-500/20 dark:bg-slate-900`}>
-          <div className="flex items-center gap-3 bg-gradient-to-r from-rose-600 to-fuchsia-600 p-4 text-white">
+        <form ref={manualPenaltyFormRef} onSubmit={addManualPenalty} className={`${pageMode === 'penalties' && manualPenaltyOpen ? 'order-2' : 'hidden'} relative z-20 mb-5 scroll-mt-6 overflow-visible rounded-3xl border border-rose-200 bg-white shadow-sm dark:border-rose-500/20 dark:bg-slate-900`}>
+          <div className="flex items-center gap-3 rounded-t-3xl bg-gradient-to-r from-rose-600 to-fuchsia-600 p-4 text-white">
             <div className="grid h-11 w-11 place-items-center rounded-2xl bg-white/15"><AlertTriangle className="h-5 w-5" /></div>
             <div className="min-w-0 flex-1"><p className="text-xs font-bold uppercase tracking-wider text-rose-100">Quản lý tự ghi nhận</p><h2 className="font-black">Thêm khoản phạt</h2></div>
             <button type="button" onClick={closeManualPenalty} aria-label="Đóng form ghi phạt" className="grid h-10 w-10 place-items-center rounded-xl bg-white/15"><X className="h-4 w-4" /></button>
@@ -553,14 +556,13 @@ export default function AdminRequestsPage() {
                 <ChevronDown className={`h-5 w-5 shrink-0 text-slate-400 transition-transform ${employeePickerOpen ? 'rotate-180' : ''}`} />
               </button>
               {employeePickerOpen && (
-                <div className="absolute inset-x-0 top-full z-30 mt-2 max-h-72 overflow-y-auto rounded-2xl border border-slate-200 bg-white p-1.5 shadow-xl shadow-slate-950/10 dark:border-slate-700 dark:bg-slate-950" role="listbox">
+                <div className="absolute inset-x-0 top-full z-40 mt-2 max-h-72 touch-pan-y overscroll-contain overflow-y-auto rounded-2xl border border-slate-200 bg-white p-1.5 shadow-xl shadow-slate-950/10 dark:border-slate-700 dark:bg-slate-950" role="listbox">
                   {employees.map((employee) => (
                     <button
                       key={employee.uid}
                       type="button"
                       role="option"
                       aria-selected={penaltyEmployeeId === employee.uid}
-                      onPointerDown={(event) => { event.preventDefault(); selectPenaltyEmployee(employee.uid) }}
                       onClick={() => selectPenaltyEmployee(employee.uid)}
                       className={`flex w-full items-center gap-3 rounded-xl px-2.5 py-2.5 text-left transition ${penaltyEmployeeId === employee.uid ? 'bg-rose-50 dark:bg-rose-500/10' : 'hover:bg-slate-50 dark:hover:bg-slate-900'}`}
                     >
@@ -587,7 +589,7 @@ export default function AdminRequestsPage() {
               <textarea value={penaltyNote} onChange={(event) => setPenaltyNote(event.target.value)} maxLength={1000} className="mobile-field mt-2 min-h-24 py-3" placeholder="Ghi rõ lý do để nhân viên hiểu..." required />
             </label>
             {penaltyFormError && <p className="rounded-2xl bg-rose-50 px-3 py-2.5 text-sm font-semibold text-rose-700 sm:col-span-2" role="alert">{penaltyFormError}</p>}
-            <button type="submit" disabled={penaltySubmitting || (!isPreviewMode && !employees.length)} className="mobile-primary-button bg-rose-600 sm:col-span-2">
+            <button type="submit" disabled={penaltySubmitting || !selectedPenaltyEmployee || (!isPreviewMode && !employees.length)} className="mobile-primary-button bg-rose-600 sm:col-span-2">
               {penaltySubmitting && <Loader2 className="h-4 w-4 animate-spin" />} Xác nhận ghi phạt
             </button>
           </div>

@@ -171,7 +171,6 @@ export async function getManagementContact(actor: RequestActor) {
   requireStaff(actor)
   const snapshot = await adminDb.collection('employees')
     .where('role', 'in', ['manager', 'admin'])
-    .limit(10)
     .get()
   const managers = snapshot.docs
     .map((document): Record<string, unknown> & { uid: string } => ({
@@ -181,6 +180,7 @@ export async function getManagementContact(actor: RequestActor) {
     .filter((employee) => ['manager', 'admin'].includes(String(employee.role)))
     .sort((left, right) => Number(right.role === 'manager') - Number(left.role === 'manager'))
   const contact = managers.find((employee) =>
+    (actor.role === 'director' || String(employee.factoryId || 'factory-1') === actor.factoryId) &&
     typeof employee.facebookUrl === 'string' && /^https?:\/\//i.test(employee.facebookUrl)
   )
   return {
@@ -767,6 +767,12 @@ async function activeManagerIds(factoryId?: string): Promise<string[]> {
   return snapshot.docs
     .filter((item) => !factoryId || String(item.get('factoryId') || 'factory-1') === factoryId)
     .map((item) => item.id)
+}
+
+function assertManagerFactoryAccess(actor: RequestActor, employee: { get(field: string): unknown }) {
+  if (actor.role !== 'director' && String(employee.get('factoryId') || 'factory-1') !== actor.factoryId) {
+    throw new ApiError(403, 'Bạn chỉ được xử lý nhân viên thuộc xưởng của mình.')
+  }
 }
 
 function scheduleBatchKey(employeeId: string, weekStart: Date): string {
@@ -2828,6 +2834,7 @@ export async function createForgottenDutyPenalty(actor: RequestActor, raw: unkno
     if (!employee.exists || employee.get('status') !== 'active') {
       throw new ApiError(404, 'Không tìm thấy nhân viên đang hoạt động.')
     }
+    assertManagerFactoryAccess(actor, employee)
     const now = FieldValue.serverTimestamp()
     transaction.create(penaltyRef, {
       employeeId,
@@ -2835,6 +2842,7 @@ export async function createForgottenDutyPenalty(actor: RequestActor, raw: unkno
       description: `Quên lịch trực ngày ${dutyDate.toLocaleDateString('vi-VN')}. Khấu trừ 1.000đ vào tiền công của 1 giờ làm.${note ? ` Ghi chú: ${note}` : ''}`,
       category: 'Other',
       amount: 1000,
+      factoryId: String(employee.get('factoryId') || 'factory-1'),
       penaltyDate: Timestamp.fromDate(dutyDate),
       createdBy: actor.uid,
       sourceType: 'forgottenDuty',
@@ -2880,6 +2888,7 @@ export async function createManualPenalty(actor: RequestActor, raw: unknown) {
     if (!employee.exists || employee.get('status') !== 'active') {
       throw new ApiError(404, 'Không tìm thấy nhân viên đang hoạt động.')
     }
+    assertManagerFactoryAccess(actor, employee)
     const now = FieldValue.serverTimestamp()
     transaction.create(penaltyRef, {
       employeeId,
@@ -2887,6 +2896,7 @@ export async function createManualPenalty(actor: RequestActor, raw: unknown) {
       description: reason,
       category: 'Other',
       amount,
+      factoryId: String(employee.get('factoryId') || 'factory-1'),
       penaltyDate: Timestamp.fromDate(penaltyDate),
       createdBy: actor.uid,
       sourceType: 'manual',
@@ -2954,6 +2964,9 @@ export async function managePenalty(actor: RequestActor, raw: unknown) {
     employeeId = String(penalty.employeeId || '')
     previousAmount = Number(penalty.amount || 0)
     if (!employeeId || previousAmount < 0) throw new ApiError(409, 'Dữ liệu khoản phạt không hợp lệ.')
+    const employeeSnapshot = await transaction.get(adminDb.collection('employees').doc(employeeId))
+    if (!employeeSnapshot.exists) throw new ApiError(404, 'Chưa tìm thấy nhân viên của khoản phạt.')
+    assertManagerFactoryAccess(actor, employeeSnapshot)
     if (mode === 'adjust' && adjustedAmount === previousAmount) {
       throw new ApiError(409, 'Số tiền mới phải khác số tiền hiện tại.')
     }

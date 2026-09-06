@@ -3,6 +3,7 @@ import ExcelJS from 'exceljs'
 import { authenticateRequest } from '@/lib/server/api-auth'
 import { listWeeklyArchives, readWeeklyArchive } from '@/lib/server/google-drive-archive'
 import { shiftLabel, statusLabel } from '@/lib/server/word-report'
+import { scopeArchivePayload } from '@/lib/server/archive-scope'
 import {
   configureReportSheet,
   REPORT_XLSX_CONTENT_TYPE,
@@ -137,7 +138,7 @@ function belongsToMonth(collection: string, data: Record<string, unknown>, month
 export async function GET(request: Request) {
   try {
     const actor = await authenticateRequest(request)
-    if (!['admin', 'manager'].includes(actor.role)) {
+    if (!['admin', 'manager', 'director'].includes(actor.role)) {
       return NextResponse.json({ error: 'Bạn không có quyền xuất kho dữ liệu.' }, { status: 403 })
     }
     const month = new URL(request.url).searchParams.get('month') || ''
@@ -158,7 +159,7 @@ export async function GET(request: Request) {
       readWeeklyArchive(file.id) as Promise<ArchivePayload>
     ))
     const records = new Map<string, Map<string, ArchiveRecord>>()
-    payloads.forEach((payload) => Object.entries(payload.records || {}).forEach(([collection, rows]) => {
+    payloads.forEach((payload) => Object.entries(scopeArchivePayload(actor, payload).records || {}).forEach(([collection, rows]) => {
       const target = records.get(collection) || new Map<string, ArchiveRecord>()
       rows.filter((record) => belongsToMonth(collection, record.data || {}, month))
         .forEach((record) => target.set(record.id, record))
