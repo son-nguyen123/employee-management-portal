@@ -1,22 +1,105 @@
 import { NextResponse } from 'next/server'
-import { Packer, Paragraph, Table } from 'docx'
+import ExcelJS from 'exceljs'
 import { authenticateRequest } from '@/lib/server/api-auth'
 import { listWeeklyArchives, readWeeklyArchive } from '@/lib/server/google-drive-archive'
+import { shiftLabel, statusLabel } from '@/lib/server/word-report'
 import {
-  landscapeReport,
-  money,
-  reportDate,
-  reportSectionHeading,
-  reportTable,
-  reportTitle,
-  shiftLabel,
-  statusLabel,
-} from '@/lib/server/word-report'
+  configureReportSheet,
+  REPORT_XLSX_CONTENT_TYPE,
+  styleReportBodyRow,
+  styleReportHeader,
+  styleReportTitle,
+} from '@/lib/server/excel-report'
 
 export const runtime = 'nodejs'
 
 type ArchiveRecord = { id: string; path: string; data: Record<string, unknown> }
 type ArchivePayload = { records?: Record<string, ArchiveRecord[]> }
+
+function archiveDate(value: unknown): Date | null {
+  if (value instanceof Date) return Number.isNaN(value.getTime()) ? null : value
+  if (value && typeof value === 'object') {
+    if ('toDate' in value && typeof value.toDate === 'function') {
+      const converted = value.toDate()
+      return converted instanceof Date && !Number.isNaN(converted.getTime()) ? converted : null
+    }
+    if ('_seconds' in value && typeof value._seconds === 'number') {
+      const converted = new Date(value._seconds * 1000)
+      return Number.isNaN(converted.getTime()) ? null : converted
+    }
+  }
+  const converted = new Date(String(value || ''))
+  return Number.isNaN(converted.getTime()) ? null : converted
+}
+
+function archiveNumber(value: unknown) {
+  const amount = Number(value || 0)
+  return Number.isFinite(amount) ? amount : 0
+}
+
+function lastColumnLetter(columnCount: number) {
+  return String.fromCharCode(64 + columnCount)
+}
+
+function styleCountRow(sheet: ExcelJS.Worksheet, rowNumber: number, columnCount: number, count: number) {
+  const row = sheet.getRow(rowNumber)
+  for (let columnNumber = 1; columnNumber <= columnCount; columnNumber += 1) {
+    const cell = row.getCell(columnNumber)
+    cell.font = { name: 'Arial', size: 10, bold: true, color: { argb: 'FF000000' } }
+    cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFFFFF' } }
+    cell.alignment = { horizontal: columnNumber === 1 ? 'center' : 'left', vertical: 'middle' }
+    cell.border = {
+      top: { style: 'thin', color: { argb: 'FF000000' } },
+      left: { style: 'thin', color: { argb: 'FF000000' } },
+      bottom: { style: 'thin', color: { argb: 'FF000000' } },
+      right: { style: 'thin', color: { argb: 'FF000000' } },
+    }
+  }
+  const endColumn = lastColumnLetter(columnCount)
+  sheet.mergeCells(`B${rowNumber}:${endColumn}${rowNumber}`)
+  sheet.getCell(`A${rowNumber}`).value = 'TỔNG'
+  sheet.getCell(`B${rowNumber}`).value = `${count} bản ghi`
+  row.height = 24
+}
+
+function addArchiveSheet(
+  workbook: ExcelJS.Workbook,
+  name: string,
+  title: string,
+  columns: Array<{ key: string; width: number }>,
+  headers: string[],
+  rows: Array<Array<ExcelJS.CellValue>>,
+  options: { dateColumns?: number[]; amountColumns?: number[]; centerColumns?: number[]; wrapColumns?: number[] } = {},
+) {
+  const sheet = workbook.addWorksheet(name)
+  configureReportSheet(sheet, columns)
+  styleReportTitle(sheet, lastColumnLetter(headers.length), title)
+  styleReportHeader(sheet.getRow(3), headers)
+
+  rows.forEach((values, index) => {
+    const row = sheet.addRow(values)
+    styleReportBodyRow(row, headers.length, {
+      centerColumns: options.centerColumns || [],
+      wrapColumns: options.wrapColumns || [],
+      stripe: false,
+    })
+    options.dateColumns?.forEach((columnNumber) => { row.getCell(columnNumber).numFmt = 'dd/mm/yyyy' })
+    options.amountColumns?.forEach((columnNumber) => { row.getCell(columnNumber).numFmt = '#,##0' })
+    if (values.some((value, columnIndex) => options.wrapColumns?.includes(columnIndex + 1) && String(value || '').length > 80)) row.height = 36
+    if (index % 2 === 1) row.eachCell((cell) => { cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFFFFF' } } })
+  })
+
+  if (!rows.length) {
+    const empty = sheet.addRow(['Tháng này chưa có dữ liệu.'])
+    sheet.mergeCells(`A4:${lastColumnLetter(headers.length)}4`)
+    empty.getCell(1).font = { name: 'Arial', size: 11, italic: true, color: { argb: 'FF64748B' } }
+    empty.getCell(1).alignment = { horizontal: 'center', vertical: 'middle' }
+    empty.height = 30
+  }
+  styleCountRow(sheet, rows.length + 4 + (rows.length ? 0 : 1), headers.length, rows.length)
+  if (rows.length) sheet.autoFilter = `A3:${lastColumnLetter(headers.length)}${rows.length + 3}`
+  return sheet
+}
 
 function sourceWeekKey(archiveKey: string) {
   return archiveKey.split('-test-')[0]
@@ -47,8 +130,8 @@ function belongsToMonth(collection: string, data: Record<string, unknown>, month
       : collection === 'penalties'
         ? data.penaltyDate
         : data.reviewedAt || data.updatedAt || data.createdAt
-  const date = new Date(String(value || ''))
-  return !Number.isNaN(date.getTime()) && localMonth(date) === month
+  const date = archiveDate(value)
+  return !!date && localMonth(date) === month
 }
 
 export async function GET(request: Request) {
@@ -91,159 +174,137 @@ export async function GET(request: Request) {
       }
     }
     const rowsOf = (collection: string) => [...(records.get(collection)?.values() || [])]
-    const children: Array<Paragraph | Table> = [
-      ...reportTitle(
-        `BÁO CÁO NHÂN SỰ THÁNG ${month.slice(5)}/${month.slice(0, 4)}`,
-        `Tổng hợp từ kho dữ liệu Google Drive · Xuất lúc ${new Date().toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' })}`
-      ),
-    ]
+    const reportMonth = `${month.slice(5)}/${month.slice(0, 4)}`
+    const workbook = new ExcelJS.Workbook()
+    workbook.creator = 'Employee Management Portal'
+    workbook.created = new Date()
+    workbook.modified = new Date()
 
-    const schedules = rowsOf('workSchedules').map((record, index) => {
-      const employee = identity(record.data.employeeId)
-      return [
-        String(index + 1),
-        employee.name,
-        employee.code,
-        reportDate(record.data.date),
-        shiftLabel(record.data.shift),
-        statusLabel(record.data.status),
-      ]
+    const summaryRows = [
+      ['Lịch làm', rowsOf('workSchedules').length],
+      ['Xin nghỉ', rowsOf('leaveRequests').length],
+      ['Đi trễ', rowsOf('lateRequests').length],
+      ['Ứng lương', rowsOf('salaryAdvances').length],
+      ['Yêu cầu khác', rowsOf('staffRequests').length],
+      ['Khoản phạt', rowsOf('penalties').length],
+    ] as Array<[string, number]>
+    const summary = workbook.addWorksheet('Tổng hợp')
+    configureReportSheet(summary, [
+      { key: 'index', width: 8 },
+      { key: 'type', width: 28 },
+      { key: 'count', width: 18 },
+    ])
+    styleReportTitle(summary, 'C', `BÁO CÁO KHO DỮ LIỆU THÁNG ${reportMonth}`)
+    styleReportHeader(summary.getRow(3), ['STT', 'Nhóm dữ liệu', 'Số bản ghi'])
+    summaryRows.forEach(([label, count], index) => {
+      const row = summary.addRow([index + 1, label, count])
+      styleReportBodyRow(row, 3, { centerColumns: [1, 3], stripe: false })
+      row.getCell(3).numFmt = '#,##0'
     })
-    if (schedules.length) {
-      children.push(reportSectionHeading(`Lịch làm (${schedules.length} ca)`))
-      children.push(reportTable(
-        ['STT', 'Họ và tên', 'Mã NV', 'Ngày', 'Ca', 'Trạng thái'],
-        schedules,
-        [600, 3900, 2200, 2400, 2200, 2860],
-        [0, 2, 3, 4, 5]
-      ))
+    if (!summaryRows.length) {
+      const empty = summary.addRow(['Tháng này chưa có dữ liệu.'])
+      summary.mergeCells('A4:C4')
+      empty.getCell(1).font = { name: 'Arial', size: 11, italic: true, color: { argb: 'FF64748B' } }
+      empty.getCell(1).alignment = { horizontal: 'center', vertical: 'middle' }
+      empty.height = 30
     }
+    styleCountRow(summary, summaryRows.length + 4 + (summaryRows.length ? 0 : 1), 3, summaryRows.reduce((sum, [, count]) => sum + count, 0))
 
-    const leaves = rowsOf('leaveRequests').map((record, index) => {
-      const employee = identity(record.data.employeeId)
-      return [
-        String(index + 1),
-        employee.name,
-        employee.code,
-        reportDate(record.data.leaveDate),
-        reportDate(record.data.endDate || record.data.leaveDate),
-        statusLabel(record.data.status),
-        String(record.data.reason || ''),
-      ]
-    })
-    if (leaves.length) {
-      children.push(reportSectionHeading(`Xin nghỉ (${leaves.length} yêu cầu)`))
-      children.push(reportTable(
-        ['STT', 'Họ và tên', 'Mã NV', 'Từ ngày', 'Đến ngày', 'Trạng thái', 'Lý do'],
-        leaves,
-        [500, 2800, 1700, 1700, 1700, 1600, 4160],
-        [0, 2, 3, 4, 5]
-      ))
-    }
+    const schedules = rowsOf('workSchedules')
+      .sort((left, right) => (archiveDate(left.data.date)?.getTime() || 0) - (archiveDate(right.data.date)?.getTime() || 0))
+      .map((record, index) => {
+        const employee = identity(record.data.employeeId)
+        return [index + 1, employee.name, employee.code, archiveDate(record.data.date), shiftLabel(record.data.shift), statusLabel(record.data.status)]
+      })
+    addArchiveSheet(workbook, 'Lịch làm', `LỊCH LÀM THÁNG ${reportMonth}`,
+      [
+        { key: 'index', width: 8 }, { key: 'employee', width: 28 }, { key: 'code', width: 16 },
+        { key: 'date', width: 15 }, { key: 'shift', width: 16 }, { key: 'status', width: 18 },
+      ], ['STT', 'Họ và tên', 'Mã NV', 'Ngày', 'Ca', 'Trạng thái'], schedules,
+      { dateColumns: [4], centerColumns: [1, 3, 4, 5, 6] })
 
-    const lateRows = rowsOf('lateRequests').map((record, index) => {
-      const employee = identity(record.data.employeeId)
-      return [
-        String(index + 1),
-        employee.name,
-        employee.code,
-        reportDate(record.data.date),
-        String(record.data.lateMinutes || 0),
-        statusLabel(record.data.status),
-        String(record.data.reason || ''),
-      ]
-    })
-    if (lateRows.length) {
-      children.push(reportSectionHeading(`Đi trễ (${lateRows.length} yêu cầu)`))
-      children.push(reportTable(
-        ['STT', 'Họ và tên', 'Mã NV', 'Ngày', 'Số phút', 'Trạng thái', 'Lý do'],
-        lateRows,
-        [500, 2800, 1700, 1800, 1300, 1600, 4460],
-        [0, 2, 3, 4, 5]
-      ))
-    }
+    const leaves = rowsOf('leaveRequests')
+      .sort((left, right) => (archiveDate(left.data.leaveDate)?.getTime() || 0) - (archiveDate(right.data.leaveDate)?.getTime() || 0))
+      .map((record, index) => {
+        const employee = identity(record.data.employeeId)
+        return [index + 1, employee.name, employee.code, archiveDate(record.data.leaveDate), archiveDate(record.data.endDate || record.data.leaveDate), statusLabel(record.data.status), String(record.data.reason || '')]
+      })
+    addArchiveSheet(workbook, 'Xin nghỉ', `DANH SÁCH XIN NGHỈ THÁNG ${reportMonth}`,
+      [
+        { key: 'index', width: 8 }, { key: 'employee', width: 28 }, { key: 'code', width: 16 },
+        { key: 'startDate', width: 15 }, { key: 'endDate', width: 15 }, { key: 'status', width: 18 }, { key: 'reason', width: 42 },
+      ], ['STT', 'Họ và tên', 'Mã NV', 'Từ ngày', 'Đến ngày', 'Trạng thái', 'Lý do'], leaves,
+      { dateColumns: [4, 5], centerColumns: [1, 3, 4, 5, 6], wrapColumns: [7] })
 
-    const salaryRows = rowsOf('salaryAdvances').map((record, index) => {
-      const employee = identity(record.data.employeeId)
-      return [
-        String(index + 1),
-        employee.name,
-        employee.code,
-        money(record.data.amount),
-        statusLabel(record.data.status),
-        reportDate(record.data.createdAt),
-        String(record.data.reason || ''),
-      ]
-    })
-    if (salaryRows.length) {
-      children.push(reportSectionHeading(`Ứng lương (${salaryRows.length} yêu cầu)`))
-      children.push(reportTable(
-        ['STT', 'Họ và tên', 'Mã NV', 'Số tiền', 'Trạng thái', 'Ngày gửi', 'Lý do'],
-        salaryRows,
-        [500, 2800, 1700, 1800, 1600, 1800, 3960],
-        [0, 2, 3, 4, 5]
-      ))
-    }
+    const lateRows = rowsOf('lateRequests')
+      .sort((left, right) => (archiveDate(left.data.date)?.getTime() || 0) - (archiveDate(right.data.date)?.getTime() || 0))
+      .map((record, index) => {
+        const employee = identity(record.data.employeeId)
+        return [index + 1, employee.name, employee.code, archiveDate(record.data.date), archiveNumber(record.data.lateMinutes), statusLabel(record.data.status), String(record.data.reason || '')]
+      })
+    addArchiveSheet(workbook, 'Đi trễ', `DANH SÁCH ĐI TRỄ THÁNG ${reportMonth}`,
+      [
+        { key: 'index', width: 8 }, { key: 'employee', width: 28 }, { key: 'code', width: 16 },
+        { key: 'date', width: 15 }, { key: 'minutes', width: 14 }, { key: 'status', width: 18 }, { key: 'reason', width: 42 },
+      ], ['STT', 'Họ và tên', 'Mã NV', 'Ngày', 'Số phút', 'Trạng thái', 'Lý do'], lateRows,
+      { dateColumns: [4], centerColumns: [1, 3, 4, 5, 6], wrapColumns: [7] })
+
+    const salaryRows = rowsOf('salaryAdvances')
+      .sort((left, right) => (archiveDate(left.data.createdAt)?.getTime() || 0) - (archiveDate(right.data.createdAt)?.getTime() || 0))
+      .map((record, index) => {
+        const employee = identity(record.data.employeeId)
+        return [index + 1, employee.name, employee.code, archiveNumber(record.data.amount), statusLabel(record.data.status), archiveDate(record.data.createdAt), String(record.data.reason || '')]
+      })
+    addArchiveSheet(workbook, 'Ứng lương', `DANH SÁCH ỨNG LƯƠNG THÁNG ${reportMonth}`,
+      [
+        { key: 'index', width: 8 }, { key: 'employee', width: 28 }, { key: 'code', width: 16 },
+        { key: 'amount', width: 16 }, { key: 'status', width: 18 }, { key: 'createdAt', width: 15 }, { key: 'reason', width: 42 },
+      ], ['STT', 'Họ và tên', 'Mã NV', 'Số tiền', 'Trạng thái', 'Ngày gửi', 'Lý do'], salaryRows,
+      { dateColumns: [6], amountColumns: [4], centerColumns: [1, 3, 4, 5, 6], wrapColumns: [7] })
 
     const staffRequestLabels: Record<string, string> = {
       overtime: 'Làm thêm',
       scheduleChange: 'Đổi / thêm ca',
+      scheduleModeChange: 'Đổi chế độ làm việc',
+      factoryChange: 'Đổi xưởng',
       note: 'Ghi chú',
     }
-    const staffRequests = rowsOf('staffRequests').map((record, index) => {
-      const employee = identity(record.data.employeeId)
-      return [
-        String(index + 1),
-        employee.name,
-        employee.code,
-        staffRequestLabels[String(record.data.type || '')] || 'Yêu cầu khác',
-        statusLabel(record.data.status),
-        String(record.data.content || record.data.reason || ''),
-      ]
-    })
-    if (staffRequests.length) {
-      children.push(reportSectionHeading(`Yêu cầu khác (${staffRequests.length} yêu cầu)`))
-      children.push(reportTable(
-        ['STT', 'Họ và tên', 'Mã NV', 'Loại', 'Trạng thái', 'Nội dung'],
-        staffRequests,
-        [500, 3000, 1800, 2200, 1800, 4860],
-        [0, 2, 3, 4]
-      ))
-    }
+    const staffRequests = rowsOf('staffRequests')
+      .sort((left, right) => (archiveDate(left.data.createdAt)?.getTime() || 0) - (archiveDate(right.data.createdAt)?.getTime() || 0))
+      .map((record, index) => {
+        const employee = identity(record.data.employeeId)
+        return [index + 1, employee.name, employee.code, staffRequestLabels[String(record.data.type || '')] || 'Yêu cầu khác', statusLabel(record.data.status), String(record.data.content || record.data.reason || '')]
+      })
+    addArchiveSheet(workbook, 'Yêu cầu khác', `DANH SÁCH YÊU CẦU KHÁC THÁNG ${reportMonth}`,
+      [
+        { key: 'index', width: 8 }, { key: 'employee', width: 28 }, { key: 'code', width: 16 },
+        { key: 'type', width: 24 }, { key: 'status', width: 18 }, { key: 'content', width: 48 },
+      ], ['STT', 'Họ và tên', 'Mã NV', 'Loại', 'Trạng thái', 'Nội dung'], staffRequests,
+      { centerColumns: [1, 3, 4, 5], wrapColumns: [6] })
 
-    const penalties = rowsOf('penalties').map((record, index) => {
-      const employee = identity(record.data.employeeId)
-      return [
-        String(index + 1),
-        employee.name,
-        employee.code,
-        money(record.data.status === 'Cancelled' ? 0 : record.data.amount),
-        statusLabel(record.data.status || 'Active'),
-        String(record.data.description || record.data.reason || ''),
-      ]
-    })
-    if (penalties.length) {
-      children.push(reportSectionHeading(`Khoản phạt (${penalties.length} khoản)`))
-      children.push(reportTable(
-        ['STT', 'Họ và tên', 'Mã NV', 'Số tiền', 'Trạng thái', 'Lý do'],
-        penalties,
-        [500, 3000, 1800, 1800, 1600, 5460],
-        [0, 2, 3, 4]
-      ))
-    }
+    const penalties = rowsOf('penalties')
+      .sort((left, right) => (archiveDate(left.data.penaltyDate)?.getTime() || 0) - (archiveDate(right.data.penaltyDate)?.getTime() || 0))
+      .map((record, index) => {
+        const employee = identity(record.data.employeeId)
+        return [index + 1, employee.name, employee.code, archiveNumber(record.data.amount), statusLabel(record.data.status || 'Active'), String(record.data.description || record.data.reason || '')]
+      })
+    addArchiveSheet(workbook, 'Khoản phạt', `DANH SÁCH KHOẢN PHẠT THÁNG ${reportMonth}`,
+      [
+        { key: 'index', width: 8 }, { key: 'employee', width: 28 }, { key: 'code', width: 16 },
+        { key: 'amount', width: 16 }, { key: 'status', width: 18 }, { key: 'reason', width: 48 },
+      ], ['STT', 'Họ và tên', 'Mã NV', 'Số tiền', 'Trạng thái', 'Lý do'], penalties,
+      { amountColumns: [4], centerColumns: [1, 3, 4, 5], wrapColumns: [6] })
 
-    if (children.length === 2) children.push(new Paragraph('Tháng này chưa có dữ liệu đã lưu.'))
-
-    const buffer = await Packer.toBuffer(landscapeReport(children))
+    const buffer = await workbook.xlsx.writeBuffer()
     return new Response(buffer, {
       headers: {
-        'content-type': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-        'content-disposition': `attachment; filename="bao-cao-nhan-su-${month}.docx"`,
+        'content-type': REPORT_XLSX_CONTENT_TYPE,
+        'content-disposition': `attachment; filename="kho-du-lieu-${month}.xlsx"`,
         'cache-control': 'no-store',
       },
     })
   } catch (error) {
-    console.error('Archive month Word export failed:', error)
+    console.error('Archive month Excel export failed:', error)
     return NextResponse.json({ error: 'Chưa thể xuất báo cáo tháng.' }, { status: 500 })
   }
 }

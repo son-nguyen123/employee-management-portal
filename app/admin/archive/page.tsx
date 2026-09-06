@@ -518,7 +518,7 @@ export default function AdminArchivePage() {
   const monthTotal = Object.values(monthCounts).reduce((sum, value) => sum + value, 0)
   const displayedMonthCount = new Set([...monthGroups.map((group) => group.key), currentMonthKey]).size
 
-  const exportMonthWord = async () => {
+  const exportMonthExcel = async () => {
     if (!selectedBrowseMonth || isPreviewMode) return
     setExportingMonth(true)
     setMessage('')
@@ -533,11 +533,11 @@ export default function AdminArchivePage() {
       const url = URL.createObjectURL(blob)
       const anchor = document.createElement('a')
       anchor.href = url
-      anchor.download = `kho-du-lieu-${selectedBrowseMonth}.docx`
+      anchor.download = `kho-du-lieu-${selectedBrowseMonth}.xlsx`
       anchor.click()
       URL.revokeObjectURL(url)
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : 'Chưa thể xuất file Word.')
+      setMessage(error instanceof Error ? error.message : 'Chưa thể xuất file Excel.')
     } finally {
       setExportingMonth(false)
     }
@@ -612,7 +612,7 @@ export default function AdminArchivePage() {
           <div className="flex items-start justify-between gap-3"><div><p className="text-[11px] font-bold uppercase tracking-wider text-indigo-600">Tổng quan {monthLabel(selectedBrowseMonth)}</p><h2 className="mt-1 text-xl font-black">{monthTotal} mục dữ liệu · {employeeCount} nhân viên</h2><p className="mt-1 text-[11px] leading-4 text-indigo-700/80 dark:text-indigo-200/80">Tổng tháng gồm cả lịch đã tạo trước cho những ngày sắp tới.</p></div>{activeFilterCount > 0 && <button type="button" onClick={clearFilters} className="shrink-0 rounded-xl bg-white px-3 py-2 text-xs font-bold text-slate-600 shadow-sm dark:bg-slate-900 dark:text-slate-300">Xóa lọc</button>}</div>
           <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3">{Object.entries(monthCounts).filter(([, count]) => count > 0).map(([collection, count]) => <div key={collection} className="rounded-2xl bg-white p-3 shadow-sm dark:bg-slate-900"><p className="text-xs font-semibold text-muted-foreground">{collectionLabels[collection] || collection}</p><p className="mt-1 text-xl font-black">{count}</p></div>)}</div>
           <div className="mt-3 grid grid-cols-2 gap-2">
-            <button type="button" onClick={() => void exportMonthWord()} disabled={exportingMonth || !monthTotal} className="flex min-h-12 items-center justify-center gap-2 rounded-2xl bg-indigo-600 px-3 text-sm font-bold text-white disabled:opacity-50">{exportingMonth ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />} Xuất Word</button>
+            <button type="button" onClick={() => void exportMonthExcel()} disabled={exportingMonth || !monthTotal} className="flex min-h-12 items-center justify-center gap-2 rounded-2xl bg-indigo-600 px-3 text-sm font-bold text-white disabled:opacity-50">{exportingMonth ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />} Xuất Excel</button>
             <button type="button" onClick={() => setShowWeeklyDetails((current) => !current)} className="flex min-h-12 items-center justify-center gap-2 rounded-2xl bg-white px-3 text-sm font-bold text-slate-700 shadow-sm dark:bg-slate-900 dark:text-slate-200"><Eye className="h-4 w-4" /> {showWeeklyDetails ? 'Ẩn chi tiết' : 'Xem chi tiết'}</button>
           </div>
         </section>
