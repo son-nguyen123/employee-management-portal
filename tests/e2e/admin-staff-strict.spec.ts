@@ -61,3 +61,25 @@ for (const route of ['/admin/dashboard', '/admin/dashboard?view=employees', '/ad
     await strictUiAudit(page)
   })
 }
+
+test('admin: danh sách nhân viên ghi phạt đóng sau khi chọn và mở lại khi cần đổi', async ({ page }) => {
+  await enterPreview(page, 'admin')
+  await page.goto('/admin/requests?view=penalties', { waitUntil: 'domcontentloaded' })
+  await page.getByRole('button', { name: 'Ghi phạt' }).click()
+
+  const picker = page.locator('button[aria-haspopup="listbox"]')
+  await picker.click()
+  const listbox = page.getByRole('listbox')
+  await expect(listbox).toBeVisible()
+
+  const firstOption = listbox.getByRole('option').first()
+  const selectedName = (await firstOption.locator('span.block').first().textContent())?.trim()
+  expect(selectedName).toBeTruthy()
+  await firstOption.click()
+
+  await expect(listbox).toBeHidden()
+  await expect(picker).toContainText(selectedName!)
+
+  await picker.click()
+  await expect(listbox).toBeVisible()
+})

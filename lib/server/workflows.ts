@@ -698,6 +698,12 @@ function workflowRef(actor: RequestActor, id: string) {
   return adminDb.collection('workflowRequests').doc(`${actor.uid}-${id}`)
 }
 
+const WORKFLOW_REQUEST_TTL_MS = 45 * 24 * 60 * 60 * 1000
+
+function workflowRequestExpiry() {
+  return Timestamp.fromMillis(Date.now() + WORKFLOW_REQUEST_TTL_MS)
+}
+
 function penaltyData(params: {
   employeeId: string
   factoryId?: string
@@ -1005,6 +1011,7 @@ export async function submitScheduleModeChangeRequest(actor: RequestActor, raw: 
       action: 'submitScheduleModeChangeRequest',
       targetIds: [requestRef.id],
       createdAt: now,
+      expiresAt: workflowRequestExpiry(),
     })
   })
   await sendManagerPushes({
@@ -1073,6 +1080,7 @@ export async function submitFactoryChangeRequest(actor: RequestActor, raw: unkno
       action: 'submitFactoryChangeRequest',
       targetIds: [requestRef.id],
       createdAt: now,
+      expiresAt: workflowRequestExpiry(),
     })
   })
   await sendManagerPushes({
@@ -1193,6 +1201,7 @@ export async function ensureFixedSchedule(actor: RequestActor, raw: unknown) {
       targetIds: scheduleRefs.map((ref) => ref.id),
       weekStart: targetWeekStart,
       createdAt: serverNow,
+      expiresAt: workflowRequestExpiry(),
     })
     transaction.set(employeeRef, { fixedScheduleTemplateWeekStart: targetWeekStart, updatedAt: serverNow }, { merge: true })
     managerIds.forEach((managerId) => transaction.set(
@@ -1442,6 +1451,7 @@ export async function submitSchedules(actor: RequestActor, raw: unknown) {
       penaltyId: shouldPenalize ? penaltyRef.id : null,
       scheduleMode,
       createdAt: now,
+      expiresAt: workflowRequestExpiry(),
     })
   })
 
@@ -1682,6 +1692,7 @@ export async function submitStaffRequest(actor: RequestActor, raw: unknown) {
       action: 'submitStaffRequest',
       targetIds: [requestRef.id],
       createdAt: now,
+      expiresAt: workflowRequestExpiry(),
     })
   })
 
@@ -1887,6 +1898,7 @@ export async function replaceSchedules(actor: RequestActor, raw: unknown) {
       replacedIds: scheduleIds,
       penaltyId: retainedPenaltyId,
       createdAt: now,
+      expiresAt: workflowRequestExpiry(),
     })
     transaction.set(adminDb.collection('notifications').doc(`schedule-status-${newRefs[0].id}`), {
       employeeId: actor.uid,
@@ -2109,6 +2121,7 @@ export async function submitLeave(actor: RequestActor, raw: unknown) {
       targetIds: [leaveRef.id],
       penaltyId: null,
       createdAt: now,
+      expiresAt: workflowRequestExpiry(),
     })
     managerIds.forEach((managerId) => {
       transaction.set(
@@ -2277,6 +2290,7 @@ export async function submitLate(actor: RequestActor, raw: unknown) {
       targetIds: [lateRef.id],
       penaltyId: null,
       createdAt: now,
+      expiresAt: workflowRequestExpiry(),
     })
     managerIds.forEach((managerId) => {
       transaction.set(
@@ -2341,6 +2355,7 @@ export async function submitSalaryAdvance(actor: RequestActor, raw: unknown) {
       targetIds: [advanceRef.id],
       penaltyId: null,
       createdAt: now,
+      expiresAt: workflowRequestExpiry(),
     })
     managerIds.forEach((managerId) => {
       transaction.set(
@@ -2570,6 +2585,7 @@ export async function adminCancelSchedules(actor: RequestActor, raw: unknown) {
       action: 'adminCancelSchedules',
       targetIds: ids,
       createdAt: now,
+      expiresAt: workflowRequestExpiry(),
     })
     transaction.set(adminDb.collection('notifications').doc(`admin-schedule-cancel-${id}`), {
       employeeId,
@@ -2661,6 +2677,7 @@ export async function restoreAdminCancelledSchedules(actor: RequestActor, raw: u
       action: 'restoreAdminCancelledSchedules',
       targetIds: ids,
       createdAt: now,
+      expiresAt: workflowRequestExpiry(),
     })
     transaction.set(adminDb.collection('notifications').doc(`admin-schedule-restore-${id}`), {
       employeeId,
@@ -2915,6 +2932,7 @@ export async function createManualPenalty(actor: RequestActor, raw: unknown) {
       targetIds: [penaltyRef.id],
       amount,
       createdAt: now,
+      expiresAt: workflowRequestExpiry(),
     })
   })
 
@@ -3012,6 +3030,7 @@ export async function managePenalty(actor: RequestActor, raw: unknown) {
       previousAmount,
       amount: adjustedAmount,
       createdAt: now,
+      expiresAt: workflowRequestExpiry(),
     })
   })
 

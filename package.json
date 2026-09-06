@@ -17,7 +17,8 @@
     "test:strict": "pnpm lint && pnpm test:unit && pnpm test:e2e",
     "test:load:schedules": "node --env-file=.env.local scripts/load-test-schedules.mjs",
     "seed:firestore": "node --env-file=.env.local scripts/seed-firestore.mjs",
-    "seed:review-test": "node scripts/seed-employee-review-test.mjs"
+    "seed:review-test": "node scripts/seed-employee-review-test.mjs",
+    "backfill:workflow-ttl": "node --env-file=.env.local scripts/backfill-workflow-request-expiry.mjs"
   },
   "dependencies": {
     "@base-ui/react": "^1.5.0",

@@ -539,11 +539,13 @@ export default function AdminRequestsPage() {
             <button type="button" onClick={closeManualPenalty} aria-label="Đóng form ghi phạt" className="grid h-10 w-10 place-items-center rounded-xl bg-white/15"><X className="h-4 w-4" /></button>
           </div>
           <div className="grid gap-3 p-4 sm:grid-cols-2">
-            <label className="relative block text-sm font-bold sm:col-span-2">Nhân viên
+            <div className="relative block text-sm font-bold sm:col-span-2">
+              <span>Nhân viên</span>
               <button
                 type="button"
                 ref={employeePickerButtonRef}
                 onClick={() => setEmployeePickerOpen((current) => !current)}
+                aria-label={selectedPenaltyEmployee ? `Đổi nhân viên đang chọn: ${selectedPenaltyEmployee.fullName}` : 'Chọn nhân viên'}
                 aria-expanded={employeePickerOpen}
                 aria-haspopup="listbox"
                 className="mt-2 flex min-h-14 w-full items-center gap-3 rounded-2xl border border-slate-200 bg-white px-3 text-left outline-none transition hover:border-rose-300 focus:border-rose-500 focus:ring-4 focus:ring-rose-500/10 dark:border-slate-700 dark:bg-slate-900"
@@ -577,7 +579,7 @@ export default function AdminRequestsPage() {
                   {!employees.length && <p className="p-3 text-sm font-semibold text-muted-foreground">Chưa có nhân viên đang hoạt động.</p>}
                 </div>
               )}
-            </label>
+            </div>
             <label className="text-sm font-bold">Ngày ghi phạt
               <input type="date" value={penaltyDate} onChange={(event) => setPenaltyDate(event.target.value)} className="mobile-field mt-2" required />
             </label>

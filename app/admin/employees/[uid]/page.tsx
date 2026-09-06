@@ -6,11 +6,7 @@ import Image from 'next/image'
 import { CalendarDays, CalendarPlus, CircleDollarSign, Clock3, ExternalLink, FileText, Loader2, MessageSquareText, Phone, Power, ShieldCheck, ShieldX, UserRound } from 'lucide-react'
 import { useAuth, useUserRole } from '@/lib/hooks/useAuth'
 import { getEmployeeByUID, getFactoryManagerSeats, setEmployeeAccountStatus, setEmployeeRole } from '@/lib/services/employeeService'
-import { getEmployeeSchedules } from '@/lib/services/scheduleService'
-import { getEmployeeLeaves } from '@/lib/services/leaveService'
-import { getEmployeeLateRequests } from '@/lib/services/lateService'
-import { getEmployeeSalaryAdvances } from '@/lib/services/salaryService'
-import { getEmployeeStaffRequests } from '@/lib/services/staffRequestService'
+import { getEmployeeDetailPage, type EmployeeDetailCursors } from '@/lib/services/employeeDetailService'
 import { getPreviewSchedules } from '@/lib/services/previewWorkflow'
 import type { Employee, LateRequest, LeaveRequest, SalaryAdvance, StaffRequest, WorkSchedule } from '@/lib/models/types'
 import { Header } from '@/components/layout/header'
@@ -114,6 +110,20 @@ function buildScheduleActivities(schedules: DetailSchedule[]): Activity[] {
   })
 }
 
+function buildOtherActivities(
+  leaves: LeaveRequest[],
+  lates: LateRequest[],
+  salaries: SalaryAdvance[],
+  staffRequests: StaffRequest[],
+): Activity[] {
+  return [
+    ...leaves.map((item): Activity => ({ id: `leave-${item.id}`, type: 'leave', title: 'Yêu cầu xin nghỉ', summary: `${toDate(item.leaveDate).toLocaleDateString('vi-VN')}${item.endDate ? `–${toDate(item.endDate).toLocaleDateString('vi-VN')}` : ''}`, status: item.status, sortAt: toDate(item.updatedAt), note: item.reason, reviewNote: item.reviewNote })),
+    ...lates.map((item): Activity => ({ id: `late-${item.id}`, type: 'late', title: 'Thông báo đi trễ', summary: `${toDate(item.date).toLocaleDateString('vi-VN')} · ${item.lateMinutes} phút${item.expectedArrival ? ` · đến lúc ${item.expectedArrival}` : ''}`, status: item.status, sortAt: toDate(item.updatedAt), note: item.reason, reviewNote: item.reviewNote })),
+    ...salaries.map((item): Activity => ({ id: `salary-${item.id}`, type: 'salary', title: 'Yêu cầu ứng lương', summary: `${Number(item.amount).toLocaleString('vi-VN')}đ`, status: item.status, sortAt: toDate(item.updatedAt), note: item.reason, reviewNote: item.reviewNote })),
+    ...staffRequests.map((item): Activity => ({ id: `staff-${item.id}`, type: item.type, title: item.type === 'scheduleModeChange' ? 'Yêu cầu đổi chế độ làm việc' : item.type === 'factoryChange' ? 'Yêu cầu đổi xưởng' : item.type === 'scheduleChange' ? 'Yêu cầu đổi / thêm ca' : item.type === 'overtime' ? 'Yêu cầu làm thêm' : 'Ghi chú cho quản lý', summary: item.type === 'scheduleModeChange' ? `${item.previousScheduleMode === 'fixed' ? 'Cố định' : 'Xoay ca'} → ${item.requestedScheduleMode === 'fixed' ? 'Cố định' : 'Xoay ca'}` : item.type === 'factoryChange' ? `${FACTORY_LABELS[item.previousFactoryId || 'factory-1']} → ${FACTORY_LABELS[item.requestedFactoryId || 'factory-1']}` : item.type === 'scheduleChange' ? `${item.removedShifts?.length || 0} ca xin hủy · ${item.restoredShifts?.length || 0} ca đi làm lại · ${item.shifts?.length || 0} ca mới / ca thêm` : item.type === 'overtime' ? `${item.shifts?.length || 0} ca muốn làm thêm` : 'Lời nhắn riêng', status: item.status, sortAt: toDate(item.updatedAt), note: item.content, reviewNote: item.reviewNote })),
+  ]
+}
+
 export default function EmployeeDetailPage() {
   const params = useParams<{ uid: string }>()
   const { authUser, isPreviewMode } = useAuth()
@@ -122,6 +132,10 @@ export default function EmployeeDetailPage() {
   const [schedules, setSchedules] = useState<DetailSchedule[]>([])
   const [otherActivities, setOtherActivities] = useState<Activity[]>([])
   const [loading, setLoading] = useState(true)
+  const [activityLoading, setActivityLoading] = useState(true)
+  const [loadingMoreActivities, setLoadingMoreActivities] = useState(false)
+  const [activityCursors, setActivityCursors] = useState<EmployeeDetailCursors>({})
+  const [hasMoreActivities, setHasMoreActivities] = useState(false)
   const [message, setMessage] = useState('')
   const [changingStatus, setChangingStatus] = useState(false)
   const [confirmingStatus, setConfirmingStatus] = useState<'active' | 'inactive' | null>(null)
@@ -131,44 +145,68 @@ export default function EmployeeDetailPage() {
 
   useEffect(() => {
     if (!authUser) return
+    let cancelled = false
     const load = async () => {
+      setLoading(true)
+      setActivityLoading(true)
+      setMessage('')
       try {
         if (isPreviewMode) {
           const rows = getPreviewSchedules().filter((item) => item.employeeId === params.uid)
           const first = rows[0]
           if (first) setEmployee({ uid: first.employeeId, fullName: first.employeeName, employeeCode: first.employeeCode, phone: first.phone, facebookUrl: first.facebookUrl, email: `${first.employeeCode.toLowerCase()}@example.com`, role: 'employee', status: 'active', scheduleMode: 'rotating', joinDate: new Date(), createdAt: new Date(), updatedAt: new Date() })
           setSchedules(rows.map((item) => ({ id: item.id, employeeId: item.employeeId, date: new Date(item.date), shift: item.shift, status: item.status, note: item.note, reviewNote: item.reviewNote, createdAt: new Date(item.date), updatedAt: new Date(item.date) })))
+          setOtherActivities([])
+          setActivityCursors({})
+          setHasMoreActivities(false)
           return
         }
-        const [employeeData, scheduleData, leaves, lates, salaries, staffRequests, seatResult] = await Promise.all([
-          getEmployeeByUID(params.uid),
-          getEmployeeSchedules(params.uid),
-          getEmployeeLeaves(params.uid),
-          getEmployeeLateRequests(params.uid),
-          role === 'director' ? Promise.resolve<SalaryAdvance[]>([]) : getEmployeeSalaryAdvances(params.uid),
-          getEmployeeStaffRequests(params.uid),
+        const employeeData = await getEmployeeByUID(params.uid)
+        if (cancelled) return
+        setEmployee(employeeData)
+        setLoading(false)
+        if (!employeeData) return
+        const [activityPage, seatResult] = await Promise.all([
+          getEmployeeDetailPage(params.uid, {}, { includeSalaryAdvances: role !== 'director' }),
           role === 'director'
             ? getFactoryManagerSeats().then((seats) => ({ seats, loaded: true })).catch(() => ({ seats: [] as FactoryManagerSeat[], loaded: false }))
             : Promise.resolve({ seats: [] as FactoryManagerSeat[], loaded: false }),
         ])
-        setEmployee(employeeData)
+        if (cancelled) return
         setManagerSeats(seatResult.seats)
         setManagerSeatsLoaded(seatResult.loaded)
-        setSchedules(scheduleData.map((item) => ({ ...item, id: item.id! })))
-        setOtherActivities([
-          ...leaves.map((item): Activity => ({ id: `leave-${item.id}`, type: 'leave', title: 'Yêu cầu xin nghỉ', summary: `${toDate(item.leaveDate).toLocaleDateString('vi-VN')}${item.endDate ? `–${toDate(item.endDate).toLocaleDateString('vi-VN')}` : ''}`, status: item.status, sortAt: toDate(item.updatedAt), note: item.reason, reviewNote: item.reviewNote })),
-          ...lates.map((item): Activity => ({ id: `late-${item.id}`, type: 'late', title: 'Thông báo đi trễ', summary: `${toDate(item.date).toLocaleDateString('vi-VN')} · ${item.lateMinutes} phút${item.expectedArrival ? ` · đến lúc ${item.expectedArrival}` : ''}`, status: item.status, sortAt: toDate(item.updatedAt), note: item.reason, reviewNote: item.reviewNote })),
-          ...salaries.map((item): Activity => ({ id: `salary-${item.id}`, type: 'salary', title: 'Yêu cầu ứng lương', summary: `${Number(item.amount).toLocaleString('vi-VN')}đ`, status: item.status, sortAt: toDate(item.updatedAt), note: item.reason, reviewNote: item.reviewNote })),
-          ...staffRequests.map((item): Activity => ({ id: `staff-${item.id}`, type: item.type, title: item.type === 'scheduleModeChange' ? 'Yêu cầu đổi chế độ làm việc' : item.type === 'factoryChange' ? 'Yêu cầu đổi xưởng' : item.type === 'scheduleChange' ? 'Yêu cầu đổi / thêm ca' : item.type === 'overtime' ? 'Yêu cầu làm thêm' : 'Ghi chú cho quản lý', summary: item.type === 'scheduleModeChange' ? `${item.previousScheduleMode === 'fixed' ? 'Cố định' : 'Xoay ca'} → ${item.requestedScheduleMode === 'fixed' ? 'Cố định' : 'Xoay ca'}` : item.type === 'factoryChange' ? `${FACTORY_LABELS[item.previousFactoryId || 'factory-1']} → ${FACTORY_LABELS[item.requestedFactoryId || 'factory-1']}` : item.type === 'scheduleChange' ? `${item.removedShifts?.length || 0} ca xin hủy · ${item.restoredShifts?.length || 0} ca đi làm lại · ${item.shifts?.length || 0} ca mới / ca thêm` : item.type === 'overtime' ? `${item.shifts?.length || 0} ca muốn làm thêm` : 'Lời nhắn riêng', status: item.status, sortAt: toDate(item.updatedAt), note: item.content, reviewNote: item.reviewNote })),
-        ])
+        setSchedules(activityPage.schedules.map((item) => ({ ...item, id: item.id! })))
+        setOtherActivities(buildOtherActivities(activityPage.leaves, activityPage.lates, activityPage.salaries, activityPage.staffRequests))
+        setActivityCursors(activityPage.cursors)
+        setHasMoreActivities(Object.values(activityPage.hasMore).some(Boolean))
       } catch {
-        setMessage('Không thể tải đầy đủ lịch sử hoạt động của nhân viên.')
+        if (!cancelled) setMessage('Không thể tải đầy đủ lịch sử hoạt động của nhân viên. Bạn có thể thử tải lại trang.')
       } finally {
-        setLoading(false)
+        if (!cancelled) {
+          setLoading(false)
+          setActivityLoading(false)
+        }
       }
     }
     void load()
+    return () => { cancelled = true }
   }, [authUser, isPreviewMode, params.uid, role])
+
+  const loadMoreActivities = async () => {
+    if (!employee || activityLoading || loadingMoreActivities || !hasMoreActivities) return
+    setLoadingMoreActivities(true)
+    try {
+      const activityPage = await getEmployeeDetailPage(employee.uid, activityCursors, { includeSalaryAdvances: role !== 'director' })
+      setSchedules((current) => [...current, ...activityPage.schedules.map((item) => ({ ...item, id: item.id! }))])
+      setOtherActivities((current) => [...current, ...buildOtherActivities(activityPage.leaves, activityPage.lates, activityPage.salaries, activityPage.staffRequests)])
+      setActivityCursors(activityPage.cursors)
+      setHasMoreActivities(Object.values(activityPage.hasMore).some(Boolean))
+    } catch {
+      setMessage('Chưa thể tải thêm lịch sử hoạt động. Vui lòng thử lại.')
+    } finally {
+      setLoadingMoreActivities(false)
+    }
+  }
 
   const activities = useMemo(() => [...buildScheduleActivities(schedules), ...otherActivities].sort((a, b) => b.sortAt.getTime() - a.sortAt.getTime()), [schedules, otherActivities])
   const employeeFactory = employeeFactoryId(employee)
@@ -281,7 +319,8 @@ export default function EmployeeDetailPage() {
             )}
           </section>
           {message && <p className="mt-4 rounded-2xl bg-amber-50 p-3 text-sm font-semibold text-amber-900">{message}</p>}
-          <section className="mt-6"><div className="mb-3 flex items-center justify-between"><h2 className="text-xl font-black">Lịch sử hoạt động</h2><Badge variant="outline">{activities.length} yêu cầu</Badge></div><div className="space-y-3">
+          <section className="mt-6"><div className="mb-3 flex items-center justify-between"><h2 className="text-xl font-black">Lịch sử hoạt động</h2><Badge variant="outline">{activityLoading ? 'Đang tải...' : `${activities.length} mục`}</Badge></div><div className="space-y-3">
+            {activityLoading && <div className="mobile-card flex items-center justify-center gap-2 p-6 text-sm font-semibold text-muted-foreground"><Loader2 className="h-4 w-4 animate-spin" /> Đang tải những hoạt động gần nhất...</div>}
             {activities.map((activity) => { const meta = activityMeta[activity.type]; const Icon = meta.icon; return <details key={activity.id} className="mobile-card overflow-hidden"><summary className="cursor-pointer list-none p-4"><div className="flex items-start gap-3"><div className={`grid h-11 w-11 shrink-0 place-items-center rounded-2xl ${meta.color}`}><Icon className="h-5 w-5" /></div><div className="min-w-0 flex-1"><h3 className="font-extrabold">{activity.title}</h3><p className="mt-1 text-xs text-muted-foreground">{activity.summary}</p></div><Badge variant={statusVariant(activity.status)}>{statusLabel(activity.status)}</Badge></div></summary><div className="border-t border-slate-100 bg-white px-4 py-3 dark:border-white/10 dark:bg-slate-900">
               {activity.schedules && <div className="divide-y divide-slate-100 dark:divide-white/10">{Array.from(new Map(activity.schedules.map((row) => { const key = localDateKey(toDate(row.date)); return [key, { date: toDate(row.date), rows: activity.schedules!.filter((item) => localDateKey(toDate(item.date)) === key) }] })).values()).filter(({ rows }) => !rows.some((row) => row.note?.includes('[NO_SHIFTS]'))).map(({ date, rows }) => <div key={localDateKey(date)} className="flex gap-3 py-2 text-sm"><span className="w-24 shrink-0 font-bold capitalize">{date.toLocaleDateString('vi-VN', { weekday: 'long' })}</span><span className="text-muted-foreground">{rows.filter((row) => !row.note?.includes('[DUTY_ONLY]')).map((row) => shiftLabel[row.shift]).join(' – ')}{rows.some((row) => row.note?.includes('[DUTY')) ? ' + trực' : ''}</span></div>)}</div>}
               {activity.note && <p className="mt-3 rounded-2xl bg-slate-50 p-3 text-sm leading-6 text-slate-700 dark:bg-slate-800 dark:text-slate-200"><strong>Ghi chú:</strong> {activity.note}</p>}
@@ -289,7 +328,11 @@ export default function EmployeeDetailPage() {
               {activity.reviewNote && <p className="mt-2 rounded-2xl bg-amber-50 p-3 text-sm text-amber-900"><strong>Phản hồi:</strong> {activity.reviewNote}</p>}
               {!['Approved', 'Rejected', 'Cancelled'].includes(activity.status) && <p className="mt-3 text-xs font-semibold text-amber-700">Yêu cầu đang được xử lý.</p>}
             </div></details> })}
-            {!activities.length && <div className="mobile-card p-8 text-center"><CalendarDays className="mx-auto h-8 w-8 text-slate-400" /><p className="mt-3 font-bold">Nhân viên chưa có hoạt động.</p></div>}
+            {!activityLoading && !activities.length && <div className="mobile-card p-8 text-center"><CalendarDays className="mx-auto h-8 w-8 text-slate-400" /><p className="mt-3 font-bold">Nhân viên chưa có hoạt động.</p></div>}
+            {!activityLoading && hasMoreActivities && <button type="button" onClick={() => void loadMoreActivities()} disabled={loadingMoreActivities} className="flex min-h-12 w-full items-center justify-center gap-2 rounded-2xl border border-indigo-200 bg-indigo-50 px-4 text-sm font-extrabold text-indigo-700 transition hover:bg-indigo-100 disabled:opacity-60 dark:border-indigo-500/30 dark:bg-indigo-500/10 dark:text-indigo-200">
+              {loadingMoreActivities && <Loader2 className="h-4 w-4 animate-spin" />}
+              {loadingMoreActivities ? 'Đang tải thêm...' : 'Xem thêm lịch sử'}
+            </button>}
           </div></section>
         </>}
       </PageContainer>
