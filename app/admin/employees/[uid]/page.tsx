@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useParams } from 'next/navigation'
 import Image from 'next/image'
-import { CalendarDays, CalendarPlus, CircleDollarSign, Clock3, ExternalLink, FileText, Loader2, MessageSquareText, Phone, Power, ShieldCheck, ShieldX, UserRound, Crown } from 'lucide-react'
+import { CalendarDays, CalendarPlus, CircleDollarSign, Clock3, ExternalLink, FileText, Loader2, MessageSquareText, Phone, Power, ShieldCheck, ShieldX, UserRound } from 'lucide-react'
 import { useAuth, useUserRole } from '@/lib/hooks/useAuth'
 import { getEmployeeByUID, getFactoryManagerSeats, setEmployeeAccountStatus, setEmployeeRole } from '@/lib/services/employeeService'
 import { getEmployeeSchedules } from '@/lib/services/scheduleService'
@@ -214,8 +214,8 @@ export default function EmployeeDetailPage() {
           : { ...seat, managerId: null, managerName: undefined, status: 'vacant' }
         : seat))
       setMessage(nextRole === 'admin'
-        ? `Đã giao ghế Admin ${FACTORY_LABELS[employeeFactory]} cho ${employee.fullName}.`
-        : `Đã trả ghế Admin ${FACTORY_LABELS[employeeFactory]}; ${employee.fullName} trở lại vai trò Nhân viên.`)
+        ? `Đã giao quyền quản lý ${FACTORY_LABELS[employeeFactory]} cho ${employee.fullName}.`
+        : `Đã thu hồi quyền quản lý ${FACTORY_LABELS[employeeFactory]}; ${employee.fullName} trở lại vai trò Nhân viên.`)
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'Chưa thể cập nhật vai trò tài khoản.')
     } finally {
@@ -264,8 +264,8 @@ export default function EmployeeDetailPage() {
             {canManageEmployeeRole && (
               <div className="mt-3 rounded-3xl border border-violet-200/80 bg-white/75 p-4 shadow-sm">
                 <div className="flex items-start gap-3">
-                  <div className="grid h-10 w-10 shrink-0 place-items-center rounded-2xl bg-violet-100 text-violet-700"><Crown className="h-5 w-5" /></div>
-                  <div className="min-w-0 flex-1"><p className="text-sm font-black">Ghế quản lý {FACTORY_LABELS[employeeFactory]}</p><p className="mt-1 text-xs leading-5 text-slate-600">Ghế thuộc về xưởng, không thuộc tài khoản. Khi trả về Nhân viên, toàn bộ dữ liệu xưởng vẫn giữ nguyên để giao cho Admin mới.</p></div>
+                  <div className="grid h-10 w-10 shrink-0 place-items-center rounded-2xl bg-violet-100 text-violet-700"><ShieldCheck className="h-5 w-5" /></div>
+                  <div className="min-w-0 flex-1"><p className="text-sm font-black">Phân quyền quản lý {FACTORY_LABELS[employeeFactory]}</p><p className="mt-1 text-xs leading-5 text-slate-600">Mỗi xưởng có một tài khoản quản lý. Khi đổi về Nhân viên, dữ liệu của xưởng vẫn được giữ nguyên.</p></div>
                 </div>
                 <select
                   value={employeeIsFactoryManager ? 'admin' : 'employee'}

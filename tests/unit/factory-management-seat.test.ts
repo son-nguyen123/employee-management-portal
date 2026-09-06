@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { canHostManageFactorySeat, isFactoryManagerRole } from '@/lib/models/factory'
+import { canHostManageFactorySeat, employeesForFactory, isFactoryManagerRole } from '@/lib/models/factory'
 
 describe('factory management seat policy', () => {
   it('recognizes current and legacy factory manager roles', () => {
@@ -50,5 +50,20 @@ describe('factory management seat policy', () => {
     expect(canHostManageFactorySeat({
       viewerRole: 'director', targetRole: 'employee', targetId: 'employee-1', seatManagerId: null, seatsLoaded: false,
     })).toBe(false)
+  })
+
+  it('keeps the Host root out of each factory directory branch', () => {
+    const employees = [
+      { uid: 'host', role: 'director' as const, factoryId: 'factory-1' as const },
+      { uid: 'factory-1-employee', role: 'employee' as const, factoryId: 'factory-1' as const },
+      { uid: 'factory-1-admin', role: 'admin' as const, factoryId: 'factory-1' as const },
+      { uid: 'factory-2-employee', role: 'employee' as const, factoryId: 'factory-2' as const },
+    ]
+
+    expect(employeesForFactory(employees, 'factory-1').map((item) => item.uid)).toEqual([
+      'factory-1-employee',
+      'factory-1-admin',
+    ])
+    expect(employeesForFactory(employees, 'factory-2').map((item) => item.uid)).toEqual(['factory-2-employee'])
   })
 })

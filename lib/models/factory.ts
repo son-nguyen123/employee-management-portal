@@ -25,6 +25,15 @@ export function employeeFactoryId(value: { factoryId?: FactoryId } | null | unde
   return isFactoryId(value?.factoryId) ? value.factoryId : 'factory-1'
 }
 
+/**
+ * Returns only the factory members that belong to one branch of the directory.
+ * The Host account is the root of the tree and must not appear as a member of
+ * either factory branch, even when legacy data has no factoryId.
+ */
+export function employeesForFactory<T extends { factoryId?: FactoryId; role?: unknown }>(employees: T[], factoryId: FactoryId): T[] {
+  return employees.filter((employee) => employee.role !== 'director' && employeeFactoryId(employee) === factoryId)
+}
+
 export function isFactoryManagerRole(role: unknown): boolean {
   return role === 'admin' || role === 'manager'
 }

@@ -5,7 +5,7 @@ import Link from 'next/link'
 import Image from 'next/image'
 import { AlertTriangle, ArrowLeft, CalendarCheck, Check, ChevronRight, ExternalLink, Loader2, MessageSquareText, Phone, RotateCcw, UsersRound, X } from 'lucide-react'
 import { useAuth, useUserRole } from '@/lib/hooks/useAuth'
-import { employeeFactoryId, FACTORY_LABELS } from '@/lib/models/factory'
+import { employeesForFactory, employeeFactoryId, FACTORY_IDS, FACTORY_LABELS, isFactoryId, isFactoryManagerRole, type FactoryId } from '@/lib/models/factory'
 import { setEmployeeAccountStatus, subscribeToAllEmployees } from '@/lib/services/employeeService'
 import { ensureFixedSchedule, reviewWorkScheduleBatch, subscribeToAllSchedules } from '@/lib/services/scheduleService'
 import { getPreviewSchedules, updatePreviewSchedule } from '@/lib/services/previewWorkflow'
@@ -133,6 +133,7 @@ export default function AdminDashboardPage() {
   const { authUser, employee: currentEmployee, isPreviewMode } = useAuth()
   const role = useUserRole()
   const [employees, setEmployees] = useState<Employee[]>([])
+  const [selectedFactory, setSelectedFactory] = useState<FactoryId>('factory-1')
   const [schedules, setSchedules] = useState<ScheduleRow[]>([])
   const [tab, setTab] = useState<'schedules' | 'other' | 'employees'>('schedules')
   const [loading, setLoading] = useState(true)
@@ -160,7 +161,10 @@ export default function AdminDashboardPage() {
 
   useEffect(() => {
     const timeout = window.setTimeout(() => {
-      if (new URLSearchParams(window.location.search).get('view') === 'employees') setTab('employees')
+      const params = new URLSearchParams(window.location.search)
+      if (params.get('view') === 'employees') setTab('employees')
+      const factory = params.get('factory')
+      if (isFactoryId(factory)) setSelectedFactory(factory)
     }, 0)
     return () => window.clearTimeout(timeout)
   }, [])
@@ -291,8 +295,20 @@ export default function AdminDashboardPage() {
       })
     })
   }, [authUser, fixedForNextWeek, isPreviewMode, nextWeekKey, role])
-  const pendingEmployees = useMemo(() => employees.filter((item) => item.status === 'pending'), [employees])
-  const inactiveEmployees = useMemo(() => employees.filter((item) => item.status === 'inactive'), [employees])
+  const directoryFactory = role === 'director' ? selectedFactory : employeeFactoryId(currentEmployee)
+  const directoryEmployees = useMemo(() => employeesForFactory(employees, directoryFactory), [directoryFactory, employees])
+  const directoryActiveEmployees = useMemo(() => directoryEmployees.filter((item) => item.status === 'active'), [directoryEmployees])
+  const directoryPendingEmployees = useMemo(() => directoryEmployees.filter((item) => item.status === 'pending'), [directoryEmployees])
+  const directoryInactiveEmployees = useMemo(() => directoryEmployees.filter((item) => item.status === 'inactive'), [directoryEmployees])
+  const directoryFixedForNextWeek = useMemo(() => fixedForNextWeek.filter((employee) => directoryEmployees.some((item) => item.uid === employee.uid)), [directoryEmployees, fixedForNextWeek])
+
+  const chooseFactory = (factory: FactoryId) => {
+    setSelectedFactory(factory)
+    const url = new URL(window.location.href)
+    url.searchParams.set('view', 'employees')
+    url.searchParams.set('factory', factory)
+    window.history.replaceState(null, '', `${url.pathname}?${url.searchParams.toString()}${url.hash}`)
+  }
 
   const changeAccountStatus = async (employee: Employee, status: 'active' | 'inactive') => {
     setProcessingId(employee.uid)
@@ -460,17 +476,34 @@ export default function AdminDashboardPage() {
       <main className="min-h-screen pb-8">
         <Header
           title="Danh sách nhân viên"
-          subtitle={`${activeEmployees.length} nhân viên đang hoạt động`}
+          subtitle={`${role === 'director' ? `${FACTORY_LABELS[directoryFactory]} · ` : ''}${directoryActiveEmployees.length} nhân viên đang hoạt động`}
           backHref="/"
         />
         <PageContainer maxWidth="2xl">
           <OperationalAlertBanner health={operationalHealth} />
+          {role === 'director' && (
+            <section className="mb-5 rounded-3xl border border-slate-200 bg-white p-3 shadow-sm dark:border-white/10 dark:bg-slate-900">
+              <p className="px-1 text-xs font-black uppercase tracking-[0.14em] text-slate-600 dark:text-slate-300">Chọn xưởng</p>
+              <div className="mt-2 grid grid-cols-2 gap-2 rounded-2xl bg-slate-100 p-1 dark:bg-slate-800">
+                {FACTORY_IDS.map((factory) => (
+                  <button
+                    key={factory}
+                    type="button"
+                    onClick={() => chooseFactory(factory)}
+                    className={`min-h-11 rounded-xl text-sm font-black transition ${selectedFactory === factory ? 'bg-slate-900 text-white shadow-sm dark:bg-white dark:text-slate-900' : 'text-slate-950 hover:bg-white dark:text-slate-100 dark:hover:bg-slate-700'}`}
+                  >
+                    {FACTORY_LABELS[factory]}
+                  </button>
+                ))}
+              </div>
+            </section>
+          )}
           {message && <p className="mb-3 rounded-2xl bg-indigo-50 p-3 text-sm font-semibold text-indigo-900 dark:bg-indigo-500/10 dark:text-indigo-100">{message}</p>}
-          {fixedForNextWeek.length > 0 && <section className="mb-5 rounded-3xl border border-violet-200 bg-violet-50 p-4 dark:border-violet-500/30 dark:bg-violet-500/10"><div className="flex items-center justify-between gap-3"><h2 className="font-black text-violet-900 dark:text-violet-100">Lịch cố định tuần sau</h2><span className="rounded-full bg-violet-600 px-2.5 py-1 text-xs font-black text-white">{fixedForNextWeek.length} người</span></div><p className="mt-2 text-sm leading-6 text-violet-800 dark:text-violet-200">{fixedForNextWeek.map((employee) => employee.fullName).join(' · ')}</p></section>}
-          {['admin', 'director'].includes(role || '') && pendingEmployees.length > 0 && (
+          {directoryFixedForNextWeek.length > 0 && <section className="mb-5 rounded-3xl border border-violet-200 bg-violet-50 p-4 dark:border-violet-500/30 dark:bg-violet-500/10"><div className="flex items-center justify-between gap-3"><h2 className="font-black text-violet-900 dark:text-violet-100">Lịch cố định tuần sau</h2><span className="rounded-full bg-violet-600 px-2.5 py-1 text-xs font-black text-white">{directoryFixedForNextWeek.length} người</span></div><p className="mt-2 text-sm leading-6 text-violet-800 dark:text-violet-200">{directoryFixedForNextWeek.map((employee) => employee.fullName).join(' · ')}</p></section>}
+          {['admin', 'director'].includes(role || '') && directoryPendingEmployees.length > 0 && (
             <section className="mb-5 rounded-3xl border border-amber-200 bg-amber-50 p-4 dark:border-amber-500/30 dark:bg-amber-500/10">
-              <h2 className="font-black text-amber-900 dark:text-amber-100">Tài khoản mới chờ duyệt ({pendingEmployees.length})</h2>
-              <div className="mt-3 space-y-2">{pendingEmployees.map((employee) => (
+              <h2 className="font-black text-amber-900 dark:text-amber-100">Tài khoản mới chờ duyệt ({directoryPendingEmployees.length})</h2>
+              <div className="mt-3 space-y-2">{directoryPendingEmployees.map((employee) => (
                 <article key={employee.uid} className="rounded-2xl bg-white p-3 shadow-sm dark:bg-slate-900">
                   <p className="font-extrabold">{employee.fullName} · {employee.employeeCode}</p>
                   <p className="mt-1 text-xs text-muted-foreground">{FACTORY_LABELS[employeeFactoryId(employee)]} · {employee.phone} · {employee.email}</p>
@@ -486,28 +519,28 @@ export default function AdminDashboardPage() {
             <div className="grid min-h-56 place-items-center"><Loader2 className="h-7 w-7 animate-spin text-indigo-600" /></div>
           ) : (
             <section id="employees" className="grid gap-2 sm:grid-cols-2">
-              {activeEmployees.map((employee) => (
-                <Link key={employee.uid} href={`/admin/employees/${employee.uid}`} className="flex min-h-18 items-center gap-3 rounded-2xl border border-slate-200/80 bg-white p-3 shadow-sm transition active:scale-[.99] dark:border-white/10 dark:bg-slate-900">
+              {directoryActiveEmployees.map((employee) => (
+                <Link key={employee.uid} href={`/admin/employees/${employee.uid}?factory=${directoryFactory}`} className="flex min-h-18 items-center gap-3 rounded-2xl border border-slate-200/80 bg-white p-3 shadow-sm transition active:scale-[.99] dark:border-white/10 dark:bg-slate-900">
                   <div className="grid h-11 w-11 shrink-0 place-items-center overflow-hidden rounded-2xl bg-indigo-50 text-sm font-black text-indigo-600 dark:bg-indigo-500/10">
                     {employee.photoURL ? <Image src={profileImageUrl(employee.photoURL)} alt={`Ảnh đại diện của ${employee.fullName}`} width={44} height={44} className="h-full w-full object-cover" /> : employee.fullName.split(' ').slice(-2).map((word) => word[0]).join('')}
                   </div>
                   <div className="min-w-0 flex-1">
                     <h2 className="truncate text-sm font-extrabold">{employee.fullName}</h2>
-                    <p className="mt-1 truncate text-xs text-muted-foreground">{employee.employeeCode} · {employee.phone || 'Chưa có SĐT'}</p>
+                    <p className="mt-1 truncate text-xs text-muted-foreground">{employee.employeeCode} · {isFactoryManagerRole(employee.role) ? `Admin ${FACTORY_LABELS[directoryFactory]}` : 'Nhân viên'} · {employee.phone || 'Chưa có SĐT'}</p>
                   </div>
                   {!isManagementScheduleRole(employee.role) && employee.scheduleMode === 'fixed' && <span className="shrink-0 rounded-full bg-violet-50 px-2 py-1 text-[10px] font-black text-violet-700 dark:bg-violet-500/10 dark:text-violet-200">Cố định</span>}
                   <ChevronRight className="h-4 w-4 shrink-0 text-slate-400" />
                 </Link>
               ))}
-              {!activeEmployees.length && <div className="mobile-card p-8 text-center text-sm font-semibold text-muted-foreground sm:col-span-2">Chưa có nhân viên đang hoạt động.</div>}
+              {!directoryActiveEmployees.length && <div className="mobile-card p-8 text-center text-sm font-semibold text-muted-foreground sm:col-span-2">Chưa có nhân viên đang hoạt động trong xưởng này.</div>}
             </section>
           )}
-          {role === 'admin' && inactiveEmployees.length > 0 && (
+          {['admin', 'director'].includes(role || '') && directoryInactiveEmployees.length > 0 && (
             <section className="mt-6">
               <h2 className="mb-3 text-lg font-black">Tài khoản đã khóa</h2>
-              <div className="space-y-2">{inactiveEmployees.map((employee) => (
+              <div className="space-y-2">{directoryInactiveEmployees.map((employee) => (
                 <article key={employee.uid} className="mobile-card flex items-center gap-3 p-3">
-                  <Link href={`/admin/employees/${employee.uid}`} className="flex min-w-0 flex-1 items-center gap-3"><div className="grid h-10 w-10 shrink-0 place-items-center overflow-hidden rounded-2xl bg-indigo-50 text-xs font-black text-indigo-600 dark:bg-indigo-500/10">{employee.photoURL ? <Image src={profileImageUrl(employee.photoURL)} alt={`Ảnh đại diện của ${employee.fullName}`} width={40} height={40} className="h-full w-full object-cover" /> : employee.fullName.split(' ').slice(-2).map((word) => word[0]).join('')}</div><div className="min-w-0"><p className="truncate font-bold">{employee.fullName}</p><p className="text-xs text-muted-foreground">{employee.employeeCode} · Xem hồ sơ</p></div></Link>
+                  <Link href={`/admin/employees/${employee.uid}?factory=${directoryFactory}`} className="flex min-w-0 flex-1 items-center gap-3"><div className="grid h-10 w-10 shrink-0 place-items-center overflow-hidden rounded-2xl bg-indigo-50 text-xs font-black text-indigo-600 dark:bg-indigo-500/10">{employee.photoURL ? <Image src={profileImageUrl(employee.photoURL)} alt={`Ảnh đại diện của ${employee.fullName}`} width={40} height={40} className="h-full w-full object-cover" /> : employee.fullName.split(' ').slice(-2).map((word) => word[0]).join('')}</div><div className="min-w-0"><p className="truncate font-bold">{employee.fullName}</p><p className="text-xs text-muted-foreground">{employee.employeeCode} · Xem hồ sơ</p></div></Link>
                   <button type="button" disabled={processingId === employee.uid} onClick={() => void changeAccountStatus(employee, 'active')} className="min-h-10 rounded-xl bg-emerald-50 px-3 text-xs font-bold text-emerald-700 disabled:opacity-50">Bật lại</button>
                 </article>
               ))}</div>
