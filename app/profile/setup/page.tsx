@@ -298,7 +298,7 @@ export default function ProfileSetupPage() {
               <select
                 value={form.factoryId}
                 onChange={(event) => setValue('factoryId', event.target.value)}
-                className="mobile-field mt-3 !rounded-2xl !border-indigo-100 !bg-white !font-semibold focus:!border-indigo-400 focus:!ring-indigo-200"
+                className="mobile-field mt-3 !rounded-2xl !border-indigo-100 !bg-white !font-semibold !text-slate-950 focus:!border-indigo-400 focus:!ring-indigo-200"
                 required
                 disabled={saving || signingOut}
               >

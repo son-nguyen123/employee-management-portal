@@ -49,8 +49,16 @@ export async function GET(request: Request) {
     workbook.created = new Date()
     workbook.modified = new Date()
     const sheet = workbook.addWorksheet('Ứng lương', {
-      views: [{ state: 'frozen', ySplit: 4, showGridLines: false }],
+      views: [{ state: 'frozen', ySplit: 3, showGridLines: true }],
       properties: { defaultRowHeight: 22 },
+      pageSetup: {
+        orientation: 'landscape',
+        fitToPage: true,
+        fitToWidth: 1,
+        fitToHeight: 0,
+        paperSize: 9,
+        margins: { left: 0.25, right: 0.25, top: 0.4, bottom: 0.4, header: 0.2, footer: 0.2 },
+      },
     })
     sheet.columns = [
       { key: 'index', width: 8 },
@@ -64,68 +72,63 @@ export async function GET(request: Request) {
       { key: 'reason', width: 38 },
     ]
 
-    sheet.mergeCells('A1:I1')
-    sheet.getCell('A1').value = `DANH SÁCH ỨNG LƯƠNG ĐÃ DUYỆT · THÁNG ${month.slice(5)}/${month.slice(0, 4)}`
-    sheet.getCell('A1').font = { name: 'Arial', size: 18, bold: true, color: { argb: 'FFFFFFFF' } }
-    sheet.getCell('A1').alignment = { horizontal: 'center', vertical: 'middle' }
-    sheet.getCell('A1').fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF0F766E' } }
-    sheet.getRow(1).height = 32
-
     sheet.mergeCells('A2:I2')
-    sheet.getCell('A2').value = `Chỉ gồm yêu cầu đã được quản lý duyệt · Xuất lúc ${new Date().toLocaleString('vi-VN', { timeZone: 'Asia/Ho_Chi_Minh' })}`
-    sheet.getCell('A2').font = { name: 'Arial', size: 10, italic: true, color: { argb: 'FF475569' } }
-    sheet.getCell('A2').alignment = { horizontal: 'center' }
-    sheet.getRow(2).height = 22
+    sheet.getCell('A2').value = `DANH SÁCH ỨNG LƯƠNG ĐÃ DUYỆT THÁNG ${month.slice(5)}/${month.slice(0, 4)}`
+    sheet.getCell('A2').font = { name: 'Arial', size: 16, bold: true, color: { argb: 'FF000000' } }
+    sheet.getCell('A2').alignment = { horizontal: 'center', vertical: 'middle' }
+    sheet.getRow(2).height = 34.5
 
     const headers = ['STT', 'Họ và tên', 'Mã NV', 'Số tiền', 'Ngân hàng', 'Tên chủ tài khoản', 'Số tài khoản', 'Ngày duyệt', 'Lý do']
-    sheet.getRow(4).values = headers
-    sheet.getRow(4).height = 30
-    sheet.getRow(4).eachCell((cell) => {
-      cell.font = { name: 'Arial', size: 10, bold: true, color: { argb: 'FFFFFFFF' } }
-      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1E3A5F' } }
+    const thinBlackBorder: Partial<ExcelJS.Borders> = {
+      top: { style: 'thin', color: { argb: 'FF000000' } },
+      left: { style: 'thin', color: { argb: 'FF000000' } },
+      bottom: { style: 'thin', color: { argb: 'FF000000' } },
+      right: { style: 'thin', color: { argb: 'FF000000' } },
+    }
+    sheet.getRow(3).values = headers
+    sheet.getRow(3).height = 30
+    sheet.getRow(3).eachCell((cell) => {
+      cell.font = { name: 'Arial', size: 10, bold: true, color: { argb: 'FF000000' } }
+      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFFF00' } }
       cell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true }
-      cell.border = { bottom: { style: 'medium', color: { argb: 'FF0F766E' } } }
+      cell.border = thinBlackBorder
     })
 
     rows.forEach((row) => {
       const excelRow = sheet.addRow(row)
       excelRow.height = 24
-      excelRow.eachCell((cell, columnNumber) => {
-        cell.font = { name: 'Arial', size: 10, color: { argb: 'FF0F172A' } }
+      for (let columnNumber = 1; columnNumber <= headers.length; columnNumber += 1) {
+        const cell = excelRow.getCell(columnNumber)
+        cell.font = { name: 'Arial', size: 10, color: { argb: 'FF000000' } }
+        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFFFFF' } }
         cell.alignment = { vertical: 'middle', horizontal: [1, 3, 4, 7, 8].includes(columnNumber) ? 'center' : 'left', wrapText: columnNumber === 9 }
-        cell.border = { bottom: { style: 'hair', color: { argb: 'FFE2E8F0' } } }
-      })
-      excelRow.getCell(4).numFmt = '#,##0" đ"'
+        cell.border = thinBlackBorder
+      }
+      excelRow.getCell(4).numFmt = '#,##0'
       excelRow.getCell(7).numFmt = '@'
       excelRow.getCell(8).numFmt = 'dd/mm/yyyy'
     })
 
-    if (rows.length) {
-      sheet.addTable({
-        name: 'SalaryAdvancesTable',
-        ref: `A4:I${rows.length + 4}`,
-        headerRow: true,
-        columns: headers.map((name) => ({ name })),
-        rows: rows.map((row) => row as ExcelJS.CellValue[]),
-        style: { theme: 'TableStyleMedium2', showRowStripes: true, showColumnStripes: false },
-      })
+    const totalRowNumber = rows.length + 4
+    const totalRow = sheet.getRow(totalRowNumber)
+    for (let columnNumber = 1; columnNumber <= headers.length; columnNumber += 1) {
+      const cell = totalRow.getCell(columnNumber)
+      cell.font = { name: 'Arial', size: 10, bold: true, color: { argb: 'FF000000' } }
+      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFFFFF' } }
+      cell.alignment = { horizontal: columnNumber === 4 ? 'right' : 'center', vertical: 'middle' }
+      cell.border = thinBlackBorder
     }
-    sheet.autoFilter = `A4:I${Math.max(rows.length + 4, 4)}`
-
-    const summaryRow = Math.max(rows.length + 6, 6)
-    sheet.mergeCells(`A${summaryRow}:I${summaryRow}`)
-    sheet.getCell(`A${summaryRow}`).value = `Tổng người được duyệt: ${rows.length}   |   Tổng tiền đã duyệt: ${rows.reduce((sum, row) => sum + Number(row[3] || 0), 0).toLocaleString('vi-VN')} đ`
-    sheet.getCell(`A${summaryRow}`).font = { name: 'Arial', size: 10, bold: true, color: { argb: 'FF475569' } }
-    sheet.getCell(`A${summaryRow}`).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF8FAFC' } }
-    sheet.getCell(`A${summaryRow}`).alignment = { horizontal: 'center', vertical: 'middle' }
-    sheet.getCell(`A${summaryRow}`).border = { bottom: { style: 'hair', color: { argb: 'FFE2E8F0' } } }
-    sheet.getRow(summaryRow).height = 22
+    sheet.mergeCells(`A${totalRowNumber}:C${totalRowNumber}`)
+    sheet.getCell(`A${totalRowNumber}`).value = 'TỔNG'
+    sheet.getCell(`D${totalRowNumber}`).value = rows.reduce((sum, row) => sum + Number(row[3] || 0), 0)
+    sheet.getCell(`D${totalRowNumber}`).numFmt = '#,##0'
+    totalRow.height = 24
 
     const buffer = await workbook.xlsx.writeBuffer()
     return new Response(buffer, {
       headers: {
         'content-type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-        'content-disposition': `attachment; filename="lich-su-ung-luong-${month}.xlsx"`,
+        'content-disposition': `attachment; filename="danh-sach-ung-luong-da-duyet-${month}.xlsx"`,
         'cache-control': 'no-store',
       },
     })
