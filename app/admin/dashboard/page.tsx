@@ -300,8 +300,6 @@ export default function AdminDashboardPage() {
   const directoryActiveEmployees = useMemo(() => directoryEmployees.filter((item) => item.status === 'active'), [directoryEmployees])
   const directoryPendingEmployees = useMemo(() => directoryEmployees.filter((item) => item.status === 'pending'), [directoryEmployees])
   const directoryInactiveEmployees = useMemo(() => directoryEmployees.filter((item) => item.status === 'inactive'), [directoryEmployees])
-  const directoryFixedForNextWeek = useMemo(() => fixedForNextWeek.filter((employee) => directoryEmployees.some((item) => item.uid === employee.uid)), [directoryEmployees, fixedForNextWeek])
-
   const chooseFactory = (factory: FactoryId) => {
     setSelectedFactory(factory)
     const url = new URL(window.location.href)
@@ -480,7 +478,6 @@ export default function AdminDashboardPage() {
           backHref="/"
         />
         <PageContainer maxWidth="2xl">
-          <OperationalAlertBanner health={operationalHealth} />
           {role === 'director' && (
             <section className="mb-5 rounded-3xl border border-slate-200 bg-white p-3 shadow-sm dark:border-white/10 dark:bg-slate-900">
               <p className="px-1 text-xs font-black uppercase tracking-[0.14em] text-slate-600 dark:text-slate-300">Chọn xưởng</p>
@@ -499,7 +496,6 @@ export default function AdminDashboardPage() {
             </section>
           )}
           {message && <p className="mb-3 rounded-2xl bg-indigo-50 p-3 text-sm font-semibold text-indigo-900 dark:bg-indigo-500/10 dark:text-indigo-100">{message}</p>}
-          {directoryFixedForNextWeek.length > 0 && <section className="mb-5 rounded-3xl border border-violet-200 bg-violet-50 p-4 dark:border-violet-500/30 dark:bg-violet-500/10"><div className="flex items-center justify-between gap-3"><h2 className="font-black text-violet-900 dark:text-violet-100">Lịch cố định tuần sau</h2><span className="rounded-full bg-violet-600 px-2.5 py-1 text-xs font-black text-white">{directoryFixedForNextWeek.length} người</span></div><p className="mt-2 text-sm leading-6 text-violet-800 dark:text-violet-200">{directoryFixedForNextWeek.map((employee) => employee.fullName).join(' · ')}</p></section>}
           {['admin', 'director'].includes(role || '') && directoryPendingEmployees.length > 0 && (
             <section className="mb-5 rounded-3xl border border-amber-200 bg-amber-50 p-4 dark:border-amber-500/30 dark:bg-amber-500/10">
               <h2 className="font-black text-amber-900 dark:text-amber-100">Tài khoản mới chờ duyệt ({directoryPendingEmployees.length})</h2>
