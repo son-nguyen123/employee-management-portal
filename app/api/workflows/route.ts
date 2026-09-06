@@ -195,7 +195,10 @@ export async function POST(request: Request) {
     }
     const result = await handlers[action as keyof typeof handlers](actor, payload)
     if (monthDataMutationActions.has(action)) invalidateMonthDataCache()
-    if (!diagnosticActions.has(action)) {
+    const isIdempotentReplay = Boolean(
+      result && typeof result === 'object' && (result as Record<string, unknown>).idempotentReplay === true,
+    )
+    if (!diagnosticActions.has(action) && !isIdempotentReplay) {
       try {
         await recordCompletedWorkflowAudit({ actor, action, payload, result })
         await dispatchQueuedAuditEmails()

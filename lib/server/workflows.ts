@@ -8,7 +8,7 @@ import { auditReceiptCapability } from '@/lib/server/audit-trail'
 import { cancelQueuedAuditEmails } from '@/lib/server/audit-email'
 import { deleteAllProfileImages } from '@/lib/server/google-drive-archive'
 import { defaultUserFeatureSettings, userFeatureKeys, type UserFeatureKey, type UserFeatureSettings } from '@/lib/models/userFeatureSettings'
-import { vietnamWeekContaining } from '@/lib/archive/retention'
+import { currentVietnamMonth, vietnamWeekContaining } from '@/lib/archive/retention'
 import { decisionReviewIsEditable } from '@/lib/review/decision-policy'
 import { isManagementScheduleRole, isPastRegistrationDate, reactivationWaiverApplies, registrationTargetsNextWeek, restrictPastRegistration } from '@/lib/schedule/registration-policy'
 import { parseCustomShiftNote, scheduleShiftIdentity } from '@/lib/schedule/custom-shift'
@@ -698,6 +698,17 @@ function workflowRef(actor: RequestActor, id: string) {
   return adminDb.collection('workflowRequests').doc(`${actor.uid}-${id}`)
 }
 
+function sameStringSet(left: unknown, right: string[]): boolean {
+  if (!Array.isArray(left) || left.length !== right.length) return false
+  const normalizedLeft = left.filter((value): value is string => typeof value === 'string').sort()
+  const normalizedRight = [...right].sort()
+  return normalizedLeft.length === normalizedRight.length && normalizedLeft.every((value, index) => value === normalizedRight[index])
+}
+
+function timestampInWindow(value: unknown, start: Date, end: Date): boolean {
+  return value instanceof Timestamp && value.toDate() >= start && value.toDate() < end
+}
+
 const WORKFLOW_REQUEST_TTL_MS = 45 * 24 * 60 * 60 * 1000
 
 function workflowRequestExpiry() {
@@ -984,7 +995,16 @@ export async function submitScheduleModeChangeRequest(actor: RequestActor, raw: 
   const workflow = workflowRef(actor, requestKey)
   const managerIds = await activeManagerIds(actor.factoryId)
   await adminDb.runTransaction(async (transaction) => {
-    if ((await transaction.get(workflow)).exists) throw new ApiError(409, 'Yêu cầu này đã được gửi trước đó.')
+    const [workflowSnapshot, pendingRequests] = await Promise.all([
+      transaction.get(workflow),
+      transaction.get(adminDb.collection('staffRequests')
+        .where('employeeId', '==', actor.uid)
+        .where('status', '==', 'Pending')),
+    ])
+    if (workflowSnapshot.exists) throw new ApiError(409, 'Yêu cầu này đã được gửi trước đó.')
+    if (pendingRequests.docs.some((item) => item.get('type') === 'scheduleModeChange')) {
+      throw new ApiError(409, 'Bạn đã có một yêu cầu đổi chế độ đang chờ quản lý xử lý.')
+    }
     const now = FieldValue.serverTimestamp()
     transaction.create(requestRef, {
       employeeId: actor.uid,
@@ -1054,7 +1074,16 @@ export async function submitFactoryChangeRequest(actor: RequestActor, raw: unkno
   const workflow = workflowRef(actor, requestKey)
   const managerIds = await activeManagerIds(currentFactoryId)
   await adminDb.runTransaction(async (transaction) => {
-    if ((await transaction.get(workflow)).exists) throw new ApiError(409, 'Yêu cầu này đã được gửi trước đó.')
+    const [workflowSnapshot, pendingRequests] = await Promise.all([
+      transaction.get(workflow),
+      transaction.get(adminDb.collection('staffRequests')
+        .where('employeeId', '==', actor.uid)
+        .where('status', '==', 'Pending')),
+    ])
+    if (workflowSnapshot.exists) throw new ApiError(409, 'Yêu cầu này đã được gửi trước đó.')
+    if (pendingRequests.docs.some((item) => item.get('type') === 'factoryChange')) {
+      throw new ApiError(409, 'Bạn đã có một yêu cầu đổi xưởng đang chờ quản lý xử lý.')
+    }
     const now = FieldValue.serverTimestamp()
     transaction.create(requestRef, {
       employeeId: actor.uid,
@@ -1347,7 +1376,22 @@ export async function submitSchedules(actor: RequestActor, raw: unknown) {
   const notificationRef = adminDb.collection('notifications').doc(`schedule-penalty-${actor.uid}-${id}`)
 
   await adminDb.runTransaction(async (transaction) => {
-    if ((await transaction.get(workflow)).exists) throw new ApiError(409, 'Lịch này đã được gửi trước đó.')
+    const [workflowSnapshot, liveSchedules] = await Promise.all([
+      transaction.get(workflow),
+      // Re-check the weekly batch inside the transaction. The earlier
+      // preflight query is useful for fast feedback, but cannot protect two
+      // tabs submitting at the same time because both could observe an empty
+      // week before either write commits.
+      transaction.get(adminDb.collection('workSchedules')
+        .where('employeeId', '==', actor.uid)
+        .where('date', '>=', Timestamp.fromDate(weekStart))
+        .where('date', '<=', Timestamp.fromDate(weekEnd))),
+    ])
+    if (workflowSnapshot.exists) throw new ApiError(409, 'Lịch này đã được gửi trước đó.')
+    const transactionAlreadyHasWeek = liveSchedules.docs.some((snapshot) => snapshot.get('status') !== 'Cancelled')
+    if (transactionAlreadyHasWeek) {
+      throw new ApiError(409, 'Bạn đã có một bảng lịch cho tuần này. Hãy mở bảng hiện tại để điều chỉnh.')
+    }
 
     const now = FieldValue.serverTimestamp()
     schedules.forEach((schedule, index) => {
@@ -1615,7 +1659,23 @@ export async function submitStaffRequest(actor: RequestActor, raw: unknown) {
   }
 
   await adminDb.runTransaction(async (transaction) => {
-    if ((await transaction.get(workflow)).exists) throw new ApiError(409, 'Yêu cầu này đã được gửi trước đó.')
+    const [workflowSnapshot, pendingRequests] = await Promise.all([
+      transaction.get(workflow),
+      // Keep the duplicate check in the transaction as well as the preflight
+      // check above so concurrent tabs cannot create two pending requests.
+      transaction.get(adminDb.collection('staffRequests')
+        .where('employeeId', '==', actor.uid)
+        .where('status', '==', 'Pending')),
+    ])
+    if (workflowSnapshot.exists) throw new ApiError(409, 'Yêu cầu này đã được gửi trước đó.')
+    const transactionAlreadyPending = pendingRequests.docs.some((snapshot) => {
+      const request = snapshot.data()
+      return request.type === type && request.weekStart instanceof Timestamp && weekStart &&
+        request.weekStart.toDate().getTime() === weekStart.getTime()
+    })
+    if (transactionAlreadyPending) {
+      throw new ApiError(409, 'Bạn đã có một yêu cầu làm thêm đang chờ xử lý cho tuần này.')
+    }
     const now = FieldValue.serverTimestamp()
     transaction.create(requestRef, {
       employeeId: actor.uid,
@@ -2225,12 +2285,24 @@ export async function submitLate(actor: RequestActor, raw: unknown) {
   let computedPenalty = 0
 
   await adminDb.runTransaction(async (transaction) => {
-    const workflowSnapshot = await transaction.get(workflow)
+    const [workflowSnapshot, pendingLateRequests] = await Promise.all([
+      transaction.get(workflow),
+      // Filter status in memory to reuse the existing employeeId index and
+      // avoid introducing another composite index just for this guard.
+      transaction.get(adminDb.collection('lateRequests').where('employeeId', '==', actor.uid)),
+    ])
     const scheduleSnapshots = []
     for (const scheduleId of scheduleIds) {
       scheduleSnapshots.push(await transaction.get(adminDb.collection('workSchedules').doc(scheduleId)))
     }
     if (workflowSnapshot.exists) throw new ApiError(409, 'Thông báo đi trễ này đã được gửi.')
+    const duplicatePendingLate = pendingLateRequests.docs.some((snapshot) =>
+      snapshot.get('status') === 'Pending' &&
+      sameStringSet(snapshot.get('workScheduleIds') || [snapshot.get('workScheduleId')], scheduleIds)
+    )
+    if (duplicatePendingLate) {
+      throw new ApiError(409, 'Bạn đã có thông báo đi trễ đang chờ xử lý cho ca này.')
+    }
     const entries = scheduleSnapshots.map((snapshot, index) => {
       if (!snapshot.exists) throw new ApiError(404, 'Không tìm thấy ca làm.')
       const schedule = snapshot.data()!
@@ -2327,13 +2399,29 @@ export async function submitSalaryAdvance(actor: RequestActor, raw: unknown) {
   const advanceRef = adminDb.collection('salaryAdvances').doc()
   const policyRef = adminDb.collection('managementSettings').doc('salaryAdvancePolicy')
   const managerIds = await activeManagerIds(actor.factoryId)
+  const monthWindow = currentVietnamMonth(new Date())
+  let existingAdvanceId = ''
 
   await adminDb.runTransaction(async (transaction) => {
-    const [existingWorkflow, policy] = await Promise.all([
+    const [existingWorkflow, policy, employeeAdvances] = await Promise.all([
       transaction.get(workflow),
       transaction.get(policyRef),
+      // Read the employee's existing requests in the transaction so two tabs
+      // cannot both create a pending request for the same month.
+      transaction.get(adminDb.collection('salaryAdvances').where('employeeId', '==', actor.uid)),
     ])
-    if (existingWorkflow.exists) throw new ApiError(409, 'Yêu cầu ứng lương này đã được gửi.')
+    if (existingWorkflow.exists) {
+      const targetIds = existingWorkflow.get('targetIds')
+      existingAdvanceId = Array.isArray(targetIds) && typeof targetIds[0] === 'string' ? targetIds[0] : ''
+      if (!existingAdvanceId) throw new ApiError(409, 'Yêu cầu ứng lương này đã được gửi.')
+      return
+    }
+    const pendingThisMonth = employeeAdvances.docs.some((snapshot) =>
+      snapshot.get('status') === 'Pending' && timestampInWindow(snapshot.get('createdAt'), monthWindow.start, monthWindow.end)
+    )
+    if (pendingThisMonth) {
+      throw new ApiError(409, 'Bạn đã có một yêu cầu ứng lương đang chờ xử lý trong tháng này.')
+    }
     assertSalaryAdvanceWindow(policy.data())
     const now = FieldValue.serverTimestamp()
     transaction.create(advanceRef, {
@@ -2364,6 +2452,10 @@ export async function submitSalaryAdvance(actor: RequestActor, raw: unknown) {
       )
     })
   })
+
+  // A network retry with the same requestId is treated as the original
+  // successful submission. Do not send another manager push for it.
+  if (existingAdvanceId) return { id: existingAdvanceId, idempotentReplay: true }
 
   await sendManagerPushes({
     managerIds,
@@ -2895,13 +2987,21 @@ export async function createManualPenalty(actor: RequestActor, raw: unknown) {
   const penaltyRef = adminDb.collection('penalties').doc()
   const notificationRef = adminDb.collection('notifications').doc(`manual-penalty-${operationId}`)
   const workflow = workflowRef(actor, operationId)
+  let existingPenaltyId = ''
+  let existingPenaltyAmount = 0
 
   await adminDb.runTransaction(async (transaction) => {
     const [employee, existingWorkflow] = await Promise.all([
       transaction.get(employeeRef),
       transaction.get(workflow),
     ])
-    if (existingWorkflow.exists) throw new ApiError(409, 'Khoản phạt này đã được ghi nhận trước đó.')
+    if (existingWorkflow.exists) {
+      const targetIds = existingWorkflow.get('targetIds')
+      existingPenaltyId = Array.isArray(targetIds) && typeof targetIds[0] === 'string' ? targetIds[0] : ''
+      existingPenaltyAmount = Number(existingWorkflow.get('amount') || amount)
+      if (!existingPenaltyId) throw new ApiError(409, 'Khoản phạt này đã được ghi nhận trước đó.')
+      return
+    }
     if (!employee.exists || employee.get('status') !== 'active') {
       throw new ApiError(404, 'Không tìm thấy nhân viên đang hoạt động.')
     }
@@ -2935,6 +3035,10 @@ export async function createManualPenalty(actor: RequestActor, raw: unknown) {
       expiresAt: workflowRequestExpiry(),
     })
   })
+
+  // A retry with the same idempotency key returns the original penalty and
+  // does not enqueue another employee notification.
+  if (existingPenaltyId) return { id: existingPenaltyId, amount: existingPenaltyAmount, idempotentReplay: true }
 
   const push = await sendPenaltyPush({
     employeeId,

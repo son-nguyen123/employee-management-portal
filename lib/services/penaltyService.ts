@@ -14,10 +14,11 @@ export async function createManualPenalty(
   employeeId: string,
   date: string,
   amount: number,
-  reason: string
+  reason: string,
+  requestId = newWorkflowRequestId(),
 ): Promise<{ id: string; amount: number }> {
   return callWorkflowApi('createManualPenalty', {
-    requestId: newWorkflowRequestId(),
+    requestId,
     employeeId,
     date,
     amount,

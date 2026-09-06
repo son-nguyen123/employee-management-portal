@@ -9,9 +9,12 @@ const SALARY_ADVANCES_COLLECTION = 'salaryAdvances'
 /**
  * Create a new salary advance request
  */
-export async function createSalaryAdvance(advanceData: Omit<SalaryAdvance, 'id' | 'createdAt' | 'updatedAt'>): Promise<string> {
+export async function createSalaryAdvance(
+  advanceData: Omit<SalaryAdvance, 'id' | 'createdAt' | 'updatedAt'>,
+  requestId = newWorkflowRequestId(),
+): Promise<string> {
   const result = await callWorkflowApi<{ id: string }>('submitSalaryAdvance', {
-    requestId: newWorkflowRequestId(),
+    requestId,
     amount: advanceData.amount,
     reason: advanceData.reason,
   })

@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
 import { AlertCircle, Building2, CalendarClock, CheckCircle2, ChevronDown, CircleDollarSign, CreditCard, DollarSign, Landmark, Loader2, Pencil, RotateCcw, Trash2, UserRound, X } from 'lucide-react'
 import { useAuth } from '@/lib/hooks/useAuth'
@@ -19,6 +19,7 @@ import { MonthNavigator } from '@/components/ui/month-navigator'
 import { readSalaryAdvanceMonth } from '@/lib/services/monthDataService'
 import { currentVietnamMonth } from '@/lib/archive/retention'
 import { belongsToVietnamMonth } from '@/lib/services/monthDataUtils'
+import { newWorkflowRequestId } from '@/lib/services/workflowApi'
 
 function formatVietnameseCurrency(value: string | number): string {
   const digits = String(value).replace(/\D/g, '')
@@ -149,6 +150,7 @@ export default function SalaryAdvancePage() {
   const [savingBank, setSavingBank] = useState(false)
   const [salaryPolicy, setSalaryPolicy] = useState<SalaryAdvancePolicy>({ restrictionEnabled: false, canSubmit: true, vietnamDay: 1, allowedDays: [24, 25] })
   const [policyLoading, setPolicyLoading] = useState(true)
+  const salarySubmissionRequestRef = useRef<{ requestId: string; amount: number; reason: string } | null>(null)
 
   useEffect(() => {
     if (!bankModalOpen) return
@@ -224,12 +226,22 @@ export default function SalaryAdvancePage() {
         return
       }
 
-      const id = requestEditingId || await createSalaryAdvance({
-        employeeId: authUser.uid,
-        amount,
-        reason,
-        status: 'Pending',
-      })
+      let id: string
+      if (requestEditingId) {
+        id = requestEditingId
+      } else {
+        const previous = salarySubmissionRequestRef.current
+        const requestId = previous && previous.amount === amount && previous.reason === reason
+          ? previous.requestId
+          : newWorkflowRequestId()
+        salarySubmissionRequestRef.current = { requestId, amount, reason }
+        id = await createSalaryAdvance({
+          employeeId: authUser.uid,
+          amount,
+          reason,
+          status: 'Pending',
+        }, requestId)
+      }
       if (requestEditingId) await reviseSalaryAdvance(requestEditingId, amount, reason)
 
       setPreviousAdvances((prev) => requestEditingId
@@ -238,6 +250,7 @@ export default function SalaryAdvancePage() {
       setMessage({ type: 'success', text: requestEditingId ? 'Đã gửi bản điều chỉnh cho quản lý.' : 'Đã gửi yêu cầu ứng lương!' })
       setEditingId(null)
       setFormData({ amount: '', reason: '' })
+      salarySubmissionRequestRef.current = null
     } catch (error) {
       setMessage({ type: 'error', text: error instanceof Error ? error.message : 'Không thể gửi yêu cầu.' })
     } finally {

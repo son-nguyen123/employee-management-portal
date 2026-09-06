@@ -39,17 +39,32 @@ export async function POST(request: Request) {
     if (!phone) return NextResponse.json({ error: 'Số điện thoại không được để trống.' }, { status: 400 })
     if (!isProfileImageUrl(photoURL)) return NextResponse.json({ error: 'Ảnh đại diện không hợp lệ.' }, { status: 400 })
     if (!/^https?:\/\//i.test(facebookUrl)) return NextResponse.json({ error: 'Facebook phải là đường dẫn bắt đầu bằng http:// hoặc https://.' }, { status: 400 })
-    const legacyEmployees = await adminDb.collection('employees').get()
-    const codeAlreadyAssigned = employeeCodeAssignedToAnother(
-      legacyEmployees.docs.map((item) => ({ uid: item.id, employeeCode: item.get('employeeCode') })),
-      employeeCode,
-      token.uid,
-    )
-    if (codeAlreadyAssigned) {
-      return NextResponse.json({ error: 'Mã nhân viên này đã được liên kết với tài khoản khác.' }, { status: 409 })
-    }
     const employeeRef = adminDb.collection('employees').doc(token.uid)
     const codeRef = adminDb.collection('employeeCodes').doc(codeKey)
+    // Fast-fail repeat submissions before the legacy uniqueness scan. This
+    // keeps a retry after a lost response to one document read instead of
+    // scanning the whole employee collection again.
+    const [existingProfile, reservationSnapshot] = await Promise.all([
+      employeeRef.get(),
+      codeRef.get(),
+    ])
+    if (existingProfile.exists) throw new Error('PROFILE_EXISTS')
+    if (reservationSnapshot.exists && reservationSnapshot.get('uid') !== token.uid) {
+      return NextResponse.json({ error: 'Mã nhân viên này đã được liên kết với tài khoản khác.' }, { status: 409 })
+    }
+    // Keep the legacy scan only as a migration fallback for old employee
+    // profiles that predate employeeCodes reservations.
+    if (!reservationSnapshot.exists) {
+      const legacyEmployees = await adminDb.collection('employees').get()
+      const codeAlreadyAssigned = employeeCodeAssignedToAnother(
+        legacyEmployees.docs.map((item) => ({ uid: item.id, employeeCode: item.get('employeeCode') })),
+        employeeCode,
+        token.uid,
+      )
+      if (codeAlreadyAssigned) {
+        return NextResponse.json({ error: 'Mã nhân viên này đã được liên kết với tài khoản khác.' }, { status: 409 })
+      }
+    }
     const managerIds = (await adminDb.collection('employees').where('status', '==', 'active').get()).docs
       .filter((item) => item.get('role') === 'director' || (
         ['admin', 'manager'].includes(String(item.get('role'))) &&

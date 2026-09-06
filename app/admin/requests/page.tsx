@@ -15,6 +15,7 @@ import { PageContainer } from '@/components/layout/page-container'
 import { ManagementOverview } from '@/components/admin/management-overview'
 import { subscribeToActiveEmployees } from '@/lib/services/employeeService'
 import { adjustPenalty, cancelPenalty, createManualPenalty, subscribeToAllPenalties } from '@/lib/services/penaltyService'
+import { newWorkflowRequestId } from '@/lib/services/workflowApi'
 import { subscribeToPendingStaffRequests, updateStaffRequestStatus } from '@/lib/services/staffRequestService'
 import type { Employee, Penalty, StaffRequest } from '@/lib/models/types'
 import { employeeFactoryId, FACTORY_LABELS } from '@/lib/models/factory'
@@ -146,6 +147,7 @@ export default function AdminRequestsPage() {
   const [employeePickerOpen, setEmployeePickerOpen] = useState(false)
   const manualPenaltyFormRef = useRef<HTMLFormElement | null>(null)
   const employeePickerButtonRef = useRef<HTMLButtonElement | null>(null)
+  const manualPenaltyRequestIdRef = useRef<string | null>(null)
   const [penaltySubmitting, setPenaltySubmitting] = useState(false)
   const [penalties, setPenalties] = useState<Penalty[]>([])
   const [editingPenalty, setEditingPenalty] = useState<{ penalty: Penalty; mode: 'adjust' | 'cancel' } | null>(null)
@@ -327,6 +329,7 @@ export default function AdminRequestsPage() {
     if (!manualPenaltyOpen) {
       setPenaltyEmployeeId('')
       setPenaltyFormError('')
+      manualPenaltyRequestIdRef.current = null
     }
     setManualPenaltyOpen((current) => !current)
     setEmployeePickerOpen(false)
@@ -339,6 +342,7 @@ export default function AdminRequestsPage() {
 
   const selectPenaltyEmployee = (employeeId: string) => {
     setPenaltyEmployeeId(employeeId)
+    manualPenaltyRequestIdRef.current = null
     setEmployeePickerOpen(false)
     setPenaltyFormError('')
     window.requestAnimationFrame(() => employeePickerButtonRef.current?.focus())
@@ -353,6 +357,8 @@ export default function AdminRequestsPage() {
     }
     setPenaltyFormError('')
     setPenaltySubmitting(true)
+    const requestId = manualPenaltyRequestIdRef.current || newWorkflowRequestId()
+    manualPenaltyRequestIdRef.current = requestId
     try {
       const createdPenalty: Penalty = {
         id: `manual-${Date.now()}`,
@@ -367,7 +373,7 @@ export default function AdminRequestsPage() {
         status: 'Active',
       }
       if (!isPreviewMode) {
-        const result = await createManualPenalty(penaltyEmployeeId, `${penaltyDate}T12:00:00`, amount, penaltyNote.trim())
+        const result = await createManualPenalty(penaltyEmployeeId, `${penaltyDate}T12:00:00`, amount, penaltyNote.trim(), requestId)
         createdPenalty.id = result.id
         invalidateMonthData('penalties', penaltyExportMonth)
         const refreshed = await readPenaltyMonth(penaltyExportMonth)
@@ -378,6 +384,7 @@ export default function AdminRequestsPage() {
       setPenaltyNote('')
       setPenaltyAmount('500')
       setPenaltyFormError('')
+      manualPenaltyRequestIdRef.current = null
       setEmployeePickerOpen(false)
       setManualPenaltyOpen(false)
       setMessage(`Đã ghi nhận khoản phạt ${amount.toLocaleString('vi-VN')}đ và gửi thông báo cho nhân viên.`)
@@ -581,14 +588,14 @@ export default function AdminRequestsPage() {
               )}
             </div>
             <label className="text-sm font-bold">Ngày ghi phạt
-              <input type="date" value={penaltyDate} onChange={(event) => setPenaltyDate(event.target.value)} className="mobile-field mt-2" required />
+              <input type="date" value={penaltyDate} onChange={(event) => { manualPenaltyRequestIdRef.current = null; setPenaltyDate(event.target.value) }} className="mobile-field mt-2" required />
             </label>
             <label className="text-sm font-bold sm:col-span-2">Số tiền phạt
-              <input type="text" inputMode="numeric" pattern="[0-9 ]*" value={penaltyAmount} onChange={(event) => { setPenaltyAmount(event.target.value.replace(/\D/g, '')); setPenaltyFormError('') }} className="mobile-field mt-2" placeholder="Ví dụ: 500 hoặc 1.000" required />
+              <input type="text" inputMode="numeric" pattern="[0-9 ]*" value={penaltyAmount} onChange={(event) => { manualPenaltyRequestIdRef.current = null; setPenaltyAmount(event.target.value.replace(/\D/g, '')); setPenaltyFormError('') }} className="mobile-field mt-2" placeholder="Ví dụ: 500 hoặc 1.000" required />
               <span className="mt-1.5 block text-xs font-medium text-muted-foreground">Nhập số nguyên dương, có thể nhập dấu chấm hoặc khoảng trắng.</span>
             </label>
             <label className="text-sm font-bold sm:col-span-2">Lý do
-              <textarea value={penaltyNote} onChange={(event) => setPenaltyNote(event.target.value)} maxLength={1000} className="mobile-field mt-2 min-h-24 py-3" placeholder="Ghi rõ lý do để nhân viên hiểu..." required />
+              <textarea value={penaltyNote} onChange={(event) => { manualPenaltyRequestIdRef.current = null; setPenaltyNote(event.target.value) }} maxLength={1000} className="mobile-field mt-2 min-h-24 py-3" placeholder="Ghi rõ lý do để nhân viên hiểu..." required />
             </label>
             {penaltyFormError && <p className="rounded-2xl bg-rose-50 px-3 py-2.5 text-sm font-semibold text-rose-700 sm:col-span-2" role="alert">{penaltyFormError}</p>}
             <button type="submit" disabled={penaltySubmitting || !selectedPenaltyEmployee || (!isPreviewMode && !employees.length)} className="mobile-primary-button bg-rose-600 sm:col-span-2">
