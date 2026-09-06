@@ -84,7 +84,12 @@ export async function POST(request: Request) {
 
     await profileRef.update({ ...updates, updatedAt: FieldValue.serverTimestamp() })
     invalidateMonthDataCache()
-    await adminAuth.updateUser(actor.uid, { displayName: fullName, photoURL })
+    const authPhotoURL = new URL(photoURL, request.url).toString()
+    await adminAuth.updateUser(actor.uid, { displayName: fullName, photoURL: authPhotoURL }).catch((error) => {
+      // Firestore is the source of truth for app profiles. A secondary Auth
+      // display-profile failure must not turn a successful save into an error.
+      console.error('Firebase Auth profile sync failed:', error)
+    })
     return NextResponse.json({ ok: true })
   } catch (error) {
     if (error instanceof ApiError) {
