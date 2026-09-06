@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { recordOperationalJobFailure, recordOperationalJobSuccess, runOperationalHealthCheck } from '@/lib/server/operational-health'
+import { cleanupExpiredWorkflowRequests } from '@/lib/server/workflow-retention'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -12,8 +13,16 @@ export async function GET(request: Request) {
     return NextResponse.json({ ok: false, error: 'Không có quyền kiểm tra hệ thống.' }, { status: 401 })
   }
   try {
+    let workflowRequestsDeleted = 0
+    try {
+      const cleanup = await cleanupExpiredWorkflowRequests()
+      workflowRequestsDeleted = cleanup.deleted
+      if (cleanup.deleted) console.info(`Cleaned ${cleanup.deleted} expired workflow requests.`)
+    } catch (error) {
+      console.error('Workflow request cleanup failed:', error)
+    }
     const result = await runOperationalHealthCheck()
-    await recordOperationalJobSuccess('operational-health', { overall: result.overall })
+    await recordOperationalJobSuccess('operational-health', { overall: result.overall, workflowRequestsDeleted })
       .catch((alertError) => console.error('Operational success record failed:', alertError))
     return NextResponse.json({ ok: true, result })
   } catch (error) {
